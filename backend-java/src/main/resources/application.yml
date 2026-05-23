@@ -1,0 +1,41 @@
+server:
+  port: ${PORT:9090}
+
+spring:
+  application:
+    name: myaba-api
+  jackson:
+    default-property-inclusion: non_null
+
+# ── Anthropic ──────────────────────────────────────────────────────────────
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+  base-url: https://api.anthropic.com
+  model: claude-sonnet-4-6
+  max-tokens: 4000
+
+# ── ACLX Gateway ──────────────────────────────────────────────────────────
+aclx:
+  gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8081}
+  enabled: ${ACLX_ENABLED:true}
+  timeout-ms: 5000
+
+# ── Firebase ──────────────────────────────────────────────────────────────
+firebase:
+  project-id: ${FIREBASE_PROJECT_ID:}
+  # Path to service account JSON file — used locally.
+  # On Cloud Run, set GOOGLE_APPLICATION_CREDENTIALS or use Workload Identity.
+  service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
+  # Alternatively supply credentials inline (for Cloud Run env vars)
+  client-email: ${FIREBASE_CLIENT_EMAIL:}
+  private-key: ${FIREBASE_PRIVATE_KEY:}
+
+# ── CORS ──────────────────────────────────────────────────────────────────
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+# ── Dev mode ──────────────────────────────────────────────────────────────
+# Set DEV_AUTH=true to skip Firebase token verification and use a stub user.
+# NEVER enable in production.
+dev:
+  auth-enabled: ${DEV_AUTH:false}

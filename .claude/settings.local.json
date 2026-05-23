@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"D:\\\\myaba.ai\\\\myaba.ai\")",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"D:\\\\myaba.ai\\\\myaba.ai\\\\backend\\\\src\\\\routes\" \"D:\\\\myaba.ai\\\\myaba.ai\\\\backend\\\\src\\\\lib\" \"D:\\\\myaba.ai\\\\myaba.ai\\\\backend\\\\src\\\\middleware\")",
+      "Bash(npm init *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(node -e \"const fa = require\\('@fortawesome/free-solid-svg-icons'\\); ['faWaveSquare','faBrain','faCommentDots','faWaveform','faMicrophone'].forEach\\(n => console.log\\(n, !!fa[n]\\)\\)\")",
+      "Bash(mvn compile *)",
+      "Bash(mvn package *)",
+      "Bash(mvn spring-boot:run \"-Dspring-boot.run.profiles=local\")",
+      "Bash(curl -s http://localhost:8080/api/health)",
+      "PowerShell($pids = netstat -ano | Select-String \":8080\" | ForEach-Object { \\($_ -split '\\\\s+'\\)[-1] } | Sort-Object -Unique; $pids | ForEach-Object { Write-Host \"Killing PID $_\"; Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; Write-Host \"Done\")",
+      "Bash(mvn spring-boot:run \"-Dspring-boot.run.profiles=local\" \"-Dspring-boot.run.jvmArguments=-Dserver.port=8090\")",
+      "Bash(curl -s http://localhost:8090/api/health)",
+      "Bash(java -Dspring.profiles.active=local \"-Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider\" -jar target/myaba-api-1.0.0-SNAPSHOT.jar --server.port=8090)",
+      "Bash(java -Dspring.profiles.active=local -jar target/myaba-api-1.0.0-SNAPSHOT.jar --server.port=8080)"
+    ]
+  }
+}

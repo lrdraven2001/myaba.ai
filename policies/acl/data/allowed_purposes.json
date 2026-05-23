@@ -1,0 +1,9 @@
+{
+  "role_purposes": {
+    "TREATING_BCBA": ["treatment", "assessment"],
+    "SUPERVISING_BCBA": ["treatment", "assessment", "oversight"],
+    "RBT": ["session_notes"],
+    "SCHEDULING_ADMIN": ["scheduling"],
+    "BILLING_ADMIN": ["payment"]
+  }
+}

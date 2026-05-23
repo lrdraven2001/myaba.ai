@@ -1,0 +1,57 @@
+version: "3.9"
+
+# ── Local standalone stack ───────────────────────────────────────────────────
+# Run everything without GCP:  docker compose up
+# The Java API runs with DEV_AUTH=true (no Firebase token required)
+# and ACLX_ENABLED=false (pass-through mode).
+#
+# To test with real credentials, copy .env.example → .env and set values.
+
+services:
+
+  # ── React frontend (dev server) ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    environment:
+      - VITE_DEV_AUTH=true
+      - VITE_API_BASE_URL=http://localhost:8080
+    depends_on:
+      - api
+
+  # ── Spring Boot API ──────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend-java
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DEV_AUTH=true
+      - ACLX_ENABLED=false
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-dev-project}
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── ACLX Gateway (optional — comment out if not available) ──────────────
+  # aclx:
+  #   image: identiverse/aclx-gateway:1.1.0-alpha
+  #   ports:
+  #     - "8081:8080"
+  #   environment:
+  #     - DOMAIN=hipaa
+  #     - GCP_PROJECT_ID=${FIREBASE_PROJECT_ID:-dev-project}
+  #   volumes:
+  #     - ./policies:/policies:ro
