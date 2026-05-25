@@ -24,6 +24,10 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/api/health").permitAll()
+                // Org creation + invite endpoints must be accessible to authenticated users
+                // who don't yet have an orgId (e.g. first-time onboarding, accepting an invite).
+                .requestMatchers("/api/orgs").authenticated()
+                .requestMatchers("/api/invite/**").authenticated()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(firebaseAuthFilter, UsernamePasswordAuthenticationFilter.class);

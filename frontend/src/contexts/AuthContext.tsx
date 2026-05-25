@@ -15,6 +15,7 @@ const DEV_USER: AppUser = {
   role: 'TREATING_BCBA',
   purpose: 'treatment',
   orgId: 'dev-org-001',
+  supervisorId: 'supervisor-001',
 };
 
 interface AuthContextValue {
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: (claims.role as UserRole) ?? 'TREATING_BCBA',
               purpose: (claims.purpose as UserPurpose) ?? 'treatment',
               orgId: claims.orgId ?? '',
+              supervisorId: claims.supervisorId,
             });
           } else {
             setCurrentUser(null);

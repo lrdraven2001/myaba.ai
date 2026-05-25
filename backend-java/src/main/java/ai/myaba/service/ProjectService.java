@@ -1,0 +1,412 @@
+package ai.myaba.service;
+
+import ai.myaba.model.dto.AppUser;
+import ai.myaba.model.dto.ProjectRequest;
+import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.firebase.cloud.FirestoreClient;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * Project collaboration service.
+ *
+ * Firestore paths:
+ *   organizations/{orgId}/projects/{projectId}
+ *   organizations/{orgId}/projects/{projectId}/knowledgeDocs/{docId}
+ *
+ * Project document shape:
+ * <pre>
+ *   id:           String
+ *   title:        String
+ *   description:  String|null
+ *   instructions: String|null   ← system prompt injected into every chat in this project
+ *   orgId:        String
+ *   ownerId:      String
+ *   clientIds:    List&lt;String&gt;
+ *   isShared:     Boolean
+ *   members:      Map&lt;String,String&gt;  { userId: "editor"|"viewer" }
+ *   memberIds:    List&lt;String&gt;        denormalized union of ownerId + member keys
+ *   createdAt:    String (ISO-8601)
+ *   updatedAt:    String (ISO-8601)
+ * </pre>
+ *
+ * Knowledge document shape:
+ * <pre>
+ *   id:          String
+ *   projectId:   String
+ *   title:       String
+ *   textContent: String
+ *   createdAt:   String (ISO-8601)
+ * </pre>
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ProjectService {
+
+    @Value("${dev.auth-enabled:false}")
+    private boolean devMode;
+
+    private final Map<String, Map<String, Object>>       devProjects      = new LinkedHashMap<>();
+    /** projectId → ordered list of knowledge docs */
+    private final Map<String, List<Map<String, Object>>> devKnowledgeDocs = new ConcurrentHashMap<>();
+
+    // ── Dev data seed ─────────────────────────────────────────────────────
+
+    @PostConstruct
+    void seedDevData() {
+        if (!devMode) return;
+
+        put("proj-001", Map.ofEntries(
+            Map.entry("title",        "Q2 Caseload Review"),
+            Map.entry("description",  "Quarterly review of all active clients"),
+            Map.entry("instructions",
+                "You are assisting a BCBA team with a quarterly caseload review. " +
+                "Focus on each client's progress toward treatment goals, observable data trends, " +
+                "and any programming adjustments that may be warranted. " +
+                "Use precise ABA terminology and maintain a professional clinical tone."),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("ownerId",      "dev-user-001"),
+            Map.entry("clientIds",    List.of("c-001", "c-002", "c-003")),
+            Map.entry("isShared",     true),
+            Map.entry("members",      Map.of("supervisor-001", "viewer")),
+            Map.entry("memberIds",    List.of("dev-user-001", "supervisor-001")),
+            Map.entry("createdAt",    "2026-04-01T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-05-20T10:00:00Z")
+        ));
+
+        // Seed a knowledge doc for proj-001
+        addDevKnowledgeDoc("proj-001", "kd-001",
+            "Q2 Goals Summary",
+            "Client c-001: Reduce hitting to <2x/session. Increase manding to 20 independent requests/session.\n" +
+            "Client c-002: Generalize PECS Phase IV across 3 settings. Increase on-task behavior to 80% per interval.\n" +
+            "Client c-003: Complete FBA. Identify function of elopement. Begin FCT protocol."
+        );
+
+        log.info("Dev mode: seeded {} projects", devProjects.size());
+    }
+
+    private void put(String id, Map<String, Object> data) {
+        Map<String, Object> m = new HashMap<>(data);
+        m.put("id", id);
+        devProjects.put(id, m);
+        devKnowledgeDocs.putIfAbsent(id, new ArrayList<>());
+    }
+
+    private void addDevKnowledgeDoc(String projectId, String docId, String title, String text) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("id",          docId);
+        doc.put("projectId",   projectId);
+        doc.put("title",       title);
+        doc.put("textContent", text);
+        doc.put("createdAt",   "2026-04-01T00:00:00Z");
+        devKnowledgeDocs.computeIfAbsent(projectId, k -> new ArrayList<>()).add(doc);
+    }
+
+    // ── Project queries ───────────────────────────────────────────────────
+
+    public List<Map<String, Object>> getProjects(AppUser user) throws Exception {
+        if (devMode) {
+            return devProjects.values().stream()
+                    .filter(p -> canAccessProject(user, p))
+                    .sorted(Comparator.comparing(
+                        (Map<String, Object> p) -> (String) p.getOrDefault("updatedAt", ""),
+                        Comparator.reverseOrder()))
+                    .collect(Collectors.toList());
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        Query query = user.isAdmin()
+            ? db.collection("organizations").document(user.getOrgId())
+                 .collection("projects").orderBy("updatedAt", Query.Direction.DESCENDING)
+            : db.collection("organizations").document(user.getOrgId())
+                 .collection("projects")
+                 .whereArrayContains("memberIds", user.getUid())
+                 .orderBy("updatedAt", Query.Direction.DESCENDING);
+        return toList(query.get().get().getDocuments());
+    }
+
+    public Map<String, Object> getProject(AppUser user, String projectId) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canAccessProject(user, project))
+            throw new SecurityException("Access denied to project: " + projectId);
+        return project;
+    }
+
+    // ── Project writes ────────────────────────────────────────────────────
+
+    public String createProject(AppUser user, ProjectRequest req) throws Exception {
+        String now = Instant.now().toString();
+        List<String> clientIds      = req.getClientIds() != null ? req.getClientIds() : List.of();
+        Map<String, String> members = req.getMembers()   != null ? req.getMembers()   : Map.of();
+        boolean isShared = Boolean.TRUE.equals(req.getIsShared());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("title",        req.getTitle());
+        data.put("description",  req.getDescription()  != null ? req.getDescription()  : "");
+        data.put("instructions", req.getInstructions() != null ? req.getInstructions() : "");
+        data.put("orgId",        user.getOrgId());
+        data.put("ownerId",      user.getUid());
+        data.put("clientIds",    clientIds);
+        data.put("isShared",     isShared);
+        data.put("members",      members);
+        data.put("memberIds",    computeMemberIds(user.getUid(), members));
+        data.put("createdAt",    now);
+        data.put("updatedAt",    now);
+
+        if (devMode) {
+            String id = "proj-" + UUID.randomUUID().toString().substring(0, 8);
+            data.put("id", id);
+            devProjects.put(id, data);
+            devKnowledgeDocs.put(id, new ArrayList<>());
+            return id;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        return db.collection("organizations").document(user.getOrgId())
+                  .collection("projects").add(data).get().getId();
+    }
+
+    public void updateProject(AppUser user, String projectId, ProjectRequest req) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canManageProject(user, project))
+            throw new SecurityException("Cannot update project: " + projectId);
+
+        Map<String, Object> updates = new HashMap<>();
+        if (req.getTitle()        != null) updates.put("title",        req.getTitle());
+        if (req.getDescription()  != null) updates.put("description",  req.getDescription());
+        if (req.getInstructions() != null) updates.put("instructions", req.getInstructions());
+        if (req.getClientIds()    != null) updates.put("clientIds",    req.getClientIds());
+        if (req.getIsShared()     != null) updates.put("isShared",     req.getIsShared());
+        updates.put("updatedAt", Instant.now().toString());
+
+        if (devMode) { project.putAll(updates); return; }
+
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(user.getOrgId())
+          .collection("projects").document(projectId).update(updates).get();
+    }
+
+    public void shareMember(AppUser user, String projectId, String targetUserId, String role) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canManageProject(user, project))
+            throw new SecurityException("Cannot share project: " + projectId);
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> members = new HashMap<>((Map<String, String>) project.getOrDefault("members", Map.of()));
+        String ownerId = (String) project.get("ownerId");
+
+        if (role == null) {
+            members.remove(targetUserId);
+        } else {
+            if (!"editor".equals(role) && !"viewer".equals(role))
+                throw new IllegalArgumentException("Role must be 'editor' or 'viewer'");
+            members.put(targetUserId, role);
+        }
+
+        List<String> memberIds = computeMemberIds(ownerId, members);
+        String now = Instant.now().toString();
+
+        if (devMode) {
+            project.put("members", members); project.put("memberIds", memberIds); project.put("updatedAt", now);
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(user.getOrgId())
+          .collection("projects").document(projectId)
+          .update(Map.of("members", members, "memberIds", memberIds, "updatedAt", now)).get();
+    }
+
+    public void deleteProject(AppUser user, String projectId) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canManageProject(user, project))
+            throw new SecurityException("Cannot delete project: " + projectId);
+
+        if (devMode) {
+            devProjects.remove(projectId);
+            devKnowledgeDocs.remove(projectId);
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        // Delete knowledge docs sub-collection first
+        var kdSnap = db.collection("organizations").document(user.getOrgId())
+                       .collection("projects").document(projectId)
+                       .collection("knowledgeDocs").get().get();
+        for (var doc : kdSnap.getDocuments()) doc.getReference().delete().get();
+        db.collection("organizations").document(user.getOrgId())
+          .collection("projects").document(projectId).delete().get();
+    }
+
+    // ── Knowledge docs ────────────────────────────────────────────────────
+
+    public List<Map<String, Object>> getKnowledgeDocs(AppUser user, String projectId) throws Exception {
+        getProject(user, projectId); // auth check
+        if (devMode) {
+            return new ArrayList<>(devKnowledgeDocs.getOrDefault(projectId, List.of()));
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collection("organizations").document(user.getOrgId())
+                     .collection("projects").document(projectId)
+                     .collection("knowledgeDocs")
+                     .orderBy("createdAt").get().get().getDocuments();
+        return toList(docs);
+    }
+
+    /**
+     * Add a knowledge document to a project.
+     * Returns the new document's ID.
+     */
+    public String addKnowledgeDoc(AppUser user, String projectId,
+                                   String title, String textContent) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canManageProject(user, project))
+            throw new SecurityException("Cannot add knowledge to project: " + projectId);
+
+        String now = Instant.now().toString();
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("projectId",   projectId);
+        doc.put("title",       title);
+        doc.put("textContent", textContent != null ? textContent : "");
+        doc.put("createdAt",   now);
+
+        if (devMode) {
+            String id = "kd-" + UUID.randomUUID().toString().substring(0, 8);
+            doc.put("id", id);
+            devKnowledgeDocs.computeIfAbsent(projectId, k -> new ArrayList<>()).add(doc);
+            return id;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var ref = db.collection("organizations").document(user.getOrgId())
+                    .collection("projects").document(projectId)
+                    .collection("knowledgeDocs").add(doc).get();
+        return ref.getId();
+    }
+
+    /** Remove a knowledge document from a project. */
+    public void removeKnowledgeDoc(AppUser user, String projectId, String docId) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canManageProject(user, project))
+            throw new SecurityException("Cannot remove knowledge from project: " + projectId);
+
+        if (devMode) {
+            List<Map<String, Object>> docs = devKnowledgeDocs.get(projectId);
+            if (docs != null) docs.removeIf(d -> docId.equals(d.get("id")));
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(user.getOrgId())
+          .collection("projects").document(projectId)
+          .collection("knowledgeDocs").document(docId).delete().get();
+    }
+
+    // ── System prompt builder ─────────────────────────────────────────────
+
+    /**
+     * Build the Claude system prompt fragment for a project.
+     * Combines the project's custom instructions with all attached knowledge documents.
+     * Returns an empty string if the project has no instructions and no knowledge docs.
+     */
+    public String buildProjectSystemPrompt(String orgId, String projectId) {
+        try {
+            Map<String, Object> project = devMode
+                ? devProjects.get(projectId)
+                : fetchProjectByOrgAndId(orgId, projectId);
+
+            if (project == null) return "";
+
+            StringBuilder sb = new StringBuilder();
+
+            // 1. Project instructions (custom system prompt)
+            String instructions = (String) project.get("instructions");
+            if (instructions != null && !instructions.isBlank()) {
+                sb.append("## Project Instructions\n").append(instructions.trim()).append("\n\n");
+            }
+
+            // 2. Knowledge documents
+            List<Map<String, Object>> docs = devMode
+                ? devKnowledgeDocs.getOrDefault(projectId, List.of())
+                : fetchKnowledgeDocsInternal(orgId, projectId);
+
+            if (!docs.isEmpty()) {
+                sb.append("## Project Knowledge\n");
+                for (Map<String, Object> doc : docs) {
+                    String title   = (String) doc.getOrDefault("title",       "Document");
+                    String content = (String) doc.getOrDefault("textContent", "");
+                    if (content != null && !content.isBlank()) {
+                        sb.append("### ").append(title).append("\n")
+                          .append(content.trim()).append("\n\n");
+                    }
+                }
+            }
+
+            return sb.toString().trim();
+        } catch (Exception e) {
+            log.warn("Could not build project system prompt for {}: {}", projectId, e.getMessage());
+            return "";
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private Map<String, Object> fetchProject(String orgId, String projectId) throws Exception {
+        if (devMode) {
+            Map<String, Object> p = devProjects.get(projectId);
+            if (p == null) throw new NoSuchElementException("Project not found: " + projectId);
+            return p;
+        }
+        return fetchProjectByOrgAndId(orgId, projectId);
+    }
+
+    private Map<String, Object> fetchProjectByOrgAndId(String orgId, String projectId) throws Exception {
+        Firestore db = FirestoreClient.getFirestore();
+        var snap = db.collection("organizations").document(orgId)
+                     .collection("projects").document(projectId).get().get();
+        if (!snap.exists()) throw new NoSuchElementException("Project not found: " + projectId);
+        Map<String, Object> data = new HashMap<>(snap.getData());
+        data.put("id", snap.getId());
+        return data;
+    }
+
+    private List<Map<String, Object>> fetchKnowledgeDocsInternal(String orgId, String projectId) throws Exception {
+        Firestore db = FirestoreClient.getFirestore();
+        return toList(db.collection("organizations").document(orgId)
+                        .collection("projects").document(projectId)
+                        .collection("knowledgeDocs")
+                        .orderBy("createdAt").get().get().getDocuments());
+    }
+
+    private boolean canAccessProject(AppUser user, Map<String, Object> project) {
+        if (user.isAdmin()) return true;
+        @SuppressWarnings("unchecked")
+        List<String> ids = (List<String>) project.getOrDefault("memberIds", List.of());
+        return ids.contains(user.getUid());
+    }
+
+    private boolean canManageProject(AppUser user, Map<String, Object> project) {
+        if (user.isAdmin()) return true;
+        return user.getUid().equals(project.get("ownerId"));
+    }
+
+    private List<String> computeMemberIds(String ownerId, Map<String, String> members) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (ownerId != null) ids.add(ownerId);
+        ids.addAll(members.keySet());
+        return new ArrayList<>(ids);
+    }
+
+    private List<Map<String, Object>> toList(List<QueryDocumentSnapshot> docs) {
+        return docs.stream().map(d -> {
+            Map<String, Object> m = new HashMap<>(d.getData());
+            m.put("id", d.getId());
+            return m;
+        }).collect(Collectors.toList());
+    }
+}

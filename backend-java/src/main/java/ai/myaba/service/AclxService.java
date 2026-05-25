@@ -13,7 +13,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -21,23 +23,44 @@ import java.util.UUID;
 public class AclxService {
 
     private final ObjectMapper mapper;
+    private final OrgAclxPolicyService orgPolicyService;
     private final String gatewayUrl;
     private final boolean enabled;
 
     public AclxService(
             ObjectMapper mapper,
-            @Value("${aclx.gateway-url:http://localhost:8081}") String gatewayUrl,
+            OrgAclxPolicyService orgPolicyService,
+            @Value("${aclx.gateway-url:http://localhost:8080}") String gatewayUrl,
             @Value("${aclx.enabled:true}") boolean enabled) {
-        this.mapper = mapper;
-        this.gatewayUrl = gatewayUrl;
-        this.enabled = enabled;
+        this.mapper           = mapper;
+        this.orgPolicyService = orgPolicyService;
+        this.gatewayUrl       = gatewayUrl;
+        this.enabled          = enabled;
     }
 
+    /** Single-client evaluation (document generation, single-client chats). */
     public AclxResponse evaluate(String aiResponse, AppUser user, String clientId) {
+        return evaluate(aiResponse, user, clientId, null);
+    }
+
+    /**
+     * Multi-client evaluation for cross-client project chats.
+     * {@code clientIds} should contain ALL client IDs referenced in the query so the
+     * Rego policy can apply cross-client PHI governance rules.
+     * The org's current policy (allow/block patterns, sensitivity threshold) is
+     * loaded from {@link OrgAclxPolicyService} and included in every request so
+     * ACLX can factor learned decisions into evaluation without a separate DB call.
+     */
+    public AclxResponse evaluate(String aiResponse, AppUser user, String clientId, List<String> clientIds) {
         if (!enabled) {
-            log.debug("ACLX disabled — pass-through ALLOW");
+            log.debug("ACLX disabled - pass-through ALLOW");
             return buildPassThrough(aiResponse);
         }
+
+        List<String> allClientIds = buildClientIdList(clientId, clientIds);
+
+        // Load org-specific policy — null if org has no custom rules yet
+        AclxRequest.OrgPolicy orgPolicy = loadOrgPolicy(user.getOrgId());
 
         AclxRequest request = AclxRequest.builder()
                 .domain("hipaa")
@@ -57,7 +80,9 @@ public class AclxService {
                 .requestContext(AclxRequest.RequestContext.builder()
                         .timestamp(Instant.now().toString())
                         .clientId(clientId)
+                        .clientIds(allClientIds.size() > 1 ? allClientIds : null)
                         .build())
+                .orgPolicy(orgPolicy)
                 .build();
 
         try {
@@ -85,8 +110,107 @@ public class AclxService {
 
         } catch (Exception e) {
             log.error("ACLX Gateway unreachable: {}", e.getMessage());
-            return buildBlocked("ACLX Gateway unavailable — response blocked for safety");
+            return buildBlocked("ACLX Gateway unavailable - response blocked for safety");
         }
+    }
+
+    /**
+     * Submit a human-review feedback signal to the ACLX gateway.
+     *
+     * <p>Called after an admin approves or denies an escalated item in the review
+     * queue. ACLX uses these signals to tune its confidence thresholds over time.
+     * This call is best-effort — a failure here never blocks the local verdict
+     * from being persisted.
+     *
+     * @param orgId         organisation that reviewed the content
+     * @param contentId     ACLX {@code content_id} from the original evaluate response
+     * @param verdict       "APPROVED" or "DENIED"
+     * @param eventType     source event type (CHAT_RESPONSE, DOCUMENT_GENERATED, etc.)
+     * @param reviewerNotes human notes — forwarded to ACLX for context
+     * @param reviewedBy    UID of the reviewer
+     */
+    public void submitFeedback(String orgId, String contentId, String verdict,
+                               String eventType, String reviewerNotes, String reviewedBy) {
+        if (!enabled) {
+            log.debug("ACLX disabled - feedback suppressed for contentId={}", contentId);
+            return;
+        }
+
+        Map<String, Object> feedback = Map.of(
+                "content_id",     contentId     != null ? contentId     : "",
+                "organization",   orgId,
+                "verdict",        verdict,
+                "event_type",     eventType     != null ? eventType     : "",
+                "reviewer_notes", reviewerNotes != null ? reviewerNotes : "",
+                "reviewed_by",    reviewedBy    != null ? reviewedBy    : "",
+                "reviewed_at",    Instant.now().toString()
+        );
+
+        try {
+            byte[] payload = mapper.writeValueAsBytes(feedback);
+
+            HttpURLConnection conn = (HttpURLConnection) new URL(gatewayUrl + "/feedback").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(5_000);
+            conn.setReadTimeout(5_000);
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload);
+            }
+
+            int status = conn.getResponseCode();
+            if (status == 200 || status == 204) {
+                log.info("ACLX feedback submitted: contentId={} verdict={} org={}", contentId, verdict, orgId);
+            } else {
+                log.warn("ACLX feedback endpoint returned {} for contentId={}", status, contentId);
+            }
+
+        } catch (Exception e) {
+            // Non-fatal — feedback is best-effort; the local verdict is already persisted
+            log.warn("ACLX feedback submission failed (non-fatal): {}", e.getMessage());
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Build an {@link AclxRequest.OrgPolicy} from the org's current rule store.
+     * Returns {@code null} when the org has no custom rules — ACLX will then
+     * apply its baseline HIPAA ruleset without any org-level override.
+     */
+    private AclxRequest.OrgPolicy loadOrgPolicy(String orgId) {
+        try {
+            List<String> allowed     = orgPolicyService.getAllowedPatternSlugs(orgId);
+            List<String> blocked     = orgPolicyService.getBlockedPatternSlugs(orgId);
+            String       sensitivity = orgPolicyService.getEscalateAtSensitivity(orgId);
+
+            if (allowed.isEmpty() && blocked.isEmpty() && sensitivity == null) {
+                return null; // No custom policy — let ACLX use its baseline
+            }
+
+            return AclxRequest.OrgPolicy.builder()
+                    .allowedPatterns(allowed)
+                    .blockedPatterns(blocked)
+                    .escalateAtSensitivity(sensitivity)
+                    .build();
+
+        } catch (Exception e) {
+            log.warn("Failed to load org policy for {} (non-fatal): {}", orgId, e.getMessage());
+            return null;
+        }
+    }
+
+    private List<String> buildClientIdList(String primaryClientId, List<String> additional) {
+        List<String> ids = new ArrayList<>();
+        if (primaryClientId != null && !primaryClientId.isBlank()) ids.add(primaryClientId);
+        if (additional != null) {
+            additional.stream()
+                    .filter(id -> id != null && !id.isBlank() && !ids.contains(id))
+                    .forEach(ids::add);
+        }
+        return ids;
     }
 
     private AclxResponse buildPassThrough(String text) {

@@ -60,5 +60,41 @@ public class AclxRequest {
         private String timestamp;
         @JsonProperty("client_id")
         private String clientId;
+        /** All client IDs referenced in this query — populated for cross-client chats.
+         *  The Rego policy uses this to apply stricter cross-client PHI governance. */
+        @JsonProperty("client_ids")
+        private List<String> clientIds;
     }
+
+    /**
+     * Organisation-specific policy layer.
+     * myABA fetches the org's current policy from its own store and includes it
+     * here so ACLX can factor it into evaluation without a separate DB call.
+     * ACLX applies these rules on top of its baseline HIPAA ruleset.
+     */
+    @Data
+    @Builder
+    public static class OrgPolicy {
+        /** Patterns the org has explicitly approved — reduce escalation likelihood. */
+        @JsonProperty("allowed_patterns")
+        @Builder.Default
+        private List<String> allowedPatterns = List.of();
+
+        /** Patterns the org has explicitly blocked — stricter than HIPAA baseline. */
+        @JsonProperty("blocked_patterns")
+        @Builder.Default
+        private List<String> blockedPatterns = List.of();
+
+        /**
+         * Minimum ACLX sensitivity level that should trigger ESCALATE.
+         * e.g. "HIGH" means MEDIUM content is auto-allowed rather than escalated.
+         * Null = use ACLX default (escalate at MEDIUM+).
+         */
+        @JsonProperty("escalate_at_sensitivity")
+        private String escalateAtSensitivity;
+    }
+
+    /** Org-specific policy — included on every evaluate call when available. */
+    @JsonProperty("org_policy")
+    private OrgPolicy orgPolicy;
 }

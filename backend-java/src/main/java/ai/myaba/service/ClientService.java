@@ -1,9 +1,12 @@
 package ai.myaba.service;
 
+import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ClientRequest;
+import ai.myaba.model.dto.UserRole;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.firebase.cloud.FirestoreClient;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,35 +14,148 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
+/**
+ * Client record service.
+ *
+ * Firestore path: organizations/{orgId}/clients/{clientId}
+ *
+ * Authorization document shape:
+ * <pre>
+ *   treatingBcbaId:    String          ← primary clinician
+ *   supervisingBcbaId: String|null     ← oversight BCBA
+ *   rbtIds:            List&lt;String&gt;    ← assigned technicians
+ *   viewerIds:         List&lt;String&gt;    ← read-only (billing, scheduling per-record)
+ *   memberIds:         List&lt;String&gt;    ← union of all above; used for array-contains queries
+ * </pre>
+ *
+ * All list/get methods return only records the requesting user is authorized for.
+ * Authorization decisions are delegated to {@link AuthorizationService} so the
+ * policy logic stays in one place.
+ */
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class ClientService {
+
+    private final AuthorizationService authorizationService;
 
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
 
-    // In-memory store for dev mode
-    private final Map<String, Map<String, Object>> devClients = new HashMap<>();
+    /** In-memory store — dev mode only. */
+    private final Map<String, Map<String, Object>> devClients = new LinkedHashMap<>();
 
-    public List<Map<String, Object>> getClients(String orgId) throws Exception {
-        if (devMode) {
-            return new ArrayList<>(devClients.values());
-        }
-        Firestore db = FirestoreClient.getFirestore();
-        List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(orgId)
-                .collection("clients")
-                .orderBy("createdAt")
-                .get().get().getDocuments();
+    // ── Dev data seed ─────────────────────────────────────────────────────
 
-        return docs.stream().map(d -> {
-            Map<String, Object> m = new HashMap<>(d.getData());
-            m.put("id", d.getId());
-            return m;
-        }).toList();
+    @PostConstruct
+    void seedDevData() {
+        if (!devMode) return;
+
+        // dev-user-001 (TREATING_BCBA) is assigned to all three clients.
+        // This mirrors the fake data in the frontend's fakeData.ts.
+        // Note: Map.of() is limited to 10 entries; Map.ofEntries() is used for larger maps.
+
+        put("c-001", Map.ofEntries(
+            Map.entry("preferredName",    "Alex M."),
+            Map.entry("legalName",        "Alex Morgan"),
+            Map.entry("dateOfBirth",      "2018-03-15"),
+            Map.entry("gender",           "Male"),
+            Map.entry("diagnosis",        "ASD Level 2"),
+            Map.entry("primaryInsurance", "Medicaid"),
+            Map.entry("orgId",            "dev-org-001"),
+            Map.entry("treatingBcbaId",   "dev-user-001"),
+            Map.entry("supervisingBcbaId","supervisor-001"),
+            Map.entry("rbtIds",           List.of("rbt-001")),
+            Map.entry("viewerIds",        List.of()),
+            Map.entry("memberIds",        List.of("dev-user-001", "supervisor-001", "rbt-001")),
+            Map.entry("createdAt",        "2026-01-15T00:00:00Z")
+        ));
+
+        put("c-002", Map.ofEntries(
+            Map.entry("preferredName",    "Jordan T."),
+            Map.entry("legalName",        "Jordan Thompson"),
+            Map.entry("dateOfBirth",      "2019-07-22"),
+            Map.entry("gender",           "Non-binary"),
+            Map.entry("diagnosis",        "ASD Level 1"),
+            Map.entry("primaryInsurance", "BlueCross"),
+            Map.entry("orgId",            "dev-org-001"),
+            Map.entry("treatingBcbaId",   "dev-user-001"),
+            Map.entry("supervisingBcbaId","supervisor-001"),
+            Map.entry("rbtIds",           List.of("rbt-001", "rbt-002")),
+            Map.entry("viewerIds",        List.of()),
+            Map.entry("memberIds",        List.of("dev-user-001", "supervisor-001", "rbt-001", "rbt-002")),
+            Map.entry("createdAt",        "2026-02-01T00:00:00Z")
+        ));
+
+        put("c-003", Map.ofEntries(
+            Map.entry("preferredName",    "Sam K."),
+            Map.entry("legalName",        "Sam Kim"),
+            Map.entry("dateOfBirth",      "2020-11-08"),
+            Map.entry("gender",           "Female"),
+            Map.entry("diagnosis",        "ADHD + ASD Level 1"),
+            Map.entry("primaryInsurance", "Aetna"),
+            Map.entry("orgId",            "dev-org-001"),
+            Map.entry("treatingBcbaId",   "dev-user-001"),
+            Map.entry("supervisingBcbaId","supervisor-001"),
+            Map.entry("rbtIds",           List.of()),
+            Map.entry("viewerIds",        List.of()),
+            Map.entry("memberIds",        List.of("dev-user-001", "supervisor-001")),
+            Map.entry("createdAt",        "2026-03-10T00:00:00Z")
+        ));
+
+        log.info("Dev mode: seeded {} clients", devClients.size());
     }
 
+    private void put(String id, Map<String, Object> data) {
+        Map<String, Object> m = new HashMap<>(data);
+        m.put("id", id);
+        devClients.put(id, m);
+    }
+
+    // ── Queries ───────────────────────────────────────────────────────────
+
+    /**
+     * Returns all clients the user is authorized to see.
+     *
+     * Firestore: queries by memberIds array-contains for O(1) index lookup.
+     * Dev mode: in-memory filter via AuthorizationService.
+     */
+    public List<Map<String, Object>> getAuthorizedClients(AppUser user) throws Exception {
+        if (devMode) {
+            return devClients.values().stream()
+                    .filter(c -> authorizationService.canAccessClient(user, c))
+                    .collect(Collectors.toList());
+        }
+
+        Firestore db = FirestoreClient.getFirestore();
+
+        // ORG_ADMIN sees all clients in the org without the memberIds filter
+        if (UserRole.isAdmin(user.getRole())) {
+            List<QueryDocumentSnapshot> docs = db
+                    .collection("organizations").document(user.getOrgId())
+                    .collection("clients")
+                    .orderBy("createdAt")
+                    .get().get().getDocuments();
+            return toList(docs);
+        }
+
+        // Everyone else: array-contains on the denormalized memberIds field
+        List<QueryDocumentSnapshot> docs = db
+                .collection("organizations").document(user.getOrgId())
+                .collection("clients")
+                .whereArrayContains("memberIds", user.getUid())
+                .get().get().getDocuments();
+        return toList(docs);
+    }
+
+    /**
+     * Fetch a single client, enforcing read authorization.
+     *
+     * @throws NoSuchElementException   if not found
+     * @throws SecurityException        if user is not authorized
+     */
     public Map<String, Object> getClient(String orgId, String clientId) throws Exception {
         if (devMode) {
             Map<String, Object> c = devClients.get(clientId);
@@ -55,13 +171,54 @@ public class ClientService {
         return data;
     }
 
-    public String createClient(String orgId, String createdBy, ClientRequest req) throws Exception {
-        Map<String, Object> data = clientData(req);
-        data.put("createdBy", createdBy);
+    /**
+     * Fetch multiple clients by ID in a single batch, returned as a map for fast lookups.
+     * Used by cross-client authorization checks in the generate controller.
+     */
+    public Map<String, Map<String, Object>> getClientsById(String orgId,
+                                                            List<String> clientIds) throws Exception {
+        Map<String, Map<String, Object>> result = new HashMap<>();
+        if (devMode) {
+            clientIds.forEach(id -> {
+                Map<String, Object> c = devClients.get(id);
+                if (c != null) result.put(id, c);
+            });
+            return result;
+        }
+
+        Firestore db = FirestoreClient.getFirestore();
+        // Firestore getAll() fetches up to 30 docs in one RPC
+        var docRefs = clientIds.stream()
+                .map(id -> db.collection("organizations").document(orgId)
+                        .collection("clients").document(id))
+                .toArray(com.google.cloud.firestore.DocumentReference[]::new);
+
+        db.getAll(docRefs).get().forEach(snap -> {
+            if (snap.exists()) {
+                Map<String, Object> data = new HashMap<>(snap.getData());
+                data.put("id", snap.getId());
+                result.put(snap.getId(), data);
+            }
+        });
+        return result;
+    }
+
+    // ── Writes ────────────────────────────────────────────────────────────
+
+    /**
+     * Create a new client record.
+     *
+     * The requesting user becomes the treating BCBA unless {@code req.treatingBcbaId}
+     * is explicitly set (ORG_ADMIN assigning to a different BCBA).
+     */
+    public String createClient(String orgId, String createdByUid, ClientRequest req) throws Exception {
+        Map<String, Object> data = buildClientData(req, createdByUid);
+        data.put("createdBy", createdByUid);
         data.put("createdAt", Instant.now().toString());
+        data.put("orgId", orgId);
 
         if (devMode) {
-            String id = "client-" + UUID.randomUUID().toString().substring(0, 8);
+            String id = "c-" + UUID.randomUUID().toString().substring(0, 8);
             data.put("id", id);
             devClients.put(id, data);
             return id;
@@ -73,34 +230,110 @@ public class ClientService {
         return ref.getId();
     }
 
+    /**
+     * Update client demographics.  Authorization is checked in the controller.
+     */
     public void updateClient(String orgId, String clientId, ClientRequest req) throws Exception {
-        Map<String, Object> data = clientData(req);
-        data.put("updatedAt", Instant.now().toString());
+        Map<String, Object> updates = new HashMap<>();
+        if (req.getPreferredName() != null)  updates.put("preferredName", req.getPreferredName());
+        if (req.getLegalName() != null)      updates.put("legalName", req.getLegalName());
+        if (req.getDateOfBirth() != null)    updates.put("dateOfBirth", req.getDateOfBirth());
+        if (req.getGender() != null)         updates.put("gender", req.getGender());
+        if (req.getDiagnosis() != null)      updates.put("diagnosis", req.getDiagnosis());
+        if (req.getPrimaryInsurance() != null) updates.put("primaryInsurance", req.getPrimaryInsurance());
+        if (req.getEhrProvider() != null)    updates.put("ehrProvider", req.getEhrProvider());
+        if (req.getEhrCaseId() != null)      updates.put("ehrCaseId", req.getEhrCaseId());
+        updates.put("updatedAt", Instant.now().toString());
 
         if (devMode) {
-            devClients.merge(clientId, data, (old, updates) -> {
-                old.putAll(updates);
-                return old;
-            });
+            devClients.merge(clientId, updates, (existing, upd) -> { existing.putAll(upd); return existing; });
             return;
         }
 
         Firestore db = FirestoreClient.getFirestore();
         db.collection("organizations").document(orgId)
                 .collection("clients").document(clientId)
-                .update(data).get();
+                .update(updates).get();
     }
 
-    private Map<String, Object> clientData(ClientRequest req) {
+    /**
+     * Update the authorization assignments for a client (who is the treating BCBA, RBTs, etc.).
+     * Also recomputes {@code memberIds} for efficient Firestore queries.
+     */
+    public void updateAuthorizations(String orgId,
+                                      String clientId,
+                                      String treatingBcbaId,
+                                      String supervisingBcbaId,
+                                      List<String> rbtIds,
+                                      List<String> viewerIds) throws Exception {
+        Map<String, Object> updates = new HashMap<>();
+        if (treatingBcbaId != null)    updates.put("treatingBcbaId", treatingBcbaId);
+        if (supervisingBcbaId != null) updates.put("supervisingBcbaId", supervisingBcbaId);
+        if (rbtIds != null)            updates.put("rbtIds", rbtIds);
+        if (viewerIds != null)         updates.put("viewerIds", viewerIds);
+
+        // Recompute the denormalized memberIds index
+        updates.put("memberIds", computeMemberIds(
+                treatingBcbaId, supervisingBcbaId,
+                rbtIds != null ? rbtIds : List.of(),
+                viewerIds != null ? viewerIds : List.of()
+        ));
+        updates.put("updatedAt", Instant.now().toString());
+
+        if (devMode) {
+            devClients.merge(clientId, updates, (existing, upd) -> { existing.putAll(upd); return existing; });
+            return;
+        }
+
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(orgId)
+                .collection("clients").document(clientId)
+                .update(updates).get();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private Map<String, Object> buildClientData(ClientRequest req, String createdByUid) {
         Map<String, Object> data = new HashMap<>();
-        data.put("legalName", req.getLegalName());
-        data.put("preferredName", req.getPreferredName() != null ? req.getPreferredName() : req.getLegalName());
-        data.put("dateOfBirth", req.getDateOfBirth());
-        data.put("gender", req.getGender());
-        data.put("diagnosis", req.getDiagnosis());
+        data.put("legalName",        req.getLegalName());
+        data.put("preferredName",    req.getPreferredName() != null ? req.getPreferredName() : req.getLegalName());
+        data.put("dateOfBirth",      req.getDateOfBirth());
+        data.put("gender",           req.getGender());
+        data.put("diagnosis",        req.getDiagnosis());
         data.put("primaryInsurance", req.getPrimaryInsurance());
-        data.put("ehrProvider", req.getEhrProvider());
-        data.put("ehrCaseId", req.getEhrCaseId());
+        if (req.getEhrProvider() != null) data.put("ehrProvider", req.getEhrProvider());
+        if (req.getEhrCaseId() != null)   data.put("ehrCaseId", req.getEhrCaseId());
+
+        // Authorization assignments
+        String treating = (req.getTreatingBcbaId() != null && !req.getTreatingBcbaId().isBlank())
+                ? req.getTreatingBcbaId() : createdByUid;
+        String supervising = req.getSupervisingBcbaId();
+        List<String> rbtIds    = req.getRbtIds()    != null ? req.getRbtIds()    : List.of();
+        List<String> viewerIds = req.getViewerIds() != null ? req.getViewerIds() : List.of();
+
+        data.put("treatingBcbaId",    treating);
+        data.put("supervisingBcbaId", supervising);
+        data.put("rbtIds",            rbtIds);
+        data.put("viewerIds",         viewerIds);
+        data.put("memberIds",         computeMemberIds(treating, supervising, rbtIds, viewerIds));
         return data;
+    }
+
+    private List<String> computeMemberIds(String treating, String supervising,
+                                           List<String> rbtIds, List<String> viewerIds) {
+        Set<String> members = new LinkedHashSet<>();
+        if (treating   != null && !treating.isBlank())   members.add(treating);
+        if (supervising != null && !supervising.isBlank()) members.add(supervising);
+        members.addAll(rbtIds);
+        members.addAll(viewerIds);
+        return new ArrayList<>(members);
+    }
+
+    private List<Map<String, Object>> toList(List<QueryDocumentSnapshot> docs) {
+        return docs.stream().map(d -> {
+            Map<String, Object> m = new HashMap<>(d.getData());
+            m.put("id", d.getId());
+            return m;
+        }).collect(Collectors.toList());
     }
 }

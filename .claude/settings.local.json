@@ -18,7 +18,24 @@
       "Bash(mvn spring-boot:run \"-Dspring-boot.run.profiles=local\" \"-Dspring-boot.run.jvmArguments=-Dserver.port=8090\")",
       "Bash(curl -s http://localhost:8090/api/health)",
       "Bash(java -Dspring.profiles.active=local \"-Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider\" -jar target/myaba-api-1.0.0-SNAPSHOT.jar --server.port=8090)",
-      "Bash(java -Dspring.profiles.active=local -jar target/myaba-api-1.0.0-SNAPSHOT.jar --server.port=8080)"
+      "Bash(java -Dspring.profiles.active=local -jar target/myaba-api-1.0.0-SNAPSHOT.jar --server.port=8080)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(node -e \"require\\('@fortawesome/free-brands-svg-icons'\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(Object.keys\\(p.dependencies\\).filter\\(k=>k.includes\\('fortawesome'\\)\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(npx vite *)",
+      "Bash(node -e \"const fa = require\\('@fortawesome/free-solid-svg-icons'\\); console.log\\('faPencilAlt:', !!fa.faPencilAlt\\); console.log\\('faWaveSquare:', !!fa.faWaveSquare\\); console.log\\('faCheck:', !!fa.faCheck\\);\")",
+      "Bash(mvn spring-boot:run -Dspring-boot.run.profiles=local -Dspring-boot.run.arguments=\"--logging.level.ai.myaba=DEBUG\")",
+      "Bash(curl -s -X POST http://localhost:9090/api/projects -H 'Content-Type: application/json' -d '{\"title\":\"Test Project\",\"description\":\"test\"}')",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(curl -s -X POST http://localhost:8080/api/projects -H \"Content-Type: application/json\" -d '{\"title\":\"Test\"}')",
+      "Bash(curl -s http://localhost:9090/api/health)",
+      "Bash(curl -s -X POST http://localhost:9090/api/projects -H \"Content-Type: application/json\" -d '{\"title\":\"Test Project\",\"description\":\"desc\"}')",
+      "Bash(curl -s http://localhost:9090/api/projects)",
+      "Bash(tee /tmp/sb2.log)",
+      "Bash(curl -sf http://localhost:9090/api/health)",
+      "Bash(tee /tmp/sb3.log)",
+      "Bash(curl -s -X POST http://localhost:9090/api/projects -H \"Content-Type: application/json\" -d '{\"title\":\"Test Project\",\"description\":\"Integration test\"}')",
+      "Bash(echo \"Exit code: $?\")"
     ]
   }
 }
