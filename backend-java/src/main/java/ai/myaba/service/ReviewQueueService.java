@@ -38,6 +38,8 @@ import java.util.stream.Collectors;
  *   aclxReason        String?  reason phrase from ACLX decision
  *   aclxSensitivity   String?  HIGH | MEDIUM | LOW
  *   aclxCategory      String?  PHI | etc.
+ *   authDenyReason    String?  authorization_audit.deny_reason from ACLX label
+ *                              (NOT_PROVIDED | REVOKED | EXPIRED) — surface to reviewers
  *   status            String   PENDING | APPROVED | DENIED
  *   reviewedBy        String?  uid of reviewer
  *   reviewedAt        String?  ISO-8601
@@ -90,6 +92,8 @@ public class ReviewQueueService {
             Map.entry("createdAt",        yday)
         ));
 
+        // rq-002: SUD client (c-002) — auth check failed with EXPIRED.
+        // Demonstrates authDenyReason surfacing in the review UI.
         put("rq-002", Map.ofEntries(
             Map.entry("orgId",            "dev-org-001"),
             Map.entry("contentId",        "aclx-cid-002"),
@@ -104,6 +108,7 @@ public class ReviewQueueService {
             Map.entry("aclxReason",       "Cross-entity summary combines identifiable client data with clinical document content"),
             Map.entry("aclxSensitivity",  "HIGH"),
             Map.entry("aclxCategory",     "PHI"),
+            Map.entry("authDenyReason",   "EXPIRED"),
             Map.entry("status",           "PENDING"),
             Map.entry("createdAt",        now)
         ));
@@ -184,11 +189,16 @@ public class ReviewQueueService {
     /**
      * Store an escalated AI output for human review.
      * Called by any controller that receives an ACLX ESCALATE decision.
+     *
+     * @param authDenyReason  value from {@code aclx.audit.authorization_audit.deny_reason}
+     *                        in the ACLX response; {@code NOT_PROVIDED | REVOKED | EXPIRED}.
+     *                        Null when no authorization check was performed.
      */
     public String enqueue(String orgId, String contentId, String eventType,
                           String requestingUserId, String clientId,
                           String rawContent, String aclxReason,
-                          String aclxSensitivity, String aclxCategory) {
+                          String aclxSensitivity, String aclxCategory,
+                          String authDenyReason) {
         String id  = "rq-" + UUID.randomUUID().toString().substring(0, 8);
         String now = Instant.now().toString();
 
@@ -203,6 +213,9 @@ public class ReviewQueueService {
         item.put("aclxReason",       aclxReason != null ? aclxReason : "");
         item.put("aclxSensitivity",  aclxSensitivity != null ? aclxSensitivity : "");
         item.put("aclxCategory",     aclxCategory != null ? aclxCategory : "");
+        if (authDenyReason != null && !authDenyReason.isBlank()) {
+            item.put("authDenyReason", authDenyReason);
+        }
         item.put("status",           "PENDING");
         item.put("createdAt",        now);
 

@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faShieldAlt, faSpinner, faCheckCircle, faBan, faClock,
   faChevronDown, faChevronUp, faInfoCircle,
-  faChartBar, faListAlt, faTag, faPlus, faTrash,
+  faChartBar, faListAlt, faTag, faPlus, faTrash, faLock,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,6 +24,22 @@ const SENSITIVITY_COLORS: Record<string, { bg: string; text: string }> = {
   HIGH:   { bg: '#fee2e2', text: '#991b1b' },
   MEDIUM: { bg: '#fef9c3', text: '#854d0e' },
   LOW:    { bg: '#f0fdf4', text: '#166534' },
+};
+
+/** §9: Authorization deny reason labels — surface to reviewers on flagged items. */
+const AUTH_DENY_LABELS: Record<string, { label: string; action: string }> = {
+  NOT_PROVIDED: {
+    label: 'No authorization on file',
+    action: 'Add the required authorization in the client\'s Authorizations tab to unblock.',
+  },
+  REVOKED: {
+    label: 'Authorization was revoked',
+    action: 'A previously valid authorization has been revoked. A new authorization is required.',
+  },
+  EXPIRED: {
+    label: 'Authorization has expired',
+    action: 'The authorization on file has passed its expiry date. Renew or replace it.',
+  },
 };
 
 function fmtDate(iso?: string) {
@@ -840,6 +856,21 @@ function ReviewCard({
             </div>
           </div>
 
+          {/* §9: Authorization deny reason — shown when an auth check failed */}
+          {item.authDenyReason && AUTH_DENY_LABELS[item.authDenyReason] && (
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <FontAwesomeIcon icon={faLock} className="text-amber-500 mt-0.5 shrink-0 text-sm" />
+              <div>
+                <p className="text-xs font-semibold text-amber-800">
+                  Authorization check failed: {AUTH_DENY_LABELS[item.authDenyReason].label}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                  {AUTH_DENY_LABELS[item.authDenyReason].action}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Review form — shown before submit */}
           {!submitted && (
             <div className="border-t border-gray-200 pt-4 space-y-3">
@@ -1069,6 +1100,14 @@ function HistoryCard({ item }: { item: ReviewQueueItem }) {
               <span className="text-gray-400 font-medium">Reviewed by: </span>
               <span className="text-gray-700 font-mono">{item.reviewedBy ?? '--'}</span>
             </div>
+            {item.authDenyReason && (
+              <div className="col-span-2">
+                <span className="text-gray-400 font-medium">Auth check result: </span>
+                <span className="text-amber-700 font-semibold">
+                  {AUTH_DENY_LABELS[item.authDenyReason]?.label ?? item.authDenyReason}
+                </span>
+              </div>
+            )}
           </div>
           {item.reviewerNotes && (
             <div>

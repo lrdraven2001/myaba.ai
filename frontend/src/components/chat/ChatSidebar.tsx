@@ -58,7 +58,7 @@ export default function ChatSidebar({
   onNewChat,
 }: Props) {
   const [activeTab, setActiveTab]   = useState<Tab>('recents');
-  const [collapsed, setCollapsed]   = useState(false);
+  const [collapsed, setCollapsed]   = useState(true); // collapsed by default
   const [searching, setSearching]   = useState(false);
   const [query, setQuery]           = useState('');
   const searchRef                   = useRef<HTMLInputElement>(null);
@@ -109,25 +109,21 @@ export default function ChatSidebar({
         >
           <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
         </button>
-        {/* New chat */}
-        <button
-          onClick={onNewChat}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-white transition-colors"
-          style={{ background: '#2a5f6f' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#1e4d5c')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#2a5f6f')}
-          title="New chat"
-        >
-          <FontAwesomeIcon icon={faPlus} className="text-xs" />
-        </button>
-        {/* Active chat dot indicator */}
+
+        {/* New chat — only when inside an active chat, not on landing page */}
         {activeChatId && (
-          <div
-            className="w-2 h-2 rounded-full mt-1"
-            style={{ background: '#5fb3d0' }}
-            title="Chat active"
-          />
+          <button
+            onClick={onNewChat}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+            style={{ background: '#EEF7EA', border: '1.5px solid #55C943', color: '#3F9B2F' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#D6F0CC')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#EEF7EA')}
+            title="New chat"
+          >
+            <FontAwesomeIcon icon={faPlus} className="text-xs" />
+          </button>
         )}
+
       </div>
     );
   }
@@ -150,55 +146,58 @@ export default function ChatSidebar({
           <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
         </button>
 
-        {searching ? (
-          /* Inline search input */
-          <div className="flex-1 flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1">
-            <FontAwesomeIcon icon={faSearch} className="text-gray-400 text-xs shrink-0" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search chats…"
-              className="flex-1 bg-transparent text-sm outline-none text-gray-700 placeholder-gray-400 min-w-0"
-              onKeyDown={(e) => { if (e.key === 'Escape') closeSearch(); }}
-            />
-            {query && (
-              <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600 shrink-0">
-                <FontAwesomeIcon icon={faTimes} className="text-xs" />
-              </button>
-            )}
-          </div>
-        ) : (
-          /* Normal header: title + search + new chat */
-          <>
-            <span className="flex-1 font-semibold text-gray-800 text-sm">Chats</span>
-            <button
-              onClick={() => setSearching(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition-colors shrink-0"
-              title="Search chats"
-            >
-              <FontAwesomeIcon icon={faSearch} className="text-xs" />
-            </button>
-            <button
-              className="flex items-center gap-1 text-xs font-semibold text-white px-2.5 py-1.5 rounded-lg shrink-0 transition-colors"
-              style={{ background: '#2a5f6f' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#1e4d5c')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#2a5f6f')}
-              onClick={onNewChat}
-            >
-              <FontAwesomeIcon icon={faPlus} className="text-xs" />
-              New Chat
-            </button>
-          </>
-        )}
+        {/* Search icon — always visible */}
+        <button
+          onClick={() => setSearching((s) => !s)}
+          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+          style={{ color: searching ? '#3F9B2F' : '#A8B4BF' }}
+          title={searching ? 'Close search' : 'Search chats'}
+        >
+          <FontAwesomeIcon icon={searching ? faTimes : faSearch} className="text-xs" />
+        </button>
 
-        {/* Close search */}
-        {searching && (
-          <button onClick={closeSearch} className="text-gray-400 hover:text-gray-600 shrink-0 ml-1">
-            <FontAwesomeIcon icon={faTimes} className="text-xs" />
+        {/* New chat box — only shown when a chat is active (landing page handles it otherwise) */}
+        {activeChatId && !searching && (
+          <button
+            className="w-7 h-7 flex items-center justify-center rounded-lg shrink-0 transition-colors"
+            style={{ background: '#EEF7EA', border: '1.5px solid #55C943', color: '#3F9B2F' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#D6F0CC')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#EEF7EA')}
+            onClick={onNewChat}
+            title="New chat"
+          >
+            <FontAwesomeIcon icon={faPlus} className="text-xs" />
           </button>
         )}
+
+        {/* Input box — search when active, new-chat trigger when idle */}
+        <div
+          className="flex-1 flex items-center rounded-lg px-2.5 py-1.5 transition-colors"
+          style={{
+            background: searching ? '#f0faf0' : '#F4F7F9',
+            border: searching ? '1.5px solid #55C943' : '1.5px solid #DCE7EE',
+          }}
+        >
+          <input
+            ref={searchRef}
+            type="text"
+            value={query}
+            onChange={(e) => { setSearching(true); setQuery(e.target.value); }}
+            onFocus={() => { if (!searching) setSearching(true); }}
+            placeholder={searching ? 'Search chats…' : 'New chat…'}
+            className="flex-1 bg-transparent text-sm outline-none min-w-0"
+            style={{ color: '#1E3347' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') closeSearch();
+              if (e.key === 'Enter' && !query.trim()) { closeSearch(); onNewChat(); }
+            }}
+          />
+          {query && (
+            <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600 shrink-0 ml-1">
+              <FontAwesomeIcon icon={faTimes} style={{ fontSize: 10 }} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search results — flat list when querying */}

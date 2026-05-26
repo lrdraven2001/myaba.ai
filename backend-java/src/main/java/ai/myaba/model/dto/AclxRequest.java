@@ -97,4 +97,77 @@ public class AclxRequest {
     /** Org-specific policy — included on every evaluate call when available. */
     @JsonProperty("org_policy")
     private OrgPolicy orgPolicy;
+
+    /**
+     * Subject-specific authorization records.
+     *
+     * <p>myABA loads active authorizations for the primary subject (client) from its
+     * own store and includes them here so ACLX can verify that a legally-required
+     * authorization exists before allowing access to protected data categories.
+     *
+     * <p>All field values are domain-defined strings — ACLX validates them against
+     * the registered vocabulary for {@code input.domain}. This makes the structure
+     * reusable across HIPAA, FERPA, GDPR, CUI, and any other registered domain.
+     */
+    @JsonProperty("authorization_context")
+    private AuthorizationContext authorizationContext;
+
+    @Data
+    @Builder
+    public static class AuthorizationContext {
+
+        /**
+         * The individual these authorizations apply to.
+         * HIPAA: patient/client ID.  FERPA: student ID.  GDPR: data subject ID.
+         */
+        @JsonProperty("subject_id")
+        private String subjectId;
+
+        @Builder.Default
+        private List<Authorization> authorizations = List.of();
+
+        @Data
+        @Builder
+        public static class Authorization {
+
+            /** Unique identifier for this authorization record. */
+            @JsonProperty("auth_id")
+            private String authId;
+
+            /**
+             * Domain-defined authorization type.
+             * HIPAA: RESEARCH | PART_2_CONSENT | HIPAA_AUTHORIZATION
+             * FERPA: PARENTAL_CONSENT | STUDENT_CONSENT | LEGITIMATE_INTEREST
+             * GDPR:  EXPLICIT_CONSENT | LEGITIMATE_INTEREST | CONTRACT
+             * CUI:   CLEARANCE_GRANT | NEED_TO_KNOW | EXPORT_LICENSE
+             */
+            private String type;
+
+            /**
+             * Domain-defined data categories this authorization covers.
+             * HIPAA: PHI | CLINICAL | SUD | PSYCHOTHERAPY | HIV | GENETIC
+             * FERPA: EDUCATION_RECORDS | DIRECTORY_INFO | FINANCIAL
+             * GDPR:  PERSONAL_DATA | SPECIAL_CATEGORY | BIOMETRIC
+             * CUI:   CUI_BASIC | CUI_SPECIFIED | EXPORT_CONTROLLED
+             */
+            @Builder.Default
+            private List<String> scope = List.of();
+
+            /** ISO-8601 expiry date, or null if the authorization does not expire. */
+            private String expiry;
+
+            /** ACTIVE | EXPIRED | REVOKED */
+            private String status;
+
+            @JsonProperty("issued_at")
+            private String issuedAt;
+
+            /**
+             * Optional reference to the source document evidencing this authorization
+             * (e.g. IRB filing ID, consent form document ID).
+             */
+            @JsonProperty("evidence_ref")
+            private String evidenceRef;
+        }
+    }
 }

@@ -159,6 +159,15 @@ public class SearchService {
                     null, aclx.getContentId(), summaryDecision, aclx.getAclx());
 
             if ("ESCALATE".equals(summaryDecision)) {
+                // Extract authorization deny reason for reviewer context (null when no auth check)
+                String searchAuthDenyReason = null;
+                try {
+                    if (aclx.getAclx() != null && aclx.getAclx().getAudit() != null
+                            && aclx.getAclx().getAudit().getAuthorizationAudit() != null
+                            && aclx.getAclx().getAudit().getAuthorizationAudit().isAuthCheckPerformed()) {
+                        searchAuthDenyReason = aclx.getAclx().getAudit().getAuthorizationAudit().getDenyReason();
+                    }
+                } catch (Exception ignored) { }
                 reviewQueueService.enqueue(
                         user.getOrgId(),
                         aclx.getContentId(),
@@ -168,7 +177,8 @@ public class SearchService {
                         rawSummary,
                         aclx.getDecision().getReason(),
                         aclx.getAclx() != null ? aclx.getAclx().getSensitivity() : null,
-                        aclx.getAclx() != null ? aclx.getAclx().getCategory()    : null);
+                        aclx.getAclx() != null ? aclx.getAclx().getCategory()    : null,
+                        searchAuthDenyReason);
             }
 
             summary = switch (summaryDecision) {

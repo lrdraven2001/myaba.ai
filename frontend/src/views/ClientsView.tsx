@@ -1,30 +1,52 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Client } from '../types';
+import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
+import { api } from '../lib/api';
 
-type ClientTab = 'info' | 'ai_data' | 'treatment_team' | 'ehr';
+type ClientTab = 'info' | 'ai_data' | 'treatment_team' | 'ehr' | 'authorizations';
 
 const TABS: { key: ClientTab; label: string }[] = [
-  { key: 'info', label: 'Client Information' },
-  { key: 'ai_data', label: 'Connected AI Data' },
-  { key: 'treatment_team', label: 'Treatment Team' },
-  { key: 'ehr', label: 'EHR Connect' },
+  { key: 'info',            label: 'Client Information' },
+  { key: 'ai_data',         label: 'Connected AI Data'  },
+  { key: 'treatment_team',  label: 'Treatment Team'     },
+  { key: 'ehr',             label: 'EHR Connect'        },
+  { key: 'authorizations',  label: 'Authorizations'     },
 ];
 
 const EMPTY_CLIENT: Omit<Client, 'id' | 'organizationId' | 'createdAt'> = {
-  legalName: '',
-  preferredName: '',
-  dateOfBirth: '',
-  gender: '',
-  diagnosis: '',
+  legalName:        '',
+  preferredName:    '',
+  dateOfBirth:      '',
+  gender:           '',
+  diagnosis:        '',
   primaryInsurance: '',
-  ehrProvider: '',
-  ehrCaseId: '',
+  ehrProvider:      '',
+  ehrCaseId:        '',
 };
 
+// Dev client IDs seeded in the backend. These are used for the Authorizations
+// tab while the full client-selection flow is pending. When a proper
+// selectedClient is wired in, replace DEV_CLIENT_ID with selectedClient.id.
+const DEV_CLIENT_IDS = ['c-001', 'c-002', 'c-003'];
+
 export default function ClientsView() {
-  const [activeTab, setActiveTab] = useState<ClientTab>('info');
-  const [selectedClient] = useState<Client | null>(null);
-  const [form, setForm] = useState(EMPTY_CLIENT);
+  const [activeTab, setActiveTab]         = useState<ClientTab>('info');
+  const [selectedClient]                  = useState<Client | null>(null);
+  const [form, setForm]                   = useState(EMPTY_CLIENT);
+  // Temporary dev client selector — remove when full client-selection is wired in
+  const [devClientId, setDevClientId]     = useState(DEV_CLIENT_IDS[0]);
+  // Diagnosis for the dev-selected client — fetched so the super-PHI banners render correctly
+  const [devClientDx, setDevClientDx]     = useState('');
+
+  // When devClientId changes, fetch the client record to get the diagnosis string.
+  // Only runs in dev mode (no selectedClient). Remove once full client selection is wired in.
+  useEffect(() => {
+    if (selectedClient) return;
+    setDevClientDx('');
+    api.getClient(devClientId)
+      .then((c) => setDevClientDx(c.diagnosis ?? ''))
+      .catch(() => { /* non-fatal — panel degrades gracefully without diagnosis */ });
+  }, [devClientId, selectedClient]);
 
   const handleFormChange = (field: keyof typeof EMPTY_CLIENT, value: string) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -32,6 +54,10 @@ export default function ClientsView() {
 
   const labelClass = 'block font-semibold text-gray-700 mb-2 text-sm';
   const inputClass = 'w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-400 text-sm';
+
+  // Resolve the active client ID and diagnosis: prefer the real selectedClient once wired in
+  const activeClientId = selectedClient?.id ?? devClientId;
+  const activeClientDx = selectedClient?.diagnosis ?? devClientDx;
 
   return (
     <div className="flex-1 flex flex-col">
@@ -201,6 +227,45 @@ export default function ClientsView() {
             <div className="text-center py-16 text-gray-400">
               <p className="text-lg">No EHR connected</p>
               <p className="text-sm mt-1">Connect an EHR provider to sync client data automatically</p>
+            </div>
+          )}
+
+          {activeTab === 'authorizations' && (
+            <div>
+              <div className="mb-5">
+                <h2 className="text-base font-semibold text-gray-800 mb-1">Authorization Records</h2>
+                <p className="text-sm text-gray-500">
+                  Consent, research, and special-category authorization records for this client.
+                  These are included with every ACLX evaluate call to verify legally-required
+                  authorizations before AI content is generated or released.
+                </p>
+              </div>
+
+              {/* Dev client selector — remove when selectedClient is properly wired */}
+              {!selectedClient && (
+                <div className="mb-5 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <span className="text-xs text-amber-700 font-medium shrink-0">Dev preview:</span>
+                  <div className="flex gap-2">
+                    {DEV_CLIENT_IDS.map((id) => (
+                      <button
+                        key={id}
+                        onClick={() => setDevClientId(id)}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold border transition-colors"
+                        style={devClientId === id
+                          ? { background: '#2a5f6f', color: 'white', borderColor: '#2a5f6f' }
+                          : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }}
+                      >
+                        {id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <ClientAuthorizationsPanel
+                clientId={activeClientId}
+                clientDiagnosis={activeClientDx}
+              />
             </div>
           )}
         </div>

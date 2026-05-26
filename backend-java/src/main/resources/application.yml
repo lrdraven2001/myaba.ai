@@ -19,6 +19,32 @@ aclx:
   gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8081}
   enabled: ${ACLX_ENABLED:true}
   timeout-ms: 5000
+  # Per-domain hard-block rules.
+  # hard-block-scopes:             data scope strings that require explicit authorization
+  # hard-block-auth-types:         authorization types that satisfy the requirement
+  # hard-block-diagnosis-keywords: subject-record keywords that flag a hard-block scope
+  domains:
+    hipaa:
+      hard-block-scopes:
+        - SUD
+        - PSYCHOTHERAPY
+        - HIV
+        - GENETIC
+      hard-block-auth-types:
+        - PART_2_CONSENT
+        - PART_2_COURT_ORDER
+        - HIPAA_AUTHORIZATION
+        - PSYCHOTHERAPY_AUTHORIZATION
+        - HIV_STATE_CONSENT
+      hard-block-diagnosis-keywords:
+        - substance use
+        - substance abuse
+        - sud
+        - alcohol use disorder
+        - opioid use
+        - psychotherapy
+        - hiv
+        - genetic
 
 # ── Firebase ──────────────────────────────────────────────────────────────
 firebase:

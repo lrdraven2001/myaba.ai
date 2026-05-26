@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -24,18 +25,21 @@ public class AclxService {
 
     private final ObjectMapper mapper;
     private final OrgAclxPolicyService orgPolicyService;
+    private final SubjectAuthorizationService subjectAuthService;
     private final String gatewayUrl;
     private final boolean enabled;
 
     public AclxService(
             ObjectMapper mapper,
             OrgAclxPolicyService orgPolicyService,
+            SubjectAuthorizationService subjectAuthService,
             @Value("${aclx.gateway-url:http://localhost:8080}") String gatewayUrl,
             @Value("${aclx.enabled:true}") boolean enabled) {
-        this.mapper           = mapper;
-        this.orgPolicyService = orgPolicyService;
-        this.gatewayUrl       = gatewayUrl;
-        this.enabled          = enabled;
+        this.mapper            = mapper;
+        this.orgPolicyService  = orgPolicyService;
+        this.subjectAuthService = subjectAuthService;
+        this.gatewayUrl        = gatewayUrl;
+        this.enabled           = enabled;
     }
 
     /** Single-client evaluation (document generation, single-client chats). */
@@ -62,6 +66,9 @@ public class AclxService {
         // Load org-specific policy — null if org has no custom rules yet
         AclxRequest.OrgPolicy orgPolicy = loadOrgPolicy(user.getOrgId());
 
+        // Load subject authorizations for the primary client — null if none exist
+        AclxRequest.AuthorizationContext authContext = loadAuthorizationContext(user.getOrgId(), clientId);
+
         AclxRequest request = AclxRequest.builder()
                 .domain("hipaa")
                 .identity(AclxRequest.Identity.builder()
@@ -83,6 +90,7 @@ public class AclxService {
                         .clientIds(allClientIds.size() > 1 ? allClientIds : null)
                         .build())
                 .orgPolicy(orgPolicy)
+                .authorizationContext(authContext)
                 .build();
 
         try {
@@ -174,6 +182,41 @@ public class AclxService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Build an {@link AclxRequest.AuthorizationContext} from the subject's active
+     * authorization records. Returns {@code null} when the client ID is absent or
+     * no active authorizations exist — ACLX treats a missing context as no
+     * explicit authorizations on record.
+     */
+    @SuppressWarnings("unchecked")
+    private AclxRequest.AuthorizationContext loadAuthorizationContext(String orgId, String clientId) {
+        if (clientId == null || clientId.isBlank()) return null;
+        try {
+            List<Map<String, Object>> auths = subjectAuthService.getActiveAuthorizations(orgId, clientId);
+            if (auths.isEmpty()) return null;
+
+            List<AclxRequest.AuthorizationContext.Authorization> authList = auths.stream()
+                    .map(a -> AclxRequest.AuthorizationContext.Authorization.builder()
+                            .authId((String) a.get("authId"))
+                            .type((String) a.get("type"))
+                            .scope((List<String>) a.getOrDefault("scope", List.of()))
+                            .expiry((String) a.get("expiry"))
+                            .status((String) a.get("status"))
+                            .issuedAt((String) a.get("issuedAt"))
+                            .evidenceRef((String) a.get("evidenceRef"))
+                            .build())
+                    .collect(Collectors.toList());
+
+            return AclxRequest.AuthorizationContext.builder()
+                    .subjectId(clientId)
+                    .authorizations(authList)
+                    .build();
+        } catch (Exception e) {
+            log.warn("Failed to load authorization context for subject {} (non-fatal): {}", clientId, e.getMessage());
+            return null;
+        }
+    }
 
     /**
      * Build an {@link AclxRequest.OrgPolicy} from the org's current rule store.

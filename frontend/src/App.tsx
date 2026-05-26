@@ -75,6 +75,8 @@ function AppShell() {
     <div className="flex h-screen overflow-hidden">
       <Sidebar activeView={activeView} onViewChange={setActiveView} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Brand accent bar — sits above every view without touching individual headers */}
+        <div style={{ height: 3, flexShrink: 0, background: 'linear-gradient(90deg, #1E88FF 0%, #3F9B2F 55%, #7ED957 100%)' }} />
         {activeView === 'chat'      && (
           <ChatView
             initialChatId={pendingChatId}

@@ -17,6 +17,7 @@ import type {
   ReviewQueueItem,
   ReviewVerdict,
   SearchResponse,
+  SubjectAuthorization,
   Template,
 } from '../types';
 
@@ -408,6 +409,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ driveSource, url }),
     }),
+
+  // ── Subject Authorizations ────────────────────────────────────────────────
+
+  /**
+   * List all authorization records for a client (any status — includes expired
+   * and revoked so admins can see the full history).
+   */
+  getClientAuthorizations: (clientId: string) =>
+    request<SubjectAuthorization[]>(`/clients/${clientId}/authorizations`),
+
+  /**
+   * Add an authorization record for a client (admin only).
+   * {@code type} and {@code scope} values are domain-defined strings.
+   * For HIPAA: type = RESEARCH | PART_2_CONSENT | HIPAA_AUTHORIZATION;
+   * scope = PHI | CLINICAL | SUD | PSYCHOTHERAPY | HIV | GENETIC.
+   */
+  addClientAuthorization: (
+    clientId: string,
+    data: {
+      type: string;
+      scope: string[];
+      expiry?: string;
+      evidenceRef?: string;
+    },
+  ) =>
+    request<SubjectAuthorization>(`/clients/${clientId}/authorizations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Revoke an authorization record (admin only). Status set to REVOKED; record is preserved. */
+  revokeClientAuthorization: (clientId: string, authId: string) =>
+    request<void>(`/clients/${clientId}/authorizations/${authId}/revoke`, { method: 'POST' }),
 
   // ── ACLX Org Policy ───────────────────────────────────────────────────────
 

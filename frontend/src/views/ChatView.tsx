@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMicrophone, faWaveSquare, faPaperclip, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faMicrophone, faWaveSquare, faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
@@ -264,6 +264,18 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     }
   };
 
+  // Ctrl+K / ⌘K → open new chat from anywhere
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowNewChat(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loadingChats) {
@@ -409,14 +421,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-center">
-          <div>
-            <p className="text-lg font-semibold text-gray-600">No chat selected</p>
-            <p className="text-sm text-gray-400 mt-1">
-              Choose a chat from the list or start a new one.
-            </p>
-          </div>
-        </div>
+        <ChatLandingPage onNewChat={() => setShowNewChat(true)} />
       )}
 
       {/* Modals */}
@@ -455,6 +460,83 @@ function AclxBadge({ decision }: { decision: string }) {
     >
       🛡️ {s.label}
     </span>
+  );
+}
+
+// ── Chat landing page (shown when no chat is open) ───────────────────────────
+
+function ChatLandingPage({ onNewChat }: { onNewChat: () => void }) {
+  const isMac = navigator.platform.toUpperCase().includes('MAC');
+  const shortcut = isMac ? '⌘ K' : 'Ctrl K';
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center px-8" style={{ background: '#f8fbfc' }}>
+      {/* Hero icon */}
+      <div className="flex items-center gap-4 mb-8">
+        <div
+          className="flex items-center justify-center rounded-full"
+          style={{ width: 72, height: 72, background: '#EEF7EA', boxShadow: '0 4px 16px rgba(63,155,47,0.15)' }}
+        >
+          <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 30, color: '#3F9B2F' }} />
+        </div>
+        <div style={{ width: 40, height: 2, background: 'linear-gradient(90deg, #3F9B2F, #1E88FF)', borderRadius: 2 }} />
+        <div
+          className="flex items-center justify-center rounded-full"
+          style={{ width: 72, height: 72, background: '#EEF4FF', boxShadow: '0 4px 16px rgba(30,136,255,0.15)' }}
+        >
+          <FontAwesomeIcon icon={faFileAlt} style={{ fontSize: 30, color: '#1E88FF' }} />
+        </div>
+      </div>
+
+      {/* Headline */}
+      <h1 className="text-2xl font-bold text-center mb-3" style={{ color: '#1E3347', letterSpacing: '-0.02em' }}>
+        Secure. Compliant. Connected.
+      </h1>
+      <p className="text-sm text-center max-w-sm mb-1" style={{ color: '#6B7B88', lineHeight: 1.6 }}>
+        Start a new chat to securely discuss documents across multiple conversations.
+      </p>
+      <p className="text-sm text-center mb-8" style={{ color: '#6B7B88' }}>
+        All data is HIPAA compliant and role-permissioned.
+      </p>
+
+      {/* CTA — single button, no duplicate */}
+      <button
+        onClick={onNewChat}
+        className="flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-white mb-3 transition-all"
+        style={{ background: '#3F9B2F', fontSize: 15, boxShadow: '0 4px 14px rgba(63,155,47,0.35)' }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = '#2E7D22')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = '#3F9B2F')}
+      >
+        <FontAwesomeIcon icon={faPlus} />
+        New Chat
+      </button>
+      <p className="text-xs mb-12" style={{ color: '#A8B4BF' }}>
+        or press <kbd
+          className="px-1.5 py-0.5 rounded text-xs font-mono"
+          style={{ background: '#E8F0F4', color: '#6B7B88', border: '1px solid #DCE7EE' }}
+        >{shortcut}</kbd>
+      </p>
+
+      {/* Feature row */}
+      <div className="flex gap-10">
+        {[
+          { icon: faShieldAlt, color: '#3F9B2F', bg: '#EEF7EA', title: 'HIPAA Compliant',    desc: 'Your data is encrypted and protected.' },
+          { icon: faUsers,     color: '#1E88FF', bg: '#EEF4FF', title: 'Role-Based Access',  desc: 'Chats and documents follow your permission model.' },
+          { icon: faFileAlt,   color: '#F5A623', bg: '#FFF8EE', title: 'Document Aware',     desc: 'Ask questions across multiple linked documents.' },
+        ].map(({ icon, color, bg, title, desc }) => (
+          <div key={title} className="flex flex-col items-center text-center" style={{ maxWidth: 130 }}>
+            <div
+              className="flex items-center justify-center rounded-full mb-3"
+              style={{ width: 48, height: 48, background: bg }}
+            >
+              <FontAwesomeIcon icon={icon} style={{ fontSize: 20, color }} />
+            </div>
+            <p className="text-sm font-semibold mb-1" style={{ color: '#1E3347' }}>{title}</p>
+            <p className="text-xs" style={{ color: '#6B7B88', lineHeight: 1.5 }}>{desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -11,6 +11,7 @@ import ai.myaba.service.PolicyRagService;
 import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
 import ai.myaba.service.ReviewQueueService;
+import ai.myaba.service.SubjectAuthorizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ public class GenerateController {
     private final ReviewQueueService reviewQueueService;
     private final ClientService clientService;
     private final AuthorizationService authorizationService;
+    private final SubjectAuthorizationService subjectAuthorizationService;
     private final ChatService chatService;
     private final PolicyService policyService;
     private final PolicyRagService policyRagService;
@@ -72,6 +74,22 @@ public class GenerateController {
                     .body(Map.of("error", "Not authorized to generate documents for this client"));
         }
 
+        // Pre-ACLX hard-block: if the client's data category requires explicit
+        // authorization and none exists, block without forwarding to ACLX.
+        // (For some categories — e.g. 42 CFR Part 2 SUD records — even sending
+        // content to a governance gateway is legally impermissible without consent.)
+        String diagnosis = (String) client.getOrDefault("diagnosis", "");
+        if (subjectAuthorizationService.requiresHardBlock(user.getOrgId(), req.getClientId(), diagnosis)) {
+            auditService.log("DOCUMENT_BLOCKED_NO_AUTH", user.getUid(), req.getClientId(),
+                    null, null, "BLOCK", null);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error",  "Document generation blocked: explicit written authorization required " +
+                              "for this client's data category before any AI processing can occur.",
+                    "reason", "HARD_BLOCK_NO_AUTHORIZATION",
+                    "code",   "AUTH_REQUIRED"
+            ));
+        }
+
         // Build de-identified context (DLP sanitization pending — placeholder values for now)
         String preferredName = (String) client.getOrDefault("preferredName", "[client]");
         String context = """
@@ -95,15 +113,43 @@ public class GenerateController {
         AclxResponse aclxResult = aclxService.evaluate(rawOutput, user, req.getClientId());
         String decision = aclxResult.getDecision().getDecision();
 
+        // §3: Fail-safe — alert ops when the OPA policy bundle is unavailable.
+        // The gateway hard-blocks SUPER_PHI when the bundle is down, but we also
+        // alert independently and refuse to silently ALLOW on a missing bundle.
+        String policyVersion = aclxResult.getDecision().getPolicyVersion();
+        if ("unavailable".equals(policyVersion) || policyVersion == null) {
+            log.error("ACLX policy bundle unavailable (policyVersion={}). " +
+                      "OPA sidecar may be down — treating ALLOW as BLOCK for safety.", policyVersion);
+            if ("ALLOW".equals(decision)) {
+                decision = "BLOCK";
+            }
+        }
+
         auditService.log("DOCUMENT_GENERATED", user.getUid(), req.getClientId(),
                 null, aclxResult.getContentId(), decision, aclxResult.getAclx());
 
+        // §4: Extract authorization deny reason from the label (for review queue)
+        String authDenyReason = extractAuthDenyReason(aclxResult);
+
         return switch (decision) {
-            case "BLOCK" -> ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                    "error",     "Document blocked by compliance policy",
-                    "reason",    aclxResult.getDecision().getReason(),
+            case "BLOCK" -> {
+                String blockReason = aclxResult.getDecision().getReason();
+                boolean isQuarantine = blockReason != null
+                        && blockReason.startsWith("QUARANTINE_SUSPECTED");
+                if (isQuarantine) {
+                    // §4: Do NOT surface raw quarantine reason to the end user —
+                    // it may contain forensic data. Log for ops investigation.
+                    log.warn("QUARANTINE_SUSPECTED block: client={} user={} reason={}",
+                            req.getClientId(), user.getUid(), blockReason);
+                }
+                yield ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error",     isQuarantine
+                                     ? "Document blocked: security policy violation detected."
+                                     : "Document blocked by compliance policy",
+                    "reason",    isQuarantine ? "QUARANTINE_SUSPECTED" : (blockReason != null ? blockReason : ""),
                     "contentId", aclxResult.getContentId()
-            ));
+                ));
+            }
             case "ESCALATE" -> {
                 auditService.log("DOCUMENT_ESCALATED", user.getUid(), req.getClientId(),
                         null, aclxResult.getContentId(), "ESCALATE", aclxResult.getAclx());
@@ -116,7 +162,8 @@ public class GenerateController {
                         rawOutput,
                         aclxResult.getDecision().getReason(),
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
-                        aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null);
+                        aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
+                        authDenyReason);
                 yield ResponseEntity.accepted().body(GenerateDocumentResponse.builder()
                         .status("PENDING_REVIEW")
                         .message("Document flagged for human review before release")
@@ -166,6 +213,22 @@ public class GenerateController {
                             "unauthorizedIds", unauthorized
                     ));
                 }
+
+                // Pre-ACLX hard-block: check every referenced client for super-PHI categories
+                for (Map.Entry<String, Map<String, Object>> entry : clientsById.entrySet()) {
+                    String cid       = entry.getKey();
+                    String clientDx  = (String) entry.getValue().getOrDefault("diagnosis", "");
+                    if (subjectAuthorizationService.requiresHardBlock(user.getOrgId(), cid, clientDx)) {
+                        auditService.log("CHAT_BLOCKED_NO_AUTH", user.getUid(), cid,
+                                null, null, "BLOCK", null);
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                                "error",  "Chat blocked: explicit written authorization required " +
+                                          "for this client's data category before any AI processing can occur.",
+                                "reason", "HARD_BLOCK_NO_AUTHORIZATION",
+                                "code",   "AUTH_REQUIRED"
+                        ));
+                    }
+                }
             } catch (Exception e) {
                 log.error("Client authorization check failed: {}", e.getMessage());
                 return ResponseEntity.internalServerError()
@@ -199,10 +262,22 @@ public class GenerateController {
                 allClientIds.size() > 1 ? allClientIds : null);
         String decision = aclxResult.getDecision().getDecision();
 
+        // §3: Fail-safe — alert ops when the OPA policy bundle is unavailable
+        String chatPolicyVersion = aclxResult.getDecision().getPolicyVersion();
+        if ("unavailable".equals(chatPolicyVersion) || chatPolicyVersion == null) {
+            log.error("ACLX policy bundle unavailable (policyVersion={}). " +
+                      "OPA sidecar may be down — treating ALLOW as BLOCK for safety.", chatPolicyVersion);
+            if ("ALLOW".equals(decision)) {
+                decision = "BLOCK";
+            }
+        }
+
         auditService.log("CHAT_RESPONSE", user.getUid(), req.getClientId(),
                 null, aclxResult.getContentId(), decision, aclxResult.getAclx());
 
         if ("ESCALATE".equals(decision)) {
+            // §4: Pass authorization deny reason into review queue for reviewers
+            String chatAuthDenyReason = extractAuthDenyReason(aclxResult);
             reviewQueueService.enqueue(
                     user.getOrgId(),
                     aclxResult.getContentId(),
@@ -212,7 +287,17 @@ public class GenerateController {
                     rawReply,
                     aclxResult.getDecision().getReason(),
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
-                    aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null);
+                    aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
+                    chatAuthDenyReason);
+        }
+
+        // §4: QUARANTINE_SUSPECTED in BLOCK — don't surface raw reason to end user
+        String chatBlockReason = aclxResult.getDecision().getReason();
+        boolean chatIsQuarantine = "BLOCK".equals(decision) && chatBlockReason != null
+                && chatBlockReason.startsWith("QUARANTINE_SUSPECTED");
+        if (chatIsQuarantine) {
+            log.warn("QUARANTINE_SUSPECTED chat block: client={} user={} reason={}",
+                    req.getClientId(), user.getUid(), chatBlockReason);
         }
 
         String reply = "BLOCK".equals(decision)
@@ -285,6 +370,26 @@ public class GenerateController {
             return result.isBlank() ? null : result;
         } catch (Exception e) {
             log.warn("Could not build chat system prompt: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Extract {@code authorization_audit.deny_reason} from an ACLX response.
+     * Returns null if the label is absent or no auth check was performed.
+     * Used to populate the review queue item so reviewers know why an
+     * authorization check failed (NOT_PROVIDED / REVOKED / EXPIRED).
+     */
+    private String extractAuthDenyReason(AclxResponse aclxResult) {
+        try {
+            AclxResponse.AclxLabel label = aclxResult.getAclx();
+            if (label == null) return null;
+            AclxResponse.AclxAudit audit = label.getAudit();
+            if (audit == null) return null;
+            AclxResponse.AuthorizationAudit authAudit = audit.getAuthorizationAudit();
+            if (authAudit == null || !authAudit.isAuthCheckPerformed()) return null;
+            return authAudit.getDenyReason();
+        } catch (Exception e) {
             return null;
         }
     }

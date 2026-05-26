@@ -8,6 +8,9 @@ body {
   padding: 0;
   height: 100vh;
   overflow: hidden;
+  /* Subtle warm off-white vs pure white — easier on the eyes in a clinical context */
+  background: #f4f7f9;
+  color: #1a2e35;
 }
 
 #root {
@@ -20,6 +23,14 @@ body {
   min-height: unset;
 }
 
+/* ── View header top accent bar ────────────────────────────────────────────── */
+/* Add class "view-header" to the top bar of any view to get the brand accent. */
+.view-header {
+  border-top: 3px solid transparent;
+  border-image: linear-gradient(90deg, #2a5f6f 0%, #5fb3d0 50%, #7dd3e8 100%) 1;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────────── */
 .tab-button {
   padding: 12px 24px;
   background: #e8f4f8;
@@ -33,7 +44,7 @@ body {
 }
 
 .tab-button:hover {
-  background: #d0e9f2;
+  background: #cce7f0;
 }
 
 .tab-button.active {

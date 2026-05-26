@@ -5,7 +5,6 @@ import {
   faFileAlt,
   faUsers,
   faCog,
-  faBrain,
   faProjectDiagram,
   faSearch,
   faShieldAlt,
@@ -20,28 +19,27 @@ interface SidebarProps {
   onViewChange: (view: View) => void;
 }
 
-const navItems: { view: View; icon: typeof faCommentDots; label: string }[] = [
-  { view: 'chat',      icon: faCommentDots,    label: 'Chat'      },
-  { view: 'search',    icon: faSearch,         label: 'Search'    },
-  { view: 'projects',  icon: faProjectDiagram, label: 'Projects'  },
-  { view: 'clients',   icon: faUsers,          label: 'Clients'   },
-  { view: 'documents', icon: faFileAlt,        label: 'Documents' },
+const navItems: { view: View; icon: typeof faCommentDots; label: string; color: string }[] = [
+  { view: 'chat',      icon: faCommentDots,    label: 'Chat',      color: '#3F9B2F' },
+  { view: 'search',    icon: faSearch,         label: 'Search',    color: '#1E88FF' },
+  { view: 'projects',  icon: faProjectDiagram, label: 'Projects',  color: '#F5A623' },
+  { view: 'clients',   icon: faUsers,          label: 'Clients',   color: '#7ED957' },
+  { view: 'documents', icon: faFileAlt,        label: 'Documents', color: '#1E88FF' },
 ];
 
 export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const { currentUser } = useAuth();
-  const [showProfile, setShowProfile]     = useState(false);
-  const [pendingCount, setPendingCount]   = useState(0);
+  const [showProfile, setShowProfile]   = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
 
-  // Poll for pending review count every 60 s (admin only)
   useEffect(() => {
     if (!isAdmin) return;
     const load = () => {
       api.getReviewPendingCount()
         .then((r) => setPendingCount(r.count))
-        .catch(() => {/* non-fatal */});
+        .catch(() => {});
     };
     load();
     const id = setInterval(load, 60_000);
@@ -52,104 +50,200 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
     ? currentUser.displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : currentUser?.email?.slice(0, 2).toUpperCase() ?? '??';
 
+  const navBtn = (
+    isActive: boolean,
+    onClick: () => void,
+    iconEl: React.ReactNode,
+    label: string,
+    extraStyle?: React.CSSProperties,
+  ) => (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 11,
+        padding: '9px 14px',
+        width: '100%',
+        background: isActive ? '#EEF7EA' : 'transparent',
+        borderTop: 'none',
+        borderRight: 'none',
+        borderBottom: 'none',
+        borderLeft: isActive ? '3px solid #55C943' : '3px solid transparent',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+        textAlign: 'left',
+        ...extraStyle,
+      }}
+    >
+      {iconEl}
+      <span style={{
+        fontSize: 14,
+        fontWeight: isActive ? 700 : 500,
+        color: isActive ? '#2E7D32' : '#1E3347',
+        letterSpacing: '0.01em',
+      }}>
+        {label}
+      </span>
+    </button>
+  );
+
   return (
     <>
       <div
-        className="flex flex-col items-center"
-        style={{ width: 120, background: '#2a5f6f', minHeight: '100vh', flexShrink: 0 }}
+        className="flex flex-col"
+        style={{
+          width: 195,
+          background: '#F8FBFC',
+          minHeight: '100vh',
+          flexShrink: 0,
+          borderRight: '1px solid #DCE7EE',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
       >
-        {/* Logo */}
-        <div className="w-full flex justify-center py-5" style={{ background: '#1e4d5c' }}>
-          <div className="flex flex-col items-center">
-            <div
-              className="flex items-center justify-center rounded-lg"
-              style={{ background: 'white', width: 56, height: 56 }}
-            >
-              <FontAwesomeIcon icon={faBrain} style={{ fontSize: 28, color: '#2a5f6f' }} />
-            </div>
-            <div className="text-white font-bold text-center mt-1" style={{ fontSize: 10, lineHeight: '1.2' }}>
-              my<br />ABA
+        {/* ── Logo card ── */}
+        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: 'white',
+              borderRadius: 12,
+              padding: '8px 10px',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+            }}
+          >
+            <img
+              src="/app-icon.png"
+              alt="myABA.ai"
+              style={{ width: 50, height: 50, objectFit: 'contain', flexShrink: 0 }}
+              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+            />
+            <div style={{ lineHeight: 1.2 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>
+                <span style={{ color: '#1E3347' }}>my</span>
+                <span style={{ color: '#1E88FF' }}>ABA</span>
+                <span style={{ color: '#3F9B2F' }}>.ai</span>
+              </div>
+              <div style={{ fontSize: 10, color: '#6B7B88', marginTop: 1 }}>
+                ABA Platform
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Nav items */}
-        {navItems.map(({ view, icon, label }) => (
-          <button
-            key={view}
-            onClick={() => onViewChange(view)}
-            className="w-full flex flex-col items-center py-4 text-white cursor-pointer transition-colors"
-            style={{
-              background: activeView === view ? 'rgba(255,255,255,0.15)' : 'transparent',
-              borderTop: 'none',
-              borderRight: 'none',
-              borderBottom: 'none',
-              borderLeft: activeView === view ? '3px solid #5fb3d0' : '3px solid transparent',
-            }}
-          >
-            <FontAwesomeIcon icon={icon} style={{ fontSize: 24, marginBottom: 5 }} />
-            <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.02em' }}>{label}</span>
-          </button>
-        ))}
+        {/* ── Nav items ── */}
+        <div style={{ paddingTop: 6, paddingBottom: 4 }}>
+          {navItems.map(({ view, icon, label, color }) => {
+            const isActive = activeView === view;
+            return navBtn(
+              isActive,
+              () => onViewChange(view),
+              <FontAwesomeIcon
+                icon={icon}
+                style={{ fontSize: 19, color: isActive ? color : '#A8B4BF', flexShrink: 0, width: 22 }}
+              />,
+              label,
+            );
+          })}
 
-        {/* Review queue — admin only */}
-        {isAdmin && (
-          <button
-            onClick={() => onViewChange('review')}
-            className="w-full flex flex-col items-center py-4 text-white cursor-pointer transition-colors relative"
-            style={{
-              background: activeView === 'review' ? 'rgba(255,255,255,0.15)' : 'transparent',
-              borderTop: 'none', borderRight: 'none', borderBottom: 'none',
-              borderLeft: activeView === 'review' ? '3px solid #5fb3d0' : '3px solid transparent',
-            }}
-          >
-            <div className="relative">
-              <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 24, marginBottom: 5 }} />
-              {pendingCount > 0 && (
-                <span
-                  className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
-                  style={{ background: '#f59e0b', fontSize: 9 }}
-                >
-                  {pendingCount > 9 ? '9+' : pendingCount}
-                </span>
-              )}
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.02em' }}>Review</span>
-          </button>
-        )}
+          {/* Review queue — admin only */}
+          {isAdmin && (() => {
+            const isActive = activeView === 'review';
+            return navBtn(
+              isActive,
+              () => onViewChange('review'),
+              <div className="relative" style={{ width: 22, flexShrink: 0 }}>
+                <FontAwesomeIcon
+                  icon={faShieldAlt}
+                  style={{ fontSize: 19, color: isActive ? '#F5A623' : '#A8B4BF' }}
+                />
+                {pendingCount > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
+                    style={{ background: '#f59e0b', fontSize: 9 }}
+                  >
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+              </div>,
+              'Review',
+            );
+          })()}
+        </div>
 
-        {/* Bottom — settings + profile avatar */}
-        <div className="mt-auto flex flex-col items-center pb-5 gap-4">
-          {/* Settings gear */}
-          <button
-            onClick={() => onViewChange('settings')}
-            className="flex flex-col items-center gap-1 text-white transition-opacity hover:opacity-80"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
-          >
+        {/* ── Divider ── */}
+        <div style={{ height: 1, background: '#DCE7EE', margin: '4px 14px' }} />
+
+        {/* ── Bottom: settings + profile + wave ── */}
+        <div className="mt-auto flex flex-col" style={{ position: 'relative', zIndex: 1 }}>
+          {navBtn(
+            activeView === 'settings',
+            () => onViewChange('settings'),
             <FontAwesomeIcon
               icon={faCog}
-              style={{ fontSize: 26, color: activeView === 'settings' ? '#5fb3d0' : 'white' }}
-            />
-            <span style={{ fontSize: 10, color: activeView === 'settings' ? '#5fb3d0' : 'rgba(255,255,255,0.7)' }}>
-              Settings
-            </span>
-          </button>
+              style={{
+                fontSize: 19,
+                color: activeView === 'settings' ? '#3F9B2F' : '#A8B4BF',
+                flexShrink: 0,
+                width: 22,
+              }}
+            />,
+            'Settings',
+          )}
 
-          {/* Profile avatar */}
           <button
             onClick={() => setShowProfile(true)}
-            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-80"
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 11,
+              padding: '9px 14px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              width: '100%',
+              textAlign: 'left',
+            }}
             title="My Profile"
           >
             <div
-              className="flex items-center justify-center rounded-full font-bold"
-              style={{ width: 44, height: 44, background: 'white', color: '#2a5f6f', fontSize: 16 }}
+              className="flex items-center justify-center rounded-full"
+              style={{
+                width: 34,
+                height: 34,
+                background: '#7ED957',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 700,
+                flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(126,217,87,0.4)',
+              }}
             >
               {initials}
             </div>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Profile</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#1E3347' }}>Profile</span>
           </button>
+
+          {/* Decorative wave */}
+          <svg
+            viewBox="0 0 195 44"
+            width="195"
+            style={{ display: 'block', marginTop: 4 }}
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M0,22 C35,4 70,40 105,22 C140,4 168,34 195,20 L195,44 L0,44 Z"
+              fill="#D9EEFF"
+            />
+            <path
+              d="M0,30 C28,14 62,44 98,30 C132,16 162,38 195,28 L195,44 L0,44 Z"
+              fill="#BFE1FF"
+              opacity="0.75"
+            />
+          </svg>
         </div>
       </div>
 

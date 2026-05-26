@@ -280,12 +280,105 @@ export interface ReviewQueueItem {
   aclxReason?: string;
   aclxSensitivity?: string;
   aclxCategory?: string;
+  /**
+   * Why the ACLX authorization check failed, when one was performed.
+   * Values: NOT_PROVIDED | REVOKED | EXPIRED
+   * Populated from aclx.audit.authorization_audit.deny_reason in the ACLX response.
+   * Surface to reviewers so they can take corrective action (e.g. add an authorization).
+   */
+  authDenyReason?: string;
   status: ReviewStatus;
   reviewedBy?: string;
   reviewedAt?: string;
   reviewerNotes?: string;
   createdAt: string;
 }
+
+// ── Subject Authorizations ────────────────────────────────────────────────────
+
+/**
+ * Domain-defined authorization type strings.
+ * HIPAA:  RESEARCH | PART_2_CONSENT | HIPAA_AUTHORIZATION
+ * FERPA:  PARENTAL_CONSENT | STUDENT_CONSENT | LEGITIMATE_INTEREST
+ * GDPR:   EXPLICIT_CONSENT | LEGITIMATE_INTEREST | CONTRACT
+ * CUI:    CLEARANCE_GRANT | NEED_TO_KNOW | EXPORT_LICENSE
+ * This is typed as string so new domain types don't require a frontend release.
+ */
+export type AuthorizationType = string;
+
+/**
+ * Domain-defined data category scope strings.
+ * HIPAA: PHI | CLINICAL | SUD | PSYCHOTHERAPY | HIV | GENETIC
+ * FERPA: EDUCATION_RECORDS | DIRECTORY_INFO | FINANCIAL
+ * GDPR:  PERSONAL_DATA | SPECIAL_CATEGORY | BIOMETRIC
+ * CUI:   CUI_BASIC | CUI_SPECIFIED | EXPORT_CONTROLLED
+ */
+export type AuthScope = string;
+
+export type AuthorizationStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+
+export interface SubjectAuthorization {
+  authId: string;
+  /** Domain-defined authorization type. */
+  type: AuthorizationType;
+  /** Data categories this authorization covers. */
+  scope: AuthScope[];
+  status: AuthorizationStatus;
+  /** ISO-8601 expiry date, or empty string / null if no expiry. */
+  expiry: string | null;
+  issuedAt: string;
+  /** Reference to the source consent/waiver document, if any. */
+  evidenceRef?: string;
+  addedBy: string;
+  orgId: string;
+  clientId: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
+/** Well-known HIPAA authorization types (for UI dropdowns). */
+export const HIPAA_AUTH_TYPES: { value: string; label: string; description: string }[] = [
+  {
+    value: 'RESEARCH',
+    label: 'Research Authorization',
+    description: '45 CFR 164.508 — written authorization for research use of identified PHI',
+  },
+  {
+    value: 'PART_2_CONSENT',
+    label: '42 CFR Part 2 Consent',
+    description: 'Written patient consent for SUD records — required even for treating providers (42 CFR Part 2 §2.31)',
+  },
+  {
+    value: 'PART_2_COURT_ORDER',
+    label: '42 CFR Part 2 Court Order',
+    description: 'Court order authorizing disclosure of SUD records without patient consent (42 CFR Part 2 §2.61)',
+  },
+  {
+    value: 'PSYCHOTHERAPY_AUTHORIZATION',
+    label: 'Psychotherapy Notes Authorization',
+    description: 'Written authorization required for disclosure of psychotherapy notes (45 CFR 164.508(a)(2))',
+  },
+  {
+    value: 'HIV_STATE_CONSENT',
+    label: 'HIV Status Consent',
+    description: 'State-law consent form for HIV status disclosure — requirements vary by state',
+  },
+  {
+    value: 'HIPAA_AUTHORIZATION',
+    label: 'HIPAA Authorization',
+    description: 'General written authorization for uses/disclosures outside TPO (45 CFR 164.508)',
+  },
+];
+
+/** Well-known HIPAA scope values (for UI checkboxes). */
+export const HIPAA_SCOPES: { value: string; label: string; isSuperPhi: boolean }[] = [
+  { value: 'PHI',          label: 'PHI (general)',          isSuperPhi: false },
+  { value: 'CLINICAL',     label: 'Clinical records',       isSuperPhi: false },
+  { value: 'SUD',          label: 'Substance Use Disorder', isSuperPhi: true  },
+  { value: 'PSYCHOTHERAPY',label: 'Psychotherapy notes',    isSuperPhi: true  },
+  { value: 'HIV',          label: 'HIV status',             isSuperPhi: true  },
+  { value: 'GENETIC',      label: 'Genetic information',    isSuperPhi: true  },
+];
 
 // ── ACLX Org Policy ──────────────────────────────────────────────────────────
 
