@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBrain, faBuilding, faCopy, faCheck, faArrowRight } from '@fortawesome/free-solid-svg-icons';
+import { faBrain, faBuilding, faCopy, faCheck, faArrowRight, faFileContract, faShieldAlt } from '@fortawesome/free-solid-svg-icons';
+import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
+import { BAA_TEXT } from '../lib/baaText';
 import type { OrgPlan, UserRole } from '../types';
+
+const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
+
 
 const PLANS: { value: OrgPlan; label: string; description: string }[] = [
   { value: 'solo',       label: 'Solo',       description: 'One practitioner, unlimited clients' },
@@ -20,7 +25,7 @@ const INVITE_ROLES: { value: UserRole; label: string }[] = [
   { value: 'ORG_ADMIN',        label: 'Org Admin' },
 ];
 
-type Step = 'org' | 'invite' | 'done';
+type Step = 'org' | 'baa' | 'invite' | 'done';
 
 interface Props {
   /** Called with the new orgId so App can refresh auth + transition to main UI. */
@@ -34,6 +39,13 @@ export default function OnboardingView({ onComplete }: Props) {
   const [saving, setSaving]       = useState(false);
   const [orgId, setOrgId]         = useState('');
   const [error, setError]         = useState('');
+
+  // BAA step
+  const [signerName, setSignerName]   = useState('');
+  const [signerTitle, setSignerTitle] = useState('');
+  const [baaChecked, setBaaChecked]   = useState(false);
+  const [baaLoading, setBaaLoading]   = useState(false);
+  const [baaError, setBaaError]       = useState('');
 
   // Invite step
   const [inviteRole, setInviteRole]   = useState<UserRole>('TREATING_BCBA');
@@ -51,7 +63,11 @@ export default function OnboardingView({ onComplete }: Props) {
     try {
       const { orgId: newOrgId } = await api.createOrg({ name: orgName.trim(), plan });
       setOrgId(newOrgId);
-      setStep('invite');
+      // Force token refresh so new orgId/role claims are ready for the BAA call
+      if (!DEV_AUTH) {
+        try { await auth.currentUser?.getIdToken(true); } catch { /* non-fatal */ }
+      }
+      setStep('baa');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create organization');
     } finally {
@@ -59,7 +75,23 @@ export default function OnboardingView({ onComplete }: Props) {
     }
   };
 
-  // ── Step 2: Invite teammates ───────────────────────────────────────────────
+  // ── Step 2: Accept BAA ────────────────────────────────────────────────────
+
+  const handleAcceptBaa = async () => {
+    if (!signerName.trim() || !signerTitle.trim() || !baaChecked) return;
+    setBaaLoading(true);
+    setBaaError('');
+    try {
+      await api.acceptBaa(orgId, { signerName: signerName.trim(), signerTitle: signerTitle.trim() });
+      setStep('invite');
+    } catch (e: unknown) {
+      setBaaError(e instanceof Error ? e.message : 'Failed to record BAA acceptance');
+    } finally {
+      setBaaLoading(false);
+    }
+  };
+
+  // ── Step 3: Invite teammates ───────────────────────────────────────────────
 
   const handleGenerateInvite = async () => {
     setGenerating(true);
@@ -106,25 +138,34 @@ export default function OnboardingView({ onComplete }: Props) {
 
         {/* Steps indicator */}
         <div className="flex items-center gap-2 mb-8">
-          {(['org', 'invite', 'done'] as Step[]).map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{
-                  background: step === s ? '#2a5f6f' : (i < ['org','invite','done'].indexOf(step) ? '#5fb3d0' : '#e5e7eb'),
-                  color: step === s || i < ['org','invite','done'].indexOf(step) ? 'white' : '#9ca3af',
-                }}
-              >
-                {i + 1}
+          {(['org', 'baa', 'invite'] as Step[]).map((s, i) => {
+            const ORDER: Step[] = ['org', 'baa', 'invite', 'done'];
+            const cur  = ORDER.indexOf(step);
+            const idx  = ORDER.indexOf(s);
+            const past = cur > idx;
+            return (
+              <div key={s} className="flex items-center gap-2">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{
+                    background: step === s ? '#2a5f6f' : past ? '#5fb3d0' : '#e5e7eb',
+                    color: step === s || past ? 'white' : '#9ca3af',
+                  }}
+                >
+                  {past ? <FontAwesomeIcon icon={faCheck} style={{ fontSize: 11 }} /> : i + 1}
+                </div>
+                {i < 2 && (
+                  <div className="h-px flex-1 min-w-[20px]"
+                       style={{ background: past ? '#5fb3d0' : '#e5e7eb' }} />
+                )}
               </div>
-              {i < 2 && <div className="h-px flex-1 min-w-[24px]"
-                             style={{ background: i < ['org','invite','done'].indexOf(step) ? '#5fb3d0' : '#e5e7eb' }} />}
-            </div>
-          ))}
+            );
+          })}
           <div className="ml-auto text-xs text-gray-400">
-            {step === 'org' && 'Set up your organization'}
+            {step === 'org'    && 'Set up your organization'}
+            {step === 'baa'    && 'Review & sign BAA'}
             {step === 'invite' && 'Invite your team'}
-            {step === 'done' && 'All set!'}
+            {step === 'done'   && 'All set!'}
           </div>
         </div>
 
@@ -192,6 +233,98 @@ export default function OnboardingView({ onComplete }: Props) {
                 )}
               </button>
             </div>
+          </>
+        )}
+
+        {/* ── Step: baa ── */}
+        {step === 'baa' && (
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                   style={{ background: '#e8f4f8' }}>
+                <FontAwesomeIcon icon={faFileContract} style={{ color: '#2a5f6f', fontSize: 18 }} />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Business Associate Agreement</h2>
+                <p className="text-sm text-gray-500">Required under HIPAA before your org may process PHI.</p>
+              </div>
+            </div>
+
+            {/* BAA text scroll box */}
+            <div
+              className="rounded-xl border border-gray-200 bg-gray-50 p-4 mb-4 overflow-y-auto text-xs text-gray-600 leading-relaxed whitespace-pre-wrap font-mono"
+              style={{ maxHeight: 220 }}
+            >
+              {BAA_TEXT}
+            </div>
+
+            {/* Signer fields */}
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Full Legal Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  placeholder="e.g. Jane Smith"
+                  value={signerName}
+                  onChange={(e) => setSignerName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Title / Position
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  placeholder="e.g. Executive Director"
+                  value={signerTitle}
+                  onChange={(e) => setSignerTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && baaChecked) handleAcceptBaa(); }}
+                />
+              </div>
+            </div>
+
+            {/* Authority checkbox */}
+            <label className="flex items-start gap-3 cursor-pointer mb-4 group">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0 accent-teal-700"
+                checked={baaChecked}
+                onChange={(e) => setBaaChecked(e.target.checked)}
+              />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                I have read the Business Associate Agreement above and have authority to bind
+                my organization to these terms. I accept this BAA on behalf of my organization.
+              </span>
+            </label>
+
+            {/* HIPAA notice */}
+            <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 mb-4">
+              <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#1d4ed8', fontSize: 12, marginTop: 2, flexShrink: 0 }} />
+              <p className="text-xs text-blue-700 leading-relaxed">
+                A signed BAA is required by 45 C.F.R. § 164.504(e) before a Business Associate
+                may create, receive, maintain, or transmit PHI on your behalf.
+              </p>
+            </div>
+
+            {baaError && <p className="text-sm text-red-500 mb-3">{baaError}</p>}
+
+            <button
+              className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
+              style={{
+                background: (signerName.trim() && signerTitle.trim() && baaChecked) ? '#2a5f6f' : '#9ca3af',
+              }}
+              disabled={!signerName.trim() || !signerTitle.trim() || !baaChecked || baaLoading}
+              onClick={handleAcceptBaa}
+            >
+              {baaLoading ? 'Recording acceptance…' : (
+                <>Accept BAA &amp; Continue <FontAwesomeIcon icon={faArrowRight} /></>
+              )}
+            </button>
           </>
         )}
 

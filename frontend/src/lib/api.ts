@@ -39,6 +39,25 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   };
 }
 
+/**
+ * Structured API error that preserves the full error body from the backend.
+ *
+ * The `code` field maps to backend-defined error codes such as
+ * `CROSS_CLIENT_PHI_INPUT` so callers can handle specific conditions
+ * without string-matching on the human-readable message.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string | undefined,
+    public readonly details: Record<string, unknown>,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -47,8 +66,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(
+      body.error || `HTTP ${res.status}`,
+      body.code as string | undefined,
+      body as Record<string, unknown>,
+      res.status,
+    );
   }
 
   // 204 No Content — return undefined cast as T
@@ -143,6 +167,7 @@ export const api = {
     clientId: string,
     data: {
       treatingBcbaId?: string;
+      supervisorIds?: string[];
       supervisingBcbaId?: string;
       rbtIds?: string[];
       viewerIds?: string[];
@@ -312,13 +337,6 @@ export const api = {
   /** Get org metadata. */
   getOrg: (orgId: string) => request<Org>(`/orgs/${orgId}`),
 
-  /** Update org settings (ORG_ADMIN only). */
-  updateOrgSettings: (orgId: string, settings: Record<string, unknown>) =>
-    request<void>(`/orgs/${orgId}/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    }),
-
   /** Update the org's display name (ORG_ADMIN only). */
   updateOrgName: (orgId: string, name: string) =>
     request<{ name: string }>(`/orgs/${orgId}/name`, {
@@ -342,6 +360,31 @@ export const api = {
     request<void>(`/orgs/${orgId}/settings`, {
       method: 'PUT',
       body: JSON.stringify(settings),
+    }),
+
+  /** Get the BAA acceptance status for the org. Returns { accepted: false } if not yet signed. */
+  getBaaStatus: (orgId: string) =>
+    request<{
+      accepted: boolean;
+      acceptedAt?: string;
+      acceptedBy?: string;
+      signerName?: string;
+      signerTitle?: string;
+      version?: string;
+    }>(`/orgs/${orgId}/baa`),
+
+  /** Record BAA acceptance (ORG_ADMIN only). */
+  acceptBaa: (orgId: string, data: { signerName: string; signerTitle: string }) =>
+    request<{
+      accepted: boolean;
+      acceptedAt: string;
+      acceptedBy: string;
+      signerName: string;
+      signerTitle: string;
+      version: string;
+    }>(`/orgs/${orgId}/baa`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
   /** Assign or clear the supervisor for a member. Pass empty string to clear. Admin only. */

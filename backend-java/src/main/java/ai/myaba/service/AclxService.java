@@ -26,6 +26,7 @@ public class AclxService {
     private final ObjectMapper mapper;
     private final OrgAclxPolicyService orgPolicyService;
     private final SubjectAuthorizationService subjectAuthService;
+    private final ClientService clientService;
     private final String gatewayUrl;
     private final boolean enabled;
 
@@ -33,13 +34,15 @@ public class AclxService {
             ObjectMapper mapper,
             OrgAclxPolicyService orgPolicyService,
             SubjectAuthorizationService subjectAuthService,
+            ClientService clientService,
             @Value("${aclx.gateway-url:http://localhost:8080}") String gatewayUrl,
             @Value("${aclx.enabled:true}") boolean enabled) {
-        this.mapper            = mapper;
-        this.orgPolicyService  = orgPolicyService;
+        this.mapper             = mapper;
+        this.orgPolicyService   = orgPolicyService;
         this.subjectAuthService = subjectAuthService;
-        this.gatewayUrl        = gatewayUrl;
-        this.enabled           = enabled;
+        this.clientService      = clientService;
+        this.gatewayUrl         = gatewayUrl;
+        this.enabled            = enabled;
     }
 
     /** Single-client evaluation (document generation, single-client chats). */
@@ -69,6 +72,11 @@ public class AclxService {
         // Load subject authorizations for the primary client — null if none exist
         AclxRequest.AuthorizationContext authContext = loadAuthorizationContext(user.getOrgId(), clientId);
 
+        // Build authorized-subject list for HIPAA Minimum Necessary cross-patient check
+        // (45 CFR §164.514(d)). Empty list = check skipped by ACLX detector.
+        List<AclxRequest.AuthorizedSubject> authorizedSubjects =
+                buildAuthorizedSubjects(user.getOrgId(), allClientIds);
+
         AclxRequest request = AclxRequest.builder()
                 .domain("hipaa")
                 .identity(AclxRequest.Identity.builder()
@@ -91,6 +99,7 @@ public class AclxService {
                         .build())
                 .orgPolicy(orgPolicy)
                 .authorizationContext(authContext)
+                .authorizedSubjects(authorizedSubjects.isEmpty() ? null : authorizedSubjects)
                 .build();
 
         try {
@@ -243,6 +252,45 @@ public class AclxService {
             log.warn("Failed to load org policy for {} (non-fatal): {}", orgId, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Builds the {@code authorized_subjects} list for an ACLX evaluate request.
+     *
+     * <p>Fetches each client record and delegates identifier extraction to
+     * {@link ClientService#extractIdentifiers} so the ACLX HIPAA detector can
+     * attribute PHI in the AI response to a specific authorized subject — or flag
+     * it as a cross-patient leak when no match is found.
+     *
+     * <p>Non-fatal: if a client lookup fails the subject is silently skipped.
+     * ACLX will still evaluate with whatever subjects were resolved, and the
+     * context-scoping layer (system-prompt injection) provides the primary
+     * protection anyway.
+     *
+     * @param orgId     org that owns the clients
+     * @param clientIds IDs of clients explicitly in scope for this interaction
+     * @return list of {@link AclxRequest.AuthorizedSubject}; empty if none resolved
+     */
+    private List<AclxRequest.AuthorizedSubject> buildAuthorizedSubjects(
+            String orgId, List<String> clientIds) {
+        if (clientIds == null || clientIds.isEmpty()) return List.of();
+        List<AclxRequest.AuthorizedSubject> subjects = new ArrayList<>();
+        for (String cid : clientIds) {
+            try {
+                Map<String, Object> client = clientService.getClient(orgId, cid);
+                List<String> identifiers = clientService.extractIdentifiers(client);
+                if (!identifiers.isEmpty()) {
+                    subjects.add(AclxRequest.AuthorizedSubject.builder()
+                            .subjectId(cid)
+                            .identifiers(identifiers)
+                            .build());
+                }
+            } catch (Exception e) {
+                log.warn("buildAuthorizedSubjects: could not resolve client {} (skipped): {}",
+                        cid, e.getMessage());
+            }
+        }
+        return subjects;
     }
 
     private List<String> buildClientIdList(String primaryClientId, List<String> additional) {

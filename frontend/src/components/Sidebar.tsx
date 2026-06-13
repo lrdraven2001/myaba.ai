@@ -88,15 +88,16 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
         style={{
           width: 195,
           background: '#F8FBFC',
-          minHeight: '100vh',
+          height: '100%',       /* fill the flex row exactly — no more, no less */
           flexShrink: 0,
           borderRight: '1px solid #DCE7EE',
-          overflow: 'hidden',
+          overflowY: 'auto',    /* sidebar itself scrolls if nav items ever overflow */
+          overflowX: 'hidden',
           position: 'relative',
         }}
       >
-        {/* ── Logo card ── */}
-        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE' }}>
+        {/* ── Logo card — sticky so it never scrolls out of view ── */}
+        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE', position: 'sticky', top: 0, background: '#F8FBFC', zIndex: 10 }}>
           <div
             style={{
               display: 'flex',

@@ -21,6 +21,8 @@ interface Props {
   onCreate: (data: NewChatData) => Promise<void> | void;
   /** Pre-select a project when opening from ProjectsView */
   initialProjectId?: string;
+  /** Pre-select a client when opening from ClientsView */
+  initialClientId?: string;
 }
 
 function autoTitle(scope: Scope, clientName?: string, projectTitle?: string): string {
@@ -30,10 +32,12 @@ function autoTitle(scope: Scope, clientName?: string, projectTitle?: string): st
   return `Chat — ${date}`;
 }
 
-export default function NewChatModal({ clients, onClose, onCreate, initialProjectId }: Props) {
-  const [scope, setScope]                         = useState<Scope>(initialProjectId ? 'project' : 'general');
+export default function NewChatModal({ clients, onClose, onCreate, initialProjectId, initialClientId }: Props) {
+  const [scope, setScope]                         = useState<Scope>(
+    initialProjectId ? 'project' : initialClientId ? 'client' : 'general'
+  );
   const [title, setTitle]                         = useState('');
-  const [selectedClientId, setSelectedClientId]   = useState(clients[0]?.id ?? '');
+  const [selectedClientId, setSelectedClientId]   = useState(initialClientId ?? clients[0]?.id ?? '');
   const [creating, setCreating]                   = useState(false);
 
   // Project picker

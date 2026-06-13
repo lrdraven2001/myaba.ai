@@ -3,10 +3,11 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBuilding, faShieldAlt, faCreditCard, faSpinner,
   faSlidersH, faToggleOn, faToggleOff, faMinus, faCheck, faLock,
-  faMobileAlt, faPlus, faTimes, faPen,
+  faMobileAlt, faPlus, faTimes, faPen, faFileContract,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import { BAA_TEXT } from '../lib/baaText';
 import type { Org, OrgAclxPolicy } from '../types';
 
 const SENSITIVITY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -89,6 +90,24 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   // ACLX policy (loaded)
   const [aclxPolicy, setAclxPolicy] = useState<OrgAclxPolicy | null>(null);
 
+  // BAA status
+  type BaaStatus = {
+    accepted: boolean;
+    acceptedAt?: string;
+    acceptedBy?: string;
+    signerName?: string;
+    signerTitle?: string;
+    version?: string;
+  };
+  const [baaStatus,    setBaaStatus]    = useState<BaaStatus | null>(null);
+  // BAA self-service sign form
+  const [baaExpanded,  setBaaExpanded]  = useState(false);
+  const [baaName,      setBaaName]      = useState('');
+  const [baaTitle,     setBaaTitle]     = useState('');
+  const [baaChecked,   setBaaChecked]   = useState(false);
+  const [baaSaving,    setBaaSaving]    = useState(false);
+  const [baaError,     setBaaError]     = useState('');
+
   // "Last saved" snapshots — used by dirty check and Cancel
   const [origName, setOrigName]                   = useState('');
   const [origInsurers, setOrigInsurers]           = useState<string[]>([]);
@@ -107,7 +126,8 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
       api.getOrg(orgId),
       api.getOrgAclxPolicy(orgId).catch(() => null),
       api.getInsuranceCompanies(orgId).catch(() => ({ companies: [] as string[] })),
-    ]).then(([o, policy, ins]) => {
+      api.getBaaStatus(orgId).catch(() => null),
+    ]).then(([o, policy, ins, baa]) => {
       const name      = o.name ?? '';
       const sens      = policy?.escalateAtSensitivity ?? '';
       const companies = ins.companies ?? [];
@@ -124,6 +144,7 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
       setInsurers(companies);
       setReviewRequired(revReq);
       setAclxEnabled(aclxEn);
+      if (baa) setBaaStatus(baa);
 
       // Snapshots for dirty check + cancel
       setOrigName(name);
@@ -180,6 +201,27 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
     setNewInsurer('');
   };
 
+  const handleAcceptBaa = async () => {
+    if (!baaName.trim() || !baaTitle.trim() || !baaChecked) return;
+    setBaaSaving(true);
+    setBaaError('');
+    try {
+      const result = await api.acceptBaa(orgId, {
+        signerName:  baaName.trim(),
+        signerTitle: baaTitle.trim(),
+      });
+      setBaaStatus(result);
+      setBaaExpanded(false);
+      setBaaName('');
+      setBaaTitle('');
+      setBaaChecked(false);
+    } catch (e: unknown) {
+      setBaaError(e instanceof Error ? e.message : 'Failed to record BAA acceptance');
+    } finally {
+      setBaaSaving(false);
+    }
+  };
+
 
   // True whenever any field differs from the last-saved snapshot
   const dirty =
@@ -232,6 +274,171 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
           />
         </div>
 
+      </div>
+
+      {/* ── Business Associate Agreement ── */}
+      <div className={`bg-white rounded-xl border p-6 ${baaStatus?.accepted ? 'border-gray-200' : 'border-amber-300'}`}>
+
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: baaStatus?.accepted ? '#e8f4f8' : '#fef3c7' }}
+            >
+              <FontAwesomeIcon
+                icon={faFileContract}
+                style={{ color: baaStatus?.accepted ? '#2a5f6f' : '#d97706', fontSize: 16 }}
+              />
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 text-sm">Business Associate Agreement</h4>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Required under 45 C.F.R. § 164.504(e) before PHI may be processed.
+              </p>
+            </div>
+          </div>
+          {baaStatus?.accepted ? (
+            <span
+              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold"
+              style={{ background: '#EEF7EA', color: '#2E7D22', border: '1px solid #bbf7d0' }}
+            >
+              Signed
+            </span>
+          ) : (
+            <span
+              className="shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold"
+              style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+            >
+              Required
+            </span>
+          )}
+        </div>
+
+        {/* Signed — show record */}
+        {baaStatus?.accepted && (
+          <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            <div>
+              <span className="text-gray-400 font-medium uppercase tracking-wide">Signed by</span>
+              <p className="text-gray-700 font-semibold mt-0.5">{baaStatus.signerName}</p>
+              <p className="text-gray-500">{baaStatus.signerTitle}</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium uppercase tracking-wide">Accepted</span>
+              <p className="text-gray-700 font-semibold mt-0.5">
+                {baaStatus.acceptedAt
+                  ? new Date(baaStatus.acceptedAt).toLocaleDateString(undefined, {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                    })
+                  : '—'}
+              </p>
+              <p className="text-gray-500">BAA version {baaStatus.version ?? '1.0'}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Not yet signed — CTA or inline form */}
+        {!baaStatus?.accepted && (
+          <>
+            {!baaExpanded ? (
+              /* Collapsed state */
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Your organization has not signed the Business Associate Agreement.
+                  A BAA is required before processing any Protected Health Information.
+                </p>
+                {isAdmin && (
+                  <button
+                    onClick={() => setBaaExpanded(true)}
+                    className="shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold transition-opacity"
+                    style={{ background: '#2a5f6f' }}
+                  >
+                    Sign BAA
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* Expanded sign form */
+              <div className="mt-4 space-y-4">
+
+                {/* BAA text */}
+                <div
+                  className="rounded-lg border border-gray-200 bg-gray-50 p-3 overflow-y-auto text-xs text-gray-600 leading-relaxed whitespace-pre-wrap font-mono"
+                  style={{ maxHeight: 200 }}
+                >
+                  {BAA_TEXT}
+                </div>
+
+                {/* Signer fields */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                      Full Legal Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      placeholder="e.g. Jane Smith"
+                      value={baaName}
+                      onChange={(e) => setBaaName(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                      Title / Position
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      placeholder="e.g. Executive Director"
+                      value={baaTitle}
+                      onChange={(e) => setBaaTitle(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Authority checkbox */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 shrink-0 accent-teal-700"
+                    checked={baaChecked}
+                    onChange={(e) => setBaaChecked(e.target.checked)}
+                  />
+                  <span className="text-xs text-gray-600 leading-relaxed">
+                    I have read the Business Associate Agreement above and have authority to bind
+                    my organization to these terms. I accept this BAA on behalf of my organization.
+                  </span>
+                </label>
+
+                {baaError && <p className="text-xs text-red-500">{baaError}</p>}
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    onClick={handleAcceptBaa}
+                    disabled={!baaName.trim() || !baaTitle.trim() || !baaChecked || baaSaving}
+                    className="px-5 py-2 rounded-lg text-white text-sm font-semibold transition-opacity"
+                    style={{
+                      background: (baaName.trim() && baaTitle.trim() && baaChecked) ? '#2a5f6f' : '#9ca3af',
+                      cursor: (!baaName.trim() || !baaTitle.trim() || !baaChecked || baaSaving) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {baaSaving ? 'Recording…' : 'Accept & Sign BAA'}
+                  </button>
+                  <button
+                    onClick={() => { setBaaExpanded(false); setBaaName(''); setBaaTitle(''); setBaaChecked(false); setBaaError(''); }}
+                    className="px-4 py-2 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Compliance & AI Governance */}

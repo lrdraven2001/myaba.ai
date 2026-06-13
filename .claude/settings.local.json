@@ -53,7 +53,11 @@
       "Bash(/d/myaba.ai/myaba.ai/frontend/node_modules/.bin/tsc --noEmit --project /d/myaba.ai/myaba.ai/frontend/tsconfig.json)",
       "Bash(dir \"D:\\\\myaba.ai\\\\myaba.ai\\\\frontend\\\\public\")",
       "Bash(Get-ChildItem -Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\frontend\\\\src\\\\views\" -ErrorAction SilentlyContinue)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(New-Item -ItemType Directory -Force \"D:\\\\myaba.ai\\\\myaba.ai\\\\backend-java\\\\src\\\\main\\\\java\\\\ai\\\\myaba\\\\service\\\\guard\")",
+      "Bash(Out-Null)",
+      "Bash(Write-Output \"created\")",
+      "Bash(xargs grep -l \"Security\\\\|security\")"
     ]
   }
 }

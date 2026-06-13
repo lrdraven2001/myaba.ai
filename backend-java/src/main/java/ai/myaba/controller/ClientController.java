@@ -133,6 +133,7 @@ public class ClientController {
             clientService.updateAuthorizations(
                     user.getOrgId(), clientId,
                     req.getTreatingBcbaId(),
+                    req.getSupervisorIds(),
                     req.getSupervisingBcbaId(),
                     req.getRbtIds(),
                     req.getViewerIds()
@@ -154,6 +155,9 @@ public class ClientController {
     @lombok.Data
     static class AuthorizationsRequest {
         private String treatingBcbaId;
+        /** All supervisors on the case (roster). */
+        private List<String> supervisorIds;
+        /** Current / primary supervisor — must be one of supervisorIds. */
         private String supervisingBcbaId;
         private List<String> rbtIds;
         private List<String> viewerIds;

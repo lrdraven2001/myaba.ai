@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { api } from '../lib/api';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen } from '@fortawesome/free-solid-svg-icons';
+import { api, ApiError } from '../lib/api';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
 import ChatSidebar from '../components/chat/ChatSidebar';
@@ -9,6 +9,114 @@ import type { SidebarClient } from '../components/chat/ChatSidebar';
 import NewChatModal from '../components/chat/NewChatModal';
 import type { NewChatData } from '../components/chat/NewChatModal';
 import FileAttachModal from '../components/chat/FileAttachModal';
+
+// ── Lightweight markdown renderer ────────────────────────────────────────────
+// Handles the patterns Claude commonly produces: headers, bold, italic,
+// inline code, fenced code blocks, numbered/bulleted lists, and hr.
+// No external dependency needed.
+function MarkdownContent({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  const renderInline = (s: string, key: string | number) => {
+    // Split on bold (**), italic (*), and inline code (`)
+    const parts = s.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    return (
+      <span key={key}>
+        {parts.map((p, j) => {
+          if (p.startsWith('**') && p.endsWith('**'))
+            return <strong key={j}>{p.slice(2, -2)}</strong>;
+          if (p.startsWith('*') && p.endsWith('*'))
+            return <em key={j}>{p.slice(1, -1)}</em>;
+          if (p.startsWith('`') && p.endsWith('`'))
+            return <code key={j} className="bg-gray-100 text-teal-700 rounded px-1 text-xs font-mono">{p.slice(1, -1)}</code>;
+          return p;
+        })}
+      </span>
+    );
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      elements.push(
+        <pre key={i} className="bg-gray-900 text-green-300 rounded-xl px-4 py-3 text-xs overflow-x-auto my-2 whitespace-pre">
+          {lang && <div className="text-gray-500 text-xs mb-1">{lang}</div>}
+          {codeLines.join('\n')}
+        </pre>
+      );
+      i++;
+      continue;
+    }
+
+    // Headings
+    if (line.startsWith('### ')) { elements.push(<h3 key={i} className="font-semibold text-gray-800 text-sm mt-3 mb-0.5">{renderInline(line.slice(4), 0)}</h3>); i++; continue; }
+    if (line.startsWith('## '))  { elements.push(<h2 key={i} className="font-bold text-gray-800 text-base mt-4 mb-1">{renderInline(line.slice(3), 0)}</h2>); i++; continue; }
+    if (line.startsWith('# '))   { elements.push(<h1 key={i} className="font-bold text-gray-900 text-lg mt-4 mb-1">{renderInline(line.slice(2), 0)}</h1>); i++; continue; }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) { elements.push(<hr key={i} className="my-3 border-gray-200" />); i++; continue; }
+
+    // Ordered list — collect contiguous numbered lines
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={i} className="list-decimal list-outside ml-5 space-y-0.5 my-1">
+          {items.map((item, j) => <li key={j} className="text-sm">{renderInline(item, j)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+
+    // Unordered list — collect contiguous bullet lines
+    if (/^[-*]\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^[-*]\s/, ''));
+        i++;
+      }
+      elements.push(
+        <ul key={i} className="list-disc list-outside ml-5 space-y-0.5 my-1">
+          {items.map((item, j) => <li key={j} className="text-sm">{renderInline(item, j)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+
+    // Blank line
+    if (line.trim() === '') { elements.push(<div key={i} className="h-2" />); i++; continue; }
+
+    // Normal paragraph line
+    elements.push(<p key={i} className="text-sm leading-relaxed">{renderInline(line, 0)}</p>);
+    i++;
+  }
+
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
+/** Derive a short chat title from the first user message. */
+function deriveTitleFromMessage(text: string): string {
+  const clean = text.trim().replace(/\s+/g, ' ');
+  if (clean.length <= 48) return clean.charAt(0).toUpperCase() + clean.slice(1);
+  const cut = clean.slice(0, 48);
+  const lastSpace = cut.lastIndexOf(' ');
+  const trimmed = lastSpace > 20 ? cut.slice(0, lastSpace) : cut;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1) + '…';
+}
 
 /** Derive initials from a name string. */
 function toInitials(name: string): string {
@@ -27,9 +135,12 @@ function clientDisplayName(c: { firstName?: string; lastName?: string; preferred
 interface ChatViewProps {
   /** When set, auto-select this chat after the list loads (e.g. navigating from ProjectsView). */
   initialChatId?: string | null;
+  /** When set, auto-open New Chat modal pre-scoped to this client (e.g. navigating from ClientsView).
+   *  Re-fires whenever the value changes so clicking a second client while already in chat view works. */
+  initialClientId?: string | null;
 }
 
-export default function ChatView({ initialChatId }: ChatViewProps = {}) {
+export default function ChatView({ initialChatId, initialClientId }: ChatViewProps = {}) {
   const [chats, setChats]                       = useState<Chat[]>([]);
   const [sidebarClients, setSidebarClients]     = useState<SidebarClient[]>([]);
   const [activeChatId, setActiveChatId]         = useState<string | null>(initialChatId ?? null);
@@ -43,6 +154,9 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
   const [showFileAttach, setShowFileAttach]     = useState(false);
   const [attachedFiles, setAttachedFiles]       = useState<AttachedFile[]>([]);
   const [templateSourceContent, setTemplateSourceContent] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle]                   = useState(false);
+  const [titleDraft, setTitleDraft]                       = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const activeChat   = chats.find((c) => c.id === activeChatId) ?? null;
@@ -50,6 +164,19 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     ? sidebarClients.find((c) => c.id === activeChat.clientId)
     : null;
   const messages = activeChatId ? (messagesByChat[activeChatId] ?? []) : [];
+
+  // ── Auto-create chat when arriving from ClientsView ──────────────────────
+  // When initialClientId is set, skip the modal and create the chat immediately.
+  // Waits until the client list has finished loading so we can derive the title.
+
+  useEffect(() => {
+    if (!initialClientId || loadingChats) return;
+    const client = sidebarClients.find((c) => c.id === initialClientId);
+    const name   = client?.preferredName ?? '';
+    const date   = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const title  = name ? `${name} — ${date}` : `Chat — ${date}`;
+    handleNewChat({ title, clientId: initialClientId });
+  }, [initialClientId, loadingChats]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load chats on mount ───────────────────────────────────────────────────
 
@@ -124,6 +251,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     setActiveChatId(id);
     setAttachedFiles([]);
     setInput('');
+    setEditingTitle(false);
   }, []);
 
   // ── New chat ──────────────────────────────────────────────────────────────
@@ -181,6 +309,44 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
+  // ── Delete chat ───────────────────────────────────────────────────────────
+
+  const handleDeleteChat = useCallback(async (id: string) => {
+    // Optimistic remove
+    setChats((prev) => prev.filter((c) => c.id !== id));
+    if (activeChatId === id) setActiveChatId(null);
+
+    try {
+      await api.deleteChat(id);
+    } catch {
+      // Non-fatal — chat already gone from local state; backend may still clean up on next load
+    }
+  }, [activeChatId]);
+
+  // ── Rename chat ───────────────────────────────────────────────────────────
+
+  const saveTitle = useCallback(async () => {
+    setEditingTitle(false);
+    const newTitle = titleDraft.trim();
+    if (!newTitle || !activeChatId || newTitle === activeChat?.title) return;
+
+    // Optimistic update
+    setChats((prev) =>
+      prev.map((c) => (c.id === activeChatId ? { ...c, title: newTitle } : c))
+    );
+
+    try {
+      await api.updateChatTitle(activeChatId, newTitle);
+    } catch {
+      // Revert on failure
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === activeChatId ? { ...c, title: activeChat?.title ?? c.title } : c
+        )
+      );
+    }
+  }, [titleDraft, activeChatId, activeChat?.title]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Send message ──────────────────────────────────────────────────────────
 
   const sendMessage = async () => {
@@ -226,6 +392,17 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
       )
     );
 
+    // ── Auto-title on first message (always, regardless of response) ─────────
+    // Derive a title from the first user message as soon as it's sent — don't
+    // wait for the AI response, which may be blocked or error.
+    if (history.length === 0) {
+      const autoTitle = deriveTitleFromMessage(text);
+      setChats((prev) =>
+        prev.map((c) => (c.id === activeChatId ? { ...c, title: autoTitle } : c))
+      );
+      api.updateChatTitle(activeChatId, autoTitle).catch(() => {/* non-fatal */});
+    }
+
     try {
       const res = await api.chat(
         text + fileContext,
@@ -247,17 +424,67 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
         [activeChatId]: [...(prev[activeChatId] ?? []), assistantMsg],
       }));
       setPreviews((prev) => ({ ...prev, [activeChatId]: res.reply.slice(0, 60) }));
-    } catch {
-      const errMsg: ChatMessage = {
-        id:        (Date.now() + 1).toString(),
-        role:      'assistant',
-        content:   'Could not reach the backend. Make sure the API is running on port 9090 (`mvn spring-boot:run -Dspring-boot.run.profiles=local` in `backend-java/`).',
-        timestamp: new Date().toISOString(),
-      };
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
-      }));
+    } catch (err) {
+      // ── Input guard block ─────────────────────────────────────────────────
+      // The backend detected a policy violation and returned HTTP 422 with a
+      // structured error body (code, message, detected).  Surface the guard
+      // message directly rather than a generic infrastructure error, and restore
+      // the user's input so they can edit the message.
+      // Handled codes: CROSS_CLIENT_PHI_INPUT | PROMPT_INJECTION_DETECTED |
+      //                SENSITIVE_IDENTIFIER_DETECTED
+      if (err instanceof ApiError && INPUT_GUARD_CODES.has(err.code ?? '')) {
+        const redirectMsg   = (err.details.message as string) ?? err.message;
+        const detectedValue = (err.details.detected as string) ?? '';
+
+        // Restore input — the message was not sent; user should edit it
+        setInput(text);
+
+        // Replace the optimistically-added user message with a warning variant
+        const guardMsg: ChatMessage & {
+          guardBlock: true;
+          guardCode: string;
+          detectedValue: string;
+        } = {
+          id:           (Date.now() + 1).toString(),
+          role:         'assistant',
+          content:      redirectMsg,
+          timestamp:    new Date().toISOString(),
+          guardBlock:   true,
+          guardCode:    err.code ?? 'UNKNOWN',
+          detectedValue,
+        };
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [activeChatId]: [...(prev[activeChatId] ?? []), guardMsg],
+        }));
+      } else if (err instanceof ApiError && err.code === 'AUTH_REQUIRED') {
+        // ── Hard-block: client requires explicit written authorization ──────
+        const clientName = activeClient
+          ? (activeClient.preferredName || activeClient.firstName || 'this client')
+          : 'this client';
+        const errMsg: ChatMessage = {
+          id:        (Date.now() + 1).toString(),
+          role:      'assistant',
+          content:   `AI access for ${clientName} is blocked — their diagnosis includes a specially-protected data category that requires a written authorization before any AI processing.\n\nTo unblock: go to **Clients → ${clientName} → Authorizations tab** and add an **ABA Treatment Authorization** (covers all routine ABA care). Use the specific authorization type only if required by your compliance team.`,
+          timestamp: new Date().toISOString(),
+        };
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
+        }));
+      } else {
+        // ── Generic backend / network error ────────────────────────────────
+        const errMsg: ChatMessage = {
+          id:        (Date.now() + 1).toString(),
+          role:      'assistant',
+          content:   'Could not reach the backend. Make sure the API is running on port 9090 (`mvn spring-boot:run -Dspring-boot.run.profiles=local` in `backend-java/`).',
+          timestamp: new Date().toISOString(),
+        };
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
+        }));
+      }
     } finally {
       setLoading(false);
     }
@@ -278,9 +505,9 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     resizeTextarea();
   };
 
-  // Ctrl+Enter / ⌘+Enter sends; plain Enter inserts newline
+  // Enter sends; Shift+Enter inserts newline
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
@@ -325,13 +552,14 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
         previews={previews}
         onSelectChat={handleSelectChat}
         onNewChat={() => setShowNewChat(true)}
+        onDeleteChat={handleDeleteChat}
       />
 
       {/* Right: active chat */}
       {activeChat ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           {/* Chat header */}
-          <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 flex-wrap">
+          <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
             {activeClient && (
               <span
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border"
@@ -351,11 +579,49 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 {activeChat.projectLabel}
               </span>
             )}
-            <span className="text-sm font-semibold text-gray-700">{activeChat.title}</span>
+
+            {/* Inline-editable chat title */}
+            {editingTitle ? (
+              <input
+                ref={titleInputRef}
+                className="text-sm font-semibold text-gray-700 border border-gray-300 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                style={{ minWidth: 160, maxWidth: 320 }}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveTitle();
+                  } else if (e.key === 'Escape') {
+                    setEditingTitle(false);
+                  }
+                }}
+                onBlur={saveTitle}
+              />
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
+                  {activeChat.title}
+                </span>
+                <button
+                  title="Rename chat"
+                  onClick={() => {
+                    setTitleDraft(activeChat.title);
+                    setEditingTitle(true);
+                    setTimeout(() => titleInputRef.current?.select(), 0);
+                  }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#6b7280', lineHeight: 1 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#0d9488')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = '#6b7280')}
+                >
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: 11 }} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
             {loadingMessages ? (
               <div className="h-full flex items-center justify-center">
                 <p className="text-gray-400 text-sm animate-pulse">Loading messages…</p>
@@ -365,7 +631,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 <h2 className="text-2xl font-semibold text-gray-700 mb-2">{activeChat.title}</h2>
                 <p className="text-gray-400 text-sm max-w-sm">
                   {activeClient
-                    ? `Ask anything about ${activeClient.preferredName}'s care — all responses are ACLX-governed for HIPAA compliance.`
+                    ? `Ask anything about ${activeClient.preferredName}'s care.`
                     : 'General project chat. You can reference information from multiple clients you are authorized for.'}
                 </p>
                 <p className="text-gray-300 text-xs mt-3">
@@ -374,36 +640,54 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
               </div>
             ) : (
               <div className="max-w-3xl mx-auto space-y-4">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                  >
+                {messages.map((msg) => {
+                  // ── Input guard block — policy warning banner ───────────────
+                  const raw = msg as Record<string, unknown>;
+                  if (raw.guardBlock === true) {
+                    return (
+                      <InputGuardWarning
+                        key={msg.id}
+                        guardCode={raw.guardCode as string}
+                        detectedValue={raw.detectedValue as string}
+                        message={msg.content}
+                      />
+                    );
+                  }
+
+                  return (
                     <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        msg.role === 'user' ? 'text-white' : 'bg-gray-100 text-gray-800'
-                      }`}
-                      style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
+                      key={msg.id}
+                      className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                     >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                      {msg.aclxDecision && msg.aclxDecision !== 'ALLOW' && (
-                        <AclxBadge decision={msg.aclxDecision} />
+                      <div
+                        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                          msg.role === 'user' ? 'text-white' : 'bg-gray-100 text-gray-800'
+                        }`}
+                        style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
+                      >
+                        {msg.role === 'assistant'
+                          ? <MarkdownContent text={msg.content} />
+                          : <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                        }
+                        {msg.aclxDecision && msg.aclxDecision !== 'ALLOW' && (
+                          <AclxBadge decision={msg.aclxDecision} />
+                        )}
+                      </div>
+                      {/* Save as Template — only on genuine allowed AI responses */}
+                      {msg.role === 'assistant' &&
+                        msg.aclxDecision === 'ALLOW' && (
+                        <button
+                          onClick={() => setTemplateSourceContent(msg.content)}
+                          className="mt-1 flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors px-1"
+                          title="Save de-identified version as a reusable template"
+                        >
+                          <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
+                          Save as Template
+                        </button>
                       )}
                     </div>
-                    {/* Save as Template — only on non-blocked assistant messages */}
-                    {msg.role === 'assistant' &&
-                      (!msg.aclxDecision || msg.aclxDecision === 'ALLOW') && (
-                      <button
-                        onClick={() => setTemplateSourceContent(msg.content)}
-                        className="mt-1 flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors px-1"
-                        title="Save de-identified version as a reusable template"
-                      >
-                        <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
-                        Save as Template
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 {loading && <TypingIndicator />}
                 <div ref={bottomRef} />
               </div>
@@ -451,7 +735,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 <textarea
                   ref={textareaRef}
                   className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
-                  placeholder="Ask anything  —  Enter for new line  ·  Ctrl+Enter to send"
+                  placeholder="Ask anything  —  Shift+Enter for new line"
                   rows={1}
                   value={input}
                   onChange={handleInput}
@@ -475,7 +759,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 </button>
               </div>
               <p className="text-center text-xs mt-1.5" style={{ color: '#B0BEC5' }}>
-                Enter for new line &nbsp;·&nbsp; Ctrl+Enter to send
+                Shift+Enter for new line
               </p>
             </div>
           </div>
@@ -509,6 +793,15 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     </div>
   );
 }
+
+// ── Guard codes handled by InputGuardWarning ──────────────────────────────────
+// Keep in sync with InputGuardService guard implementations on the backend.
+
+const INPUT_GUARD_CODES = new Set([
+  'CROSS_CLIENT_PHI_INPUT',
+  'PROMPT_INJECTION_DETECTED',
+  'SENSITIVE_IDENTIFIER_DETECTED',
+]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -557,15 +850,36 @@ function ChatLandingPage({ onNewChat }: { onNewChat: () => void }) {
       </div>
 
       {/* Headline */}
-      <h1 className="text-2xl font-bold text-center mb-3" style={{ color: '#1E3347', letterSpacing: '-0.02em' }}>
+      <h1 className="text-2xl font-bold text-center mb-4" style={{ color: '#1E3347', letterSpacing: '-0.02em' }}>
         Secure. Compliant. Connected.
       </h1>
-      <p className="text-sm text-center max-w-sm mb-1" style={{ color: '#6B7B88', lineHeight: 1.6 }}>
-        Start a new chat to securely discuss documents across multiple conversations.
-      </p>
-      <p className="text-sm text-center mb-8" style={{ color: '#6B7B88' }}>
-        All data is HIPAA compliant and role-permissioned.
-      </p>
+
+      {/* Responsible AI notice */}
+      <div
+        className="mb-8"
+        style={{
+          maxWidth: 520,
+          width: '100%',
+          background: '#F0F7FF',
+          border: '1px solid #BDD7F5',
+          borderRadius: 12,
+          padding: '12px 16px',
+          display: 'flex',
+          gap: 12,
+          alignItems: 'flex-start',
+        }}
+      >
+        <div style={{ flexShrink: 0, marginTop: 2 }}>
+          <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 14, color: '#1E88FF' }} />
+        </div>
+        <p style={{ fontSize: 12, color: '#2C4A6B', lineHeight: 1.7, margin: 0 }}>
+          AI must be used ethically, responsibly, and in alignment with HIPAA, company policies,
+          and the <strong style={{ fontWeight: 600 }}>BACB Ethics Code</strong>. AI can support
+          efficiency and organization, but it should not replace clinical judgment, supervision,
+          or individualized care.{' '}
+          <strong style={{ fontWeight: 600 }}>All AI-generated content should be reviewed and verified before use.</strong>
+        </p>
+      </div>
 
       {/* CTA — single button, no duplicate */}
       <button
@@ -621,6 +935,107 @@ function TypingIndicator() {
             />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Input guard warning banner ────────────────────────────────────────────────
+//
+// Rendered in place of an assistant bubble when any InputGuard fires (HTTP 422).
+// Styling and copy adapt to the specific guard code so clinicians immediately
+// understand what was blocked and why.
+//
+// Code → treatment:
+//   PROMPT_INJECTION_DETECTED    → red/rose  — security event
+//   SENSITIVE_IDENTIFIER_DETECTED → orange    — super-PHI data protection
+//   CROSS_CLIENT_PHI_INPUT        → amber     — HIPAA Minimum Necessary
+
+const GUARD_STYLES: Record<string, {
+  bg: string;
+  border: string;
+  bodyText: string;
+  headerText: string;
+  mutedText: string;
+  badgeBg: string;
+  icon: typeof faBan;
+  title: string;
+  badge: string;
+  citation: string | null;
+}> = {
+  PROMPT_INJECTION_DETECTED: {
+    bg: '#fff1f2', border: '#fecdd3', bodyText: '#881337',
+    headerText: '#9f1239', mutedText: '#be123c', badgeBg: '#ffe4e6',
+    icon: faBan,
+    title: 'Security policy violation',
+    badge: 'Prompt injection',
+    citation: null,
+  },
+  SENSITIVE_IDENTIFIER_DETECTED: {
+    bg: '#fff7ed', border: '#fed7aa', bodyText: '#7c2d12',
+    headerText: '#9a3412', mutedText: '#c2410c', badgeBg: '#ffedd5',
+    icon: faExclamationTriangle,
+    title: 'Sensitive identifier detected',
+    badge: 'Data protection',
+    citation: null,
+  },
+  CROSS_CLIENT_PHI_INPUT: {
+    bg: '#fffbeb', border: '#fde68a', bodyText: '#78350f',
+    headerText: '#92400e', mutedText: '#a16207', badgeBg: '#fef3c7',
+    icon: faBan,
+    title: 'Cross-client reference blocked',
+    badge: 'HIPAA · Minimum Necessary',
+    citation: '45 CFR §164.514(d) — Minimum Necessary Rule',
+  },
+};
+
+function InputGuardWarning({
+  guardCode,
+  detectedValue,
+  message,
+}: {
+  guardCode: string;
+  detectedValue: string;
+  message: string;
+}) {
+  const s = GUARD_STYLES[guardCode] ?? GUARD_STYLES['CROSS_CLIENT_PHI_INPUT'];
+
+  return (
+    <div className="max-w-[85%] self-start w-full">
+      <div
+        className="rounded-2xl px-4 py-3.5 text-sm"
+        style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.bodyText }}
+      >
+        {/* Header row */}
+        <div className="flex items-center gap-2 mb-2 font-semibold" style={{ color: s.headerText }}>
+          <FontAwesomeIcon icon={s.icon} style={{ fontSize: 13, color: s.mutedText }} />
+          {s.title}
+          <span
+            className="ml-auto text-xs font-normal px-2 py-0.5 rounded-full"
+            style={{ background: s.badgeBg, color: s.headerText }}
+          >
+            {s.badge}
+          </span>
+        </div>
+
+        {/* Detected value callout — only shown when meaningful */}
+        {detectedValue && detectedValue !== 'prompt-injection' && (
+          <p className="text-xs mb-2.5" style={{ color: s.mutedText }}>
+            Detected: <strong>"{detectedValue}"</strong>
+          </p>
+        )}
+
+        {/* Full guard message */}
+        <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: s.bodyText }}>
+          {message}
+        </p>
+
+        {/* Optional citation */}
+        {s.citation && (
+          <p className="text-xs mt-3 pt-2.5 border-t" style={{ borderColor: s.border, color: s.mutedText }}>
+            {s.citation}
+          </p>
+        )}
       </div>
     </div>
   );

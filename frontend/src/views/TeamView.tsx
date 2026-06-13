@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faUserPlus, faEnvelope, faToggleOn, faToggleOff,
   faArrowLeft, faChevronRight, faTimes, faMailBulk,
   faUsers, faHistory, faUserCog, faCommentDots, faFileAlt,
-  faLink,
+  faLink, faCheck, faCopy,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -96,13 +96,72 @@ function toInitials(name: string) {
 export default function TeamView() {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const orgId   = currentUser?.orgId ?? '';
 
   const [members, setMembers]             = useState<TeamMember[]>(STUB_MEMBERS);
+  const [loadingMembers, setLoadingMembers] = useState(true);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [showInvite, setShowInvite]       = useState(false);
   const [showManageInvites, setShowManageInvites] = useState(false);
-  const [inviteEmail, setInviteEmail]     = useState('');
   const [inviteRole, setInviteRole]       = useState('RBT');
+  const [inviteUrl, setInviteUrl]         = useState('');
+  const [inviteGenerating, setInviteGenerating] = useState(false);
+  const [inviteError, setInviteError]     = useState('');
+  const [inviteCopied, setInviteCopied]   = useState(false);
+
+  // Load real members
+  useEffect(() => {
+    if (!orgId) return;
+    api.getOrgMembers(orgId)
+      .then((data) => {
+        const mapped: TeamMember[] = data.map((m) => ({
+          id:          m.id,
+          name:        m.displayName,
+          email:       m.email,
+          role:        m.role,
+          active:      m.active,
+        }));
+        if (mapped.length > 0) setMembers(mapped);
+      })
+      .catch(() => { /* keep stubs on error */ })
+      .finally(() => setLoadingMembers(false));
+  }, [orgId]);
+
+  const handleOpenInvite = () => {
+    setInviteRole('RBT');
+    setInviteUrl('');
+    setInviteError('');
+    setInviteCopied(false);
+    setShowInvite(true);
+  };
+
+  const handleGenerateInviteLink = async () => {
+    setInviteGenerating(true);
+    setInviteError('');
+    setInviteUrl('');
+    setInviteCopied(false);
+    try {
+      const { inviteUrl: url } = await api.generateInvite(orgId, inviteRole);
+      setInviteUrl(url);
+    } catch (e: unknown) {
+      setInviteError(e instanceof Error ? e.message : 'Failed to generate invite link');
+    } finally {
+      setInviteGenerating(false);
+    }
+  };
+
+  const handleCopyInvite = async () => {
+    await navigator.clipboard.writeText(inviteUrl);
+    setInviteCopied(true);
+    setTimeout(() => setInviteCopied(false), 2000);
+  };
+
+  const handleCloseInvite = () => {
+    setShowInvite(false);
+    setInviteUrl('');
+    setInviteError('');
+    setInviteCopied(false);
+  };
 
   // ── User detail view ──────────────────────────────────────────────────────
 
@@ -130,7 +189,7 @@ export default function TeamView() {
         <h1 className="text-base font-semibold text-gray-900">Team Members</h1>
         <div className="flex-1" />
         <span className="text-sm text-gray-400">
-          {members.length} member{members.length !== 1 ? 's' : ''}
+          {loadingMembers ? 'Loading…' : `${members.length} member${members.length !== 1 ? 's' : ''}`}
         </span>
         {isAdmin && (
           <>
@@ -153,7 +212,7 @@ export default function TeamView() {
               )}
             </button>
             <button
-              onClick={() => setShowInvite(true)}
+              onClick={handleOpenInvite}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors"
               style={{ background: '#2a5f6f' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1e4a56')}
@@ -249,33 +308,28 @@ export default function TeamView() {
       {showInvite && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-gray-900">Invite Team Member</h2>
-              <button onClick={() => { setShowInvite(false); setInviteEmail(''); }} className="text-gray-400 hover:text-gray-600">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Invite Team Member</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Generate a single-use link — share it however you like. Expires in 7 days.
+                </p>
+              </div>
+              <button onClick={handleCloseInvite} className="text-gray-400 hover:text-gray-600">
                 <FontAwesomeIcon icon={faTimes} />
               </button>
             </div>
+
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                  placeholder="colleague@example.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-              </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
                   Role
                 </label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
+                  onChange={(e) => { setInviteRole(e.target.value); setInviteUrl(''); setInviteError(''); }}
+                  disabled={!!inviteUrl}
                 >
                   {Object.entries(ROLE_LABELS)
                     .filter(([v]) => v !== 'ORG_SUPER_ADMIN')
@@ -284,27 +338,67 @@ export default function TeamView() {
                     ))}
                 </select>
               </div>
+
+              {/* Generated link */}
+              {inviteUrl && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Invite Link — copy &amp; share
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={inviteUrl}
+                      className="flex-1 text-xs text-gray-700 bg-transparent border-none outline-none truncate font-mono"
+                    />
+                    <button
+                      onClick={handleCopyInvite}
+                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 transition-colors"
+                      style={{ background: inviteCopied ? '#16a34a' : '#2a5f6f' }}
+                    >
+                      <FontAwesomeIcon icon={inviteCopied ? faCheck : faCopy} />
+                      {inviteCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {inviteError && (
+                <p className="text-sm text-red-500">{inviteError}</p>
+              )}
             </div>
+
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => { setShowInvite(false); setInviteEmail(''); }}
+                onClick={handleCloseInvite}
                 className="flex-1 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:bg-gray-50"
               >
-                Cancel
+                {inviteUrl ? 'Done' : 'Cancel'}
               </button>
-              <button
-                onClick={() => {
-                  // TODO: wire to api.inviteMember(inviteEmail, inviteRole)
-                  setShowInvite(false);
-                  setInviteEmail('');
-                }}
-                className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold transition-colors"
-                style={{ background: '#F5A623' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#d48f10')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#F5A623')}
-              >
-                Send Invite
-              </button>
+              {!inviteUrl ? (
+                <button
+                  onClick={handleGenerateInviteLink}
+                  disabled={inviteGenerating}
+                  className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
+                  style={{ background: '#2a5f6f' }}
+                  onMouseEnter={(e) => { if (!inviteGenerating) (e.currentTarget as HTMLButtonElement).style.background = '#1e4a56'; }}
+                  onMouseLeave={(e) => { if (!inviteGenerating) (e.currentTarget as HTMLButtonElement).style.background = '#2a5f6f'; }}
+                >
+                  {inviteGenerating ? 'Generating…' : (
+                    <><FontAwesomeIcon icon={faLink} className="text-xs" /> Generate Link</>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setInviteUrl(''); setInviteError(''); setInviteCopied(false); }}
+                  className="flex-1 py-2.5 rounded-lg text-white text-sm font-semibold transition-colors"
+                  style={{ background: '#2a5f6f' }}
+                  onMouseEnter={(e) => (e.currentTarget as HTMLButtonElement).style.background = '#1e4a56'}
+                  onMouseLeave={(e) => (e.currentTarget as HTMLButtonElement).style.background = '#2a5f6f'}
+                >
+                  Generate Another
+                </button>
+              )}
             </div>
           </div>
         </div>

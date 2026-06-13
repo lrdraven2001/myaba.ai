@@ -209,6 +209,42 @@ public class ClientService {
         return result;
     }
 
+    /**
+     * Extracts human-readable identifiers from a client record for use as
+     * {@code authorized_subjects.identifiers} in an ACLX evaluate request.
+     *
+     * <p>The ACLX cross-patient PHI detector matches these strings against the AI
+     * response text to determine whether detected PHI belongs to an authorized
+     * subject or has leaked from a different patient.
+     *
+     * <p><strong>Included:</strong> full legal name, preferred name (when distinct
+     * from first name), EHR case ID / MRN equivalent.<br>
+     * <strong>Excluded:</strong> date of birth — it appears too often in clinical
+     * text as a session or assessment date, generating high false-positive rates.
+     *
+     * @param client raw client document map from Firestore / dev store
+     * @return ordered list of identifier strings; never null, may be empty
+     */
+    public List<String> extractIdentifiers(Map<String, Object> client) {
+        List<String> ids = new ArrayList<>();
+        String firstName  = safeStr(client, "firstName");
+        String lastName   = safeStr(client, "lastName");
+        String preferred  = safeStr(client, "preferredName");
+        String ehrCaseId  = safeStr(client, "ehrCaseId");
+
+        if (!firstName.isEmpty() && !lastName.isEmpty()) {
+            ids.add(firstName + " " + lastName);
+        }
+        // Add preferred name only when it differs from first name (avoids duplicates)
+        if (!preferred.isEmpty() && !preferred.equalsIgnoreCase(firstName)) {
+            ids.add(preferred);
+        }
+        if (!ehrCaseId.isEmpty()) {
+            ids.add(ehrCaseId);
+        }
+        return ids;
+    }
+
     // ── Writes ────────────────────────────────────────────────────────────
 
     /**
@@ -278,18 +314,23 @@ public class ClientService {
     public void updateAuthorizations(String orgId,
                                       String clientId,
                                       String treatingBcbaId,
+                                      List<String> supervisorIds,
                                       String supervisingBcbaId,
                                       List<String> rbtIds,
                                       List<String> viewerIds) throws Exception {
         Map<String, Object> updates = new HashMap<>();
         if (treatingBcbaId != null)    updates.put("treatingBcbaId", treatingBcbaId);
+        if (supervisorIds != null)     updates.put("supervisorIds", supervisorIds);
         if (supervisingBcbaId != null) updates.put("supervisingBcbaId", supervisingBcbaId);
         if (rbtIds != null)            updates.put("rbtIds", rbtIds);
         if (viewerIds != null)         updates.put("viewerIds", viewerIds);
 
-        // Recompute the denormalized memberIds index
+        // Recompute the denormalized memberIds index — includes all supervisors
+        List<String> effectiveSupervisors = supervisorIds != null ? supervisorIds
+                : (supervisingBcbaId != null ? List.of(supervisingBcbaId) : List.of());
         updates.put("memberIds", computeMemberIds(
-                treatingBcbaId, supervisingBcbaId,
+                treatingBcbaId,
+                effectiveSupervisors,
                 rbtIds != null ? rbtIds : List.of(),
                 viewerIds != null ? viewerIds : List.of()
         ));
@@ -334,15 +375,19 @@ public class ClientService {
         data.put("supervisingBcbaId", supervising);
         data.put("rbtIds",            rbtIds);
         data.put("viewerIds",         viewerIds);
-        data.put("memberIds",         computeMemberIds(treating, supervising, rbtIds, viewerIds));
+        // supervisorIds not available at create time; fall back to supervising BCBA as sole supervisor
+        List<String> initialSupervisors = supervising != null && !supervising.isBlank()
+                ? List.of(supervising) : List.of();
+        data.put("supervisorIds",     initialSupervisors);
+        data.put("memberIds",         computeMemberIds(treating, initialSupervisors, rbtIds, viewerIds));
         return data;
     }
 
-    private List<String> computeMemberIds(String treating, String supervising,
+    private List<String> computeMemberIds(String treating, List<String> supervisorIds,
                                            List<String> rbtIds, List<String> viewerIds) {
         Set<String> members = new LinkedHashSet<>();
-        if (treating   != null && !treating.isBlank())   members.add(treating);
-        if (supervising != null && !supervising.isBlank()) members.add(supervising);
+        if (treating != null && !treating.isBlank()) members.add(treating);
+        supervisorIds.stream().filter(s -> s != null && !s.isBlank()).forEach(members::add);
         members.addAll(rbtIds);
         members.addAll(viewerIds);
         return new ArrayList<>(members);
@@ -354,5 +399,11 @@ public class ClientService {
             m.put("id", d.getId());
             return m;
         }).collect(Collectors.toList());
+    }
+
+    /** Null-safe string extraction from a map value. */
+    private String safeStr(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        return (v instanceof String s) ? s.trim() : "";
     }
 }

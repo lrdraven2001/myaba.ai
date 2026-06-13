@@ -31,6 +31,7 @@ aclx:
         - HIV
         - GENETIC
       hard-block-auth-types:
+        - ABA_TREATMENT_AUTHORIZATION
         - PART_2_CONSENT
         - PART_2_COURT_ORDER
         - HIPAA_AUTHORIZATION

@@ -129,9 +129,10 @@ function AppFooter() {
 
 function AppShell() {
   const { currentUser, loading } = useAuth();
-  const [activeView, setActiveView]       = useState<View>('chat');
-  const [pendingChatId, setPendingChatId] = useState<string | null>(null);
-  const [pendingDocTab, setPendingDocTab] = useState<DocumentTab>('resources');
+  const [activeView, setActiveView]         = useState<View>('chat');
+  const [pendingChatId, setPendingChatId]   = useState<string | null>(null);
+  const [pendingClientId, setPendingClientId] = useState<string | null>(null);
+  const [pendingDocTab, setPendingDocTab]   = useState<DocumentTab>('resources');
 
   const handleNavigateToChat = (chatId: string) => {
     setPendingChatId(chatId);
@@ -184,6 +185,7 @@ function AppShell() {
           {activeView === 'chat'      && (
             <ChatView
               initialChatId={pendingChatId}
+              initialClientId={pendingClientId}
               key={pendingChatId ?? 'chat'}
             />
           )}
@@ -192,8 +194,8 @@ function AppShell() {
           {activeView === 'clients'   && (
             <ClientsView onStartChat={(clientId) => {
               setPendingChatId(null);
+              setPendingClientId(clientId);
               setActiveView('chat');
-              void clientId;
             }} />
           )}
           {activeView === 'projects'  && (

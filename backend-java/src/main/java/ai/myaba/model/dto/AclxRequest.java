@@ -99,6 +99,41 @@ public class AclxRequest {
     private OrgPolicy orgPolicy;
 
     /**
+     * Subjects explicitly authorized for this interaction.
+     *
+     * <p>The ACLX cross-patient PHI detector uses this list to determine whether
+     * PHI found in the AI response belongs to an authorized subject or has leaked
+     * from a different patient — implementing HIPAA's Minimum Necessary Rule
+     * (45 CFR §164.514(d)) at the output layer.
+     *
+     * <p>When this list is empty the cross-subject check is skipped, so existing
+     * callers that have not been updated continue to work without false positives.
+     */
+    @JsonProperty("authorized_subjects")
+    private List<AuthorizedSubject> authorizedSubjects;
+
+    @Data
+    @Builder
+    public static class AuthorizedSubject {
+
+        /** Client / patient ID from the calling application's data store. */
+        @JsonProperty("subject_id")
+        private String subjectId;
+
+        /**
+         * Human-readable strings used to attribute PHI found in the AI output
+         * back to this subject.
+         *
+         * <p>Typical values: full legal name, preferred name, EHR case ID (MRN).
+         * Date of birth is intentionally excluded — it appears too frequently in
+         * legitimate clinical text as a session date, generating false positives
+         * in the detector.
+         */
+        @Builder.Default
+        private List<String> identifiers = List.of();
+    }
+
+    /**
      * Subject-specific authorization records.
      *
      * <p>myABA loads active authorizations for the primary subject (client) from its

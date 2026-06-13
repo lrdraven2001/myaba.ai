@@ -60,6 +60,7 @@ export interface Client {
   ehrCaseId?: string;
   orgId: string;
   treatingBcbaId?: string;
+  supervisorIds?: string[];
   supervisingBcbaId?: string;
   rbtIds?: string[];
   viewerIds?: string[];
@@ -363,24 +364,29 @@ export interface SubjectAuthorization {
 /** Well-known HIPAA authorization types (for UI dropdowns). */
 export const HIPAA_AUTH_TYPES: { value: string; label: string; description: string }[] = [
   {
+    value: 'ABA_TREATMENT_AUTHORIZATION',
+    label: 'ABA Treatment Authorization',
+    description: 'Standard consent for use of this client\'s information to support ABA treatment, care coordination, and AI-assisted documentation. Appropriate for most ABA clients.',
+  },
+  {
     value: 'RESEARCH',
     label: 'Research Authorization',
-    description: '45 CFR 164.508 — written authorization for research use of identified PHI',
+    description: 'Written authorization for use of identified client data in a research study (45 CFR 164.508)',
   },
   {
     value: 'PART_2_CONSENT',
-    label: '42 CFR Part 2 Consent',
-    description: 'Written patient consent for SUD records — required even for treating providers (42 CFR Part 2 §2.31)',
+    label: '42 CFR Part 2 Consent (SUD)',
+    description: 'Written patient consent required for substance use disorder records — required even for treating providers (42 CFR Part 2 §2.31)',
   },
   {
     value: 'PART_2_COURT_ORDER',
-    label: '42 CFR Part 2 Court Order',
+    label: '42 CFR Part 2 Court Order (SUD)',
     description: 'Court order authorizing disclosure of SUD records without patient consent (42 CFR Part 2 §2.61)',
   },
   {
     value: 'PSYCHOTHERAPY_AUTHORIZATION',
     label: 'Psychotherapy Notes Authorization',
-    description: 'Written authorization required for disclosure of psychotherapy notes (45 CFR 164.508(a)(2))',
+    description: 'Written authorization required to use or disclose psychotherapy session notes (45 CFR 164.508(a)(2))',
   },
   {
     value: 'HIV_STATE_CONSENT',
@@ -389,8 +395,8 @@ export const HIPAA_AUTH_TYPES: { value: string; label: string; description: stri
   },
   {
     value: 'HIPAA_AUTHORIZATION',
-    label: 'HIPAA Authorization',
-    description: 'General written authorization for uses/disclosures outside TPO (45 CFR 164.508)',
+    label: 'HIPAA Authorization (Other)',
+    description: 'General written authorization for uses or disclosures not covered by standard treatment, payment, or operations (45 CFR 164.508)',
   },
 ];
 

@@ -7,12 +7,14 @@ import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.ClaudeService;
 import ai.myaba.service.ClientService;
+import ai.myaba.service.InputGuardService;
 import ai.myaba.service.OrgService;
 import ai.myaba.service.PolicyRagService;
 import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
 import ai.myaba.service.ReviewQueueService;
 import ai.myaba.service.SubjectAuthorizationService;
+import ai.myaba.service.guard.InputGuard;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,12 +23,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.Period;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
@@ -41,6 +47,7 @@ public class GenerateController {
     private final ClientService clientService;
     private final AuthorizationService authorizationService;
     private final SubjectAuthorizationService subjectAuthorizationService;
+    private final InputGuardService inputGuardService;
     private final ChatService chatService;
     private final OrgService orgService;
     private final PolicyService policyService;
@@ -201,11 +208,13 @@ public class GenerateController {
         // Build the effective client ID list for authorization + ACLX
         List<String> allClientIds = resolveClientIds(req);
 
+        // Fetched once — used for (a) authorization check, (b) client context in system prompt
+        Map<String, Map<String, Object>> clientsById = Map.of();
+
         // Layer 2: validate authorization for all referenced clients
         if (!allClientIds.isEmpty()) {
             try {
-                Map<String, Map<String, Object>> clientsById =
-                        clientService.getClientsById(user.getOrgId(), allClientIds);
+                clientsById = clientService.getClientsById(user.getOrgId(), allClientIds);
 
                 List<String> unauthorized =
                         authorizationService.getUnauthorizedClientIds(user, allClientIds, clientsById);
@@ -241,6 +250,29 @@ public class GenerateController {
             }
         }
 
+        // ── Input guard pipeline ─────────────────────────────────────────────────
+        // All configured guards run in priority order before any tokens are spent.
+        // Guards: (1) PromptInjectionGuard, (2) SensitiveIdentifierGuard,
+        //         (3) CrossClientPhiGuard.
+        // Adding a new guard only requires a new @Component — this block never changes.
+        {
+            Optional<InputGuard.Violation> guardViolation =
+                    inputGuardService.check(user, req.getMessage(), allClientIds);
+            if (guardViolation.isPresent()) {
+                InputGuard.Violation v = guardViolation.get();
+                auditService.log("CHAT_INPUT_GUARD_BLOCKED", user.getUid(),
+                        req.getClientId(), null, null, "BLOCK", null);
+                log.warn("InputGuard blocked chat: user={} org={} code={} detected={}",
+                        user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
+                        "error",    "Message blocked by input compliance guard",
+                        "message",  v.userMessage(),
+                        "code",     v.code(),
+                        "detected", v.detectedValue()
+                ));
+            }
+        }
+
         // Build message list for Claude
         List<Map<String, String>> messages = new ArrayList<>();
         if (req.getHistory() != null) {
@@ -249,9 +281,8 @@ public class GenerateController {
         }
         messages.add(Map.of("role", "user", "content", req.getMessage()));
 
-        // Build policy-augmented system prompt
-        // If the chat has policyIds, retrieve relevant policy context via RAG service.
-        String systemPrompt = buildChatSystemPrompt(req, user);
+        // Build policy-augmented system prompt (includes base clinical identity + client context)
+        String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
 
         String rawReply;
         try {
@@ -352,45 +383,153 @@ public class GenerateController {
     /**
      * Build the Claude system prompt for a chat request.
      * Layers (in order):
-     *   1. Project instructions + knowledge docs (if chat has a projectId)
-     *   2. Policy RAG context (if chat has policyIds)
+     *   0. Base ABA clinical identity — always present
+     *   1. Client context — when the chat has a clientId on file
+     *   2. Project instructions + knowledge docs — if chat has a projectId
+     *   3. Policy RAG context — if chat has policyIds
      */
-    private String buildChatSystemPrompt(ChatRequest req, AppUser user) {
-        if (req.getChatId() == null || req.getChatId().isBlank()) return null;
-        try {
-            Map<String, Object> chat = chatService.getChat(user, req.getChatId());
-            StringBuilder sb = new StringBuilder();
+    private String buildChatSystemPrompt(ChatRequest req, AppUser user,
+                                          Map<String, Map<String, Object>> clientsById) {
+        StringBuilder sb = new StringBuilder();
 
-            // Layer 1 — project instructions + knowledge
-            String projectId = (String) chat.get("projectId");
-            if (projectId != null && !projectId.isBlank()) {
-                try {
-                    String projectPrompt = projectService.buildProjectSystemPrompt(user.getOrgId(), projectId);
-                    if (projectPrompt != null && !projectPrompt.isBlank()) {
-                        sb.append(projectPrompt).append("\n\n");
-                    }
-                } catch (Exception e) {
-                    log.warn("Could not build project system prompt for project {}: {}", projectId, e.getMessage());
-                }
+        // ── Layer 0: base ABA clinical identity (always present) ─────────────────
+        sb.append("""
+                You are a clinical AI assistant embedded in myABA.ai, a documentation \
+                and care-coordination platform for Applied Behavior Analysis (ABA) therapy practices.
+                You help BCBAs, RBTs, clinical supervisors, and other clinical staff with \
+                documentation, scheduling, behavior programs, session notes, treatment planning, \
+                and clinical decision support.
+                Always provide responses that are evidence-based, clinically appropriate, and \
+                consistent with BACB ethical guidelines and applicable regulations.
+                When client information is on file (shown below), use it directly in your responses \
+                rather than asking the user to re-enter details that are already known.
+                If additional information is needed to complete a request, ask specifically for the \
+                missing detail rather than requesting all information from scratch.
+                Do not use emoji characters in any response. This is a professional clinical platform \
+                and emoji are inappropriate in clinical documentation and communication.
+                """);
+
+        // ── Layer 1: client context ───────────────────────────────────────────────
+        if (req.getClientId() != null && !req.getClientId().isBlank() && !clientsById.isEmpty()) {
+            Map<String, Object> primaryClient = clientsById.get(req.getClientId());
+            if (primaryClient == null) {
+                // Fallback: use first available client if primary key isn't in the map
+                primaryClient = clientsById.values().iterator().next();
             }
-
-            // Layer 2 — policy RAG
-            @SuppressWarnings("unchecked")
-            List<String> policyIds = (List<String>) chat.get("policyIds");
-            if (policyIds != null && !policyIds.isEmpty()) {
-                String policyContext = policyRagService.buildSystemContext(
-                        req.getMessage(), policyIds, user.getOrgId(), policyService);
-                if (!policyContext.isBlank()) {
-                    sb.append(policyContext);
-                }
+            if (primaryClient != null) {
+                sb.append("\n").append(buildClientContextBlock(primaryClient));
             }
-
-            String result = sb.toString().trim();
-            return result.isBlank() ? null : result;
-        } catch (Exception e) {
-            log.warn("Could not build chat system prompt: {}", e.getMessage());
-            return null;
         }
+
+        // Layers 2–3 require the chat record
+        if (req.getChatId() != null && !req.getChatId().isBlank()) {
+            try {
+                Map<String, Object> chat = chatService.getChat(user, req.getChatId());
+
+                // ── Layer 2: project instructions + knowledge ─────────────────────
+                String projectId = (String) chat.get("projectId");
+                if (projectId != null && !projectId.isBlank()) {
+                    try {
+                        String projectPrompt = projectService.buildProjectSystemPrompt(
+                                user.getOrgId(), projectId);
+                        if (projectPrompt != null && !projectPrompt.isBlank()) {
+                            sb.append("\n\n").append(projectPrompt);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Could not build project system prompt for project {}: {}",
+                                projectId, e.getMessage());
+                    }
+                }
+
+                // ── Layer 3: policy RAG ───────────────────────────────────────────
+                @SuppressWarnings("unchecked")
+                List<String> policyIds = (List<String>) chat.get("policyIds");
+                if (policyIds != null && !policyIds.isEmpty()) {
+                    String policyContext = policyRagService.buildSystemContext(
+                            req.getMessage(), policyIds, user.getOrgId(), policyService);
+                    if (!policyContext.isBlank()) {
+                        sb.append("\n\n").append(policyContext);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Could not build chat system prompt layers 2–3: {}", e.getMessage());
+            }
+        }
+
+        return sb.toString().trim();
+    }
+
+    /**
+     * Format a client record into a structured context block for the system prompt.
+     * Only includes fields that are non-blank so Claude isn't given empty noise.
+     */
+    private String buildClientContextBlock(Map<String, Object> client) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("--- CLIENT ON FILE ---\n");
+
+        // Name — prefer preferredName, fall back to firstName + lastName
+        String preferredName = strField(client, "preferredName");
+        String firstName     = strField(client, "firstName");
+        String lastName      = strField(client, "lastName");
+        String fullName      = firstName.isEmpty() ? "" : (firstName + " " + lastName).trim();
+        String displayName   = !preferredName.isEmpty() ? preferredName
+                             : !fullName.isEmpty()      ? fullName
+                             : "";
+        if (!displayName.isEmpty()) {
+            sb.append("Name: ").append(displayName);
+            // If preferredName differs from legal name, include both
+            if (!preferredName.isEmpty() && !fullName.isEmpty()
+                    && !preferredName.equalsIgnoreCase(fullName)) {
+                sb.append(" (legal name: ").append(fullName).append(")");
+            }
+            sb.append("\n");
+        }
+
+        // Date of birth + age
+        String dob = strField(client, "dateOfBirth");
+        if (!dob.isEmpty()) {
+            sb.append("Date of Birth: ").append(dob);
+            try {
+                // Accepts YYYY-MM-DD
+                LocalDate birthDate = LocalDate.parse(dob.length() > 10 ? dob.substring(0, 10) : dob);
+                int age = Period.between(birthDate, LocalDate.now(ZoneOffset.UTC)).getYears();
+                sb.append(" (Age: ").append(age).append(")");
+            } catch (Exception ignored) { /* keep raw string if parsing fails */ }
+            sb.append("\n");
+        }
+
+        // Gender
+        String gender = strField(client, "gender");
+        if (!gender.isEmpty()) sb.append("Gender: ").append(gender).append("\n");
+
+        // Diagnosis
+        String diagnosis = strField(client, "diagnosis");
+        if (!diagnosis.isEmpty()) sb.append("Diagnosis: ").append(diagnosis).append("\n");
+
+        // Primary insurance
+        String insurance = strField(client, "primaryInsurance");
+        if (!insurance.isEmpty()) sb.append("Primary Insurance: ").append(insurance).append("\n");
+
+        // EHR reference (if present, useful for note context)
+        String ehrProvider = strField(client, "ehrProvider");
+        String ehrCaseId   = strField(client, "ehrCaseId");
+        if (!ehrProvider.isEmpty() || !ehrCaseId.isEmpty()) {
+            sb.append("EHR: ");
+            if (!ehrProvider.isEmpty()) sb.append(ehrProvider);
+            if (!ehrCaseId.isEmpty())   sb.append(" (Case ID: ").append(ehrCaseId).append(")");
+            sb.append("\n");
+        }
+
+        sb.append("--- END CLIENT RECORD ---");
+        return sb.toString();
+    }
+
+    /** Safely extract a non-null, trimmed string field from a Firestore document map. */
+    private String strField(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        if (val == null) return "";
+        String s = val.toString().trim();
+        return s.isEmpty() ? "" : s;
     }
 
     /**

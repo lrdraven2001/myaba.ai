@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faChevronDown, faChevronRight, faChevronLeft,
-  faSearch, faTimes,
+  faSearch, faTimes, faTrash,
 } from '@fortawesome/free-solid-svg-icons';
 import type { Chat } from '../../types';
 
@@ -21,6 +21,7 @@ interface Props {
   previews?: Record<string, string>;
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
+  onDeleteChat?: (id: string) => void;
 }
 
 // ── Time bucket helpers ───────────────────────────────────────────────────────
@@ -56,9 +57,10 @@ export default function ChatSidebar({
   previews = {},
   onSelectChat,
   onNewChat,
+  onDeleteChat,
 }: Props) {
   const [activeTab, setActiveTab]   = useState<Tab>('recents');
-  const [collapsed, setCollapsed]   = useState(true); // collapsed by default
+  const [collapsed, setCollapsed]   = useState(false); // expanded by default
   const [searching, setSearching]   = useState(false);
   const [query, setQuery]           = useState('');
   const searchRef                   = useRef<HTMLInputElement>(null);
@@ -213,6 +215,7 @@ export default function ChatSidebar({
                 preview={previews[chat.id]}
                 isActive={activeChatId === chat.id}
                 onClick={() => { onSelectChat(chat.id); closeSearch(); }}
+                onDelete={onDeleteChat}
               />
             ))
           )}
@@ -252,6 +255,7 @@ export default function ChatSidebar({
                     expanded={expanded}
                     onToggle={toggle}
                     onSelect={onSelectChat}
+                    onDelete={onDeleteChat}
                   />
                 )}
                 {activeTab === 'clients' && (
@@ -263,6 +267,7 @@ export default function ChatSidebar({
                     expanded={expanded}
                     onToggle={toggle}
                     onSelect={onSelectChat}
+                    onDelete={onDeleteChat}
                   />
                 )}
                 {activeTab === 'projects' && (
@@ -273,6 +278,7 @@ export default function ChatSidebar({
                     expanded={expanded}
                     onToggle={toggle}
                     onSelect={onSelectChat}
+                    onDelete={onDeleteChat}
                   />
                 )}
               </>
@@ -286,7 +292,7 @@ export default function ChatSidebar({
 
 // ── Recents tab ───────────────────────────────────────────────────────────────
 
-function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelect }: TabProps) {
+function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: TabProps) {
   const sorted = [...chats].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
@@ -309,6 +315,7 @@ function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelec
           expanded={expanded.has(bucket)}
           onToggle={onToggle}
           onSelect={onSelect}
+          onDelete={onDelete}
         />
       ))}
     </>
@@ -317,7 +324,7 @@ function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelec
 
 // ── Clients tab ───────────────────────────────────────────────────────────────
 
-function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle, onSelect }: TabProps & { clients: SidebarClient[] }) {
+function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: TabProps & { clients: SidebarClient[] }) {
   const clientChats  = chats.filter((c) => c.clientId !== '');
   const generalChats = chats.filter((c) => c.clientId === '' && c.projectLabel === '');
   const activeClients = clients.filter((cl) => clientChats.some((c) => c.clientId === cl.id));
@@ -333,17 +340,20 @@ function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle
       {activeClients.map((cl) => (
         <Section key={cl.id} sectionKey={`client:${cl.id}`} label={cl.preferredName} avatar={cl.initials}
           chats={clientChats.filter((c) => c.clientId === cl.id)} activeChatId={activeChatId}
-          previews={previews} expanded={expanded.has(`client:${cl.id}`)} onToggle={onToggle} onSelect={onSelect} />
+          previews={previews} expanded={expanded.has(`client:${cl.id}`)} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       ))}
       {unknownIds.map((id) => (
         <Section key={id} sectionKey={`client:${id}`} label="Unknown Client"
           chats={clientChats.filter((c) => c.clientId === id)} activeChatId={activeChatId}
-          previews={previews} expanded={expanded.has(`client:${id}`)} onToggle={onToggle} onSelect={onSelect} />
+          previews={previews} expanded={expanded.has(`client:${id}`)} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       ))}
       {generalChats.length > 0 && (
         <Section sectionKey="client:general" label="General" chats={generalChats}
           activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('client:general')} onToggle={onToggle} onSelect={onSelect} />
+          expanded={expanded.has('client:general')} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       )}
     </>
   );
@@ -351,7 +361,7 @@ function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle
 
 // ── Projects tab ──────────────────────────────────────────────────────────────
 
-function ProjectsTab({ chats, activeChatId, previews, expanded, onToggle, onSelect }: TabProps) {
+function ProjectsTab({ chats, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: TabProps) {
   const projectChats = chats.filter((c) => c.clientId === '' && c.projectLabel !== '');
   const generalChats = chats.filter((c) => c.clientId === '' && c.projectLabel === '');
   const clientChats  = chats.filter((c) => c.clientId !== '');
@@ -365,17 +375,20 @@ function ProjectsTab({ chats, activeChatId, previews, expanded, onToggle, onSele
       {labels.map((label) => (
         <Section key={label} sectionKey={`project:${label}`} label={label}
           chats={projectChats.filter((c) => c.projectLabel === label)} activeChatId={activeChatId}
-          previews={previews} expanded={expanded.has(`project:${label}`)} onToggle={onToggle} onSelect={onSelect} />
+          previews={previews} expanded={expanded.has(`project:${label}`)} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       ))}
       {generalChats.length > 0 && (
         <Section sectionKey="project:General" label="General" chats={generalChats}
           activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('project:General')} onToggle={onToggle} onSelect={onSelect} />
+          expanded={expanded.has('project:General')} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       )}
       {clientChats.length > 0 && (
         <Section sectionKey="project:clients" label="Client Chats" chats={clientChats}
           activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('project:clients')} onToggle={onToggle} onSelect={onSelect} />
+          expanded={expanded.has('project:clients')} onToggle={onToggle}
+          onSelect={onSelect} onDelete={onDelete} />
       )}
     </>
   );
@@ -390,14 +403,16 @@ interface TabProps {
   expanded: Set<string>;
   onToggle: (k: string) => void;
   onSelect: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 // ── Collapsible section ───────────────────────────────────────────────────────
 
-function Section({ sectionKey, label, avatar, chats, activeChatId, previews, expanded, onToggle, onSelect }: {
+function Section({ sectionKey, label, avatar, chats, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: {
   sectionKey: string; label: string; avatar?: string;
   chats: Chat[]; activeChatId: string | null; previews: Record<string, string>;
   expanded: boolean; onToggle: (k: string) => void; onSelect: (id: string) => void;
+  onDelete?: (id: string) => void;
 }) {
   return (
     <div className="mb-0.5">
@@ -433,6 +448,7 @@ function Section({ sectionKey, label, avatar, chats, activeChatId, previews, exp
               preview={previews[chat.id]}
               isActive={activeChatId === chat.id}
               onClick={() => onSelect(chat.id)}
+              onDelete={onDelete}
             />
           ))}
         </div>
@@ -443,26 +459,47 @@ function Section({ sectionKey, label, avatar, chats, activeChatId, previews, exp
 
 // ── Chat row ──────────────────────────────────────────────────────────────────
 
-function ChatRow({ chat, preview, isActive, onClick }: {
+function ChatRow({ chat, preview, isActive, onClick, onDelete }: {
   chat: Chat; preview?: string; isActive: boolean; onClick: () => void;
+  onDelete?: (id: string) => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <button
-      className="w-full text-left px-4 py-2.5 mb-0.5 transition-colors"
-      style={isActive
-        ? { background: '#e8f4f8', borderLeft: '3px solid #5fb3d0' }
-        : { borderLeft: '3px solid transparent' }}
-      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = '#f9fafb'; }}
-      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-      onClick={onClick}
+    <div
+      className="relative mb-0.5"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <p className="text-sm font-medium truncate" style={{ color: isActive ? '#1e4d5c' : '#374151' }}>
-        {chat.title || 'Untitled Chat'}
-      </p>
-      <p className="text-xs text-gray-400 truncate mt-0.5">
-        {preview ?? formatDate(chat.updatedAt)}
-      </p>
-    </button>
+      <button
+        className="w-full text-left px-4 py-2.5 transition-colors pr-8"
+        style={isActive
+          ? { background: '#e8f4f8', borderLeft: '3px solid #5fb3d0' }
+          : { borderLeft: '3px solid transparent', background: hovered ? '#f9fafb' : 'transparent' }}
+        onClick={onClick}
+      >
+        <p className="text-sm font-medium truncate" style={{ color: isActive ? '#1e4d5c' : '#374151' }}>
+          {chat.title || 'Untitled Chat'}
+        </p>
+        <p className="text-xs text-gray-400 truncate mt-0.5">
+          {preview ?? formatDate(chat.updatedAt)}
+        </p>
+      </button>
+
+      {/* Delete button — appears on hover */}
+      {onDelete && hovered && (
+        <button
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded transition-colors"
+          style={{ color: '#9ca3af' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = '#fee2e2'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.background = 'transparent'; }}
+          onClick={(e) => { e.stopPropagation(); onDelete(chat.id); }}
+          title="Delete chat"
+        >
+          <FontAwesomeIcon icon={faTrash} style={{ fontSize: 10 }} />
+        </button>
+      )}
+    </div>
   );
 }
 

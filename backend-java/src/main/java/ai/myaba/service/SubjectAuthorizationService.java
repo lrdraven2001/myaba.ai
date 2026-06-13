@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -168,13 +170,21 @@ public class SubjectAuthorizationService {
 
         if (!isHardBlockCategory) return false;
 
-        // Check whether a satisfying authorization exists
+        // Check whether a satisfying authorization exists.
+        // An authorization satisfies the requirement when:
+        //   (a) its type is in hardBlockAuthTypes, AND
+        //   (b) either its scope is empty (= blanket authorization covering all categories)
+        //       or at least one scope value overlaps with hardBlockScopes.
+        // This lets ABA_TREATMENT_AUTHORIZATION (empty scope = "all treatment categories")
+        // satisfy the check without enumerating every possible diagnostic sub-category.
         List<Map<String, Object>> auths = getActiveAuthorizations(orgId, clientId);
         boolean hasAuth = auths.stream().anyMatch(a -> {
             String type = (String) a.get("type");
             if (!policy.getHardBlockAuthTypes().contains(type)) return false;
             @SuppressWarnings("unchecked")
             List<String> scope = (List<String>) a.getOrDefault("scope", List.of());
+            // Empty scope = blanket authorization — satisfies any hard-block category
+            if (scope.isEmpty()) return true;
             return scope.stream().anyMatch(s -> policy.getHardBlockScopes().contains(s));
         });
 
@@ -199,15 +209,7 @@ public class SubjectAuthorizationService {
             List<Map<String, Object>> all = getAllAuthorizations(orgId, clientId);
             return all.stream()
                     .filter(a -> "ACTIVE".equals(a.get("status")))
-                    .filter(a -> {
-                        String expiry = (String) a.get("expiry");
-                        if (expiry == null || expiry.isBlank()) return true;
-                        try {
-                            return Instant.parse(expiry).isAfter(Instant.now());
-                        } catch (Exception e) {
-                            return true; // malformed expiry — treat as non-expired
-                        }
-                    })
+                    .filter(a -> !isExpired((String) a.get("expiry")))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             log.warn("getActiveAuthorizations failed for subject {} in org {}: {}",
@@ -342,5 +344,26 @@ public class SubjectAuthorizationService {
         if (!UserRole.isAdmin(user.getRole())) {
             throw new SecurityException("Authorization management requires ORG_ADMIN role");
         }
+    }
+
+    /**
+     * Returns {@code true} when the given expiry string represents a date/time
+     * that is already in the past.  Accepts both full ISO-8601 timestamps
+     * ({@code 2027-12-31T00:00:00Z}) and plain date strings ({@code 2027-12-31}).
+     * A null/blank expiry means "no expiry" — returns {@code false} (not expired).
+     */
+    private boolean isExpired(String expiry) {
+        if (expiry == null || expiry.isBlank()) return false;
+        // Try full ISO-8601 instant first (most precise)
+        try {
+            return !Instant.parse(expiry).isAfter(Instant.now());
+        } catch (Exception ignored) {}
+        // Fall back to date-only YYYY-MM-DD — treat as expired if the date is today or earlier
+        try {
+            LocalDate date = LocalDate.parse(expiry);
+            return !date.isAfter(LocalDate.now(ZoneOffset.UTC));
+        } catch (Exception ignored) {}
+        log.warn("Unrecognised expiry format '{}' — treating as non-expired", expiry);
+        return false;
     }
 }

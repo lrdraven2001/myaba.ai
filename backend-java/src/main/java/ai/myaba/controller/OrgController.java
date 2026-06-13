@@ -257,6 +257,80 @@ public class OrgController {
         }
     }
 
+    // ── Business Associate Agreement (BAA) ───────────────────────────────────
+
+    /**
+     * GET /api/orgs/{orgId}/baa
+     * Returns the BAA acceptance record for the org, or {@code { accepted: false }}
+     * if the BAA has not yet been signed. Any member of the org may read this.
+     */
+    @GetMapping("/api/orgs/{orgId}/baa")
+    public ResponseEntity<?> getBaaStatus(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.getBaaStatus(orgId));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("getBaaStatus failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to retrieve BAA status"));
+        }
+    }
+
+    /**
+     * POST /api/orgs/{orgId}/baa
+     * Record BAA acceptance. Requires ORG_ADMIN or ORG_SUPER_ADMIN, OR the org
+     * creator (adminUid match) to allow acceptance immediately after org creation
+     * before the Firebase token has been refreshed.
+     * Body: { signerName: string, signerTitle: string }
+     * Returns 201 with the acceptance record.
+     */
+    @PostMapping("/api/orgs/{orgId}/baa")
+    public ResponseEntity<?> acceptBaa(
+            @PathVariable String orgId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        // Standard admin check — works after token refresh
+        boolean authorized = isAdminOf(user, orgId);
+
+        // Also allow the org creator immediately after org creation (before token refresh)
+        if (!authorized) {
+            try {
+                Map<String, Object> org = orgService.getOrg(orgId);
+                authorized = user.getUid().equals(org.get("adminUid"));
+            } catch (Exception ignored) {}
+        }
+
+        if (!authorized) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Admin access required"));
+        }
+
+        String signerName  = body.get("signerName");
+        String signerTitle = body.get("signerTitle");
+        if (signerName == null || signerName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "signerName is required"));
+        }
+        if (signerTitle == null || signerTitle.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "signerTitle is required"));
+        }
+        try {
+            Map<String, Object> result = orgService.acceptBaa(
+                    orgId, user.getUid(), signerName.trim(), signerTitle.trim());
+            return ResponseEntity.status(HttpStatus.CREATED).body(result);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("acceptBaa failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record BAA acceptance"));
+        }
+    }
+
     // ── Generate invite token ─────────────────────────────────────────────────
 
     /**

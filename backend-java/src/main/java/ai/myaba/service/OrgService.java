@@ -317,6 +317,67 @@ public class OrgService {
           )).get();
     }
 
+    // ── Business Associate Agreement (BAA) ───────────────────────────────────
+
+    /**
+     * Returns the org's BAA acceptance record, or {@code { "accepted": false }}
+     * if the BAA has not yet been signed.
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getBaaStatus(String orgId) throws Exception {
+        if (devMode) {
+            Map<String, Object> org = devOrgs.get(orgId);
+            if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
+            Object baa = org.get("baaAcceptance");
+            return baa instanceof Map<?,?> m ? new HashMap<>((Map<String, Object>) m) : Map.of("accepted", false);
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var snap = db.collection("organizations").document(orgId).get().get();
+        if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
+        Object baa = snap.getData().get("baaAcceptance");
+        return baa instanceof Map<?,?> m
+                ? new HashMap<>((Map<String, Object>) m)
+                : Map.of("accepted", false);
+    }
+
+    /**
+     * Record BAA acceptance for the org.
+     * Writes {@code baaAcceptance} into the org document and returns the
+     * acceptance record.
+     *
+     * @param orgId       target organisation
+     * @param uid         UID of the user accepting on behalf of the org
+     * @param signerName  legal name of the individual signing
+     * @param signerTitle title of the individual signing (e.g. "Executive Director")
+     */
+    public Map<String, Object> acceptBaa(String orgId, String uid,
+                                         String signerName, String signerTitle) throws Exception {
+        String now = Instant.now().toString();
+        Map<String, Object> baaRecord = new HashMap<>();
+        baaRecord.put("accepted",    true);
+        baaRecord.put("acceptedAt",  now);
+        baaRecord.put("acceptedBy",  uid);
+        baaRecord.put("signerName",  signerName);
+        baaRecord.put("signerTitle", signerTitle);
+        baaRecord.put("version",     "1.0");
+
+        if (devMode) {
+            Map<String, Object> org = devOrgs.get(orgId);
+            if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
+            org.put("baaAcceptance", baaRecord);
+            org.put("updatedAt", now);
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            db.collection("organizations").document(orgId)
+              .update(Map.of(
+                  "baaAcceptance", baaRecord,
+                  "updatedAt",     now
+              )).get();
+        }
+        log.info("BAA v1.0 accepted for org {} by {} (uid={})", orgId, signerName, uid);
+        return baaRecord;
+    }
+
     // ── Invite tokens ─────────────────────────────────────────────────────────
 
     /**

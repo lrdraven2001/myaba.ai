@@ -112,7 +112,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
     );
   };
 
-  // Does this client's diagnosis suggest any super-PHI category?
+  // Does this client's diagnosis suggest a special protected category?
   const diagnosisKeywords = ['substance use', 'substance abuse', 'sud', 'opioid', 'alcohol use disorder',
                              'psychotherapy', 'hiv', 'genetic'];
   const dx = clientDiagnosis.toLowerCase();
@@ -121,42 +121,71 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
   const activeRecords = records.filter((r) => r.status === 'ACTIVE');
   const inactiveRecords = records.filter((r) => r.status !== 'ACTIVE');
 
+  const hasStandardAbaAuth = activeRecords.some((r) => r.type === 'ABA_TREATMENT_AUTHORIZATION');
+
+  const handleQuickAddAba = async () => {
+    setSaving(true); setSaveError('');
+    try {
+      await api.addClientAuthorization(clientId, {
+        type: 'ABA_TREATMENT_AUTHORIZATION',
+        scope: [],   // empty = blanket authorization covering all treatment categories
+        expiry: undefined,
+        evidenceRef: undefined,
+      });
+      load();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to save authorization.');
+    } finally { setSaving(false); }
+  };
+
   return (
     <div className="space-y-5">
 
-      {/* Super-PHI warning banner */}
-      {hasHardBlockDiagnosis && (
+      {/* Quick-add: Standard ABA Authorization */}
+      {isAdmin && !hasStandardAbaAuth && !showForm && (
+        <div className="flex items-start gap-4 bg-teal-50 border border-teal-200 rounded-xl p-4">
+          <FontAwesomeIcon icon={faShieldAlt} className="text-teal-600 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-teal-800">Add Standard ABA Authorization</p>
+            <p className="text-xs text-teal-700 mt-0.5 leading-relaxed">
+              Covers use of this client's information for ABA treatment, care coordination, and
+              AI-assisted documentation. Appropriate for most clients.
+            </p>
+            {saveError && <p className="text-xs text-red-500 mt-1">{saveError}</p>}
+          </div>
+          <button
+            onClick={handleQuickAddAba}
+            disabled={saving}
+            className="shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 whitespace-nowrap"
+            style={{ background: '#2a5f6f' }}
+          >
+            {saving ? 'Adding…' : 'Add Authorization'}
+          </button>
+        </div>
+      )}
+
+      {/* Special-category: blocked — no active auth */}
+      {hasHardBlockDiagnosis && activeRecords.length === 0 && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
           <FontAwesomeIcon icon={faExclamationTriangle} className="text-red-500 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-red-800">Hard-block category detected</p>
+            <p className="text-sm font-semibold text-red-800">AI access blocked — authorization required</p>
             <p className="text-xs text-red-700 mt-0.5 leading-relaxed">
-              This client's diagnosis indicates a protected category (SUD, psychotherapy, HIV, or genetic).
-              AI document generation and chat are hard-blocked until an active written authorization exists.
-              Add a <strong>42 CFR Part 2 Consent</strong> or <strong>HIPAA Authorization</strong> below.
+              This client's diagnosis includes a specially-protected data category (SUD, psychotherapy
+              notes, HIV, or genetic information). AI features are blocked until a written authorization
+              is on file. Add an <strong>ABA Treatment Authorization</strong> above to unblock.
             </p>
           </div>
         </div>
       )}
 
-      {/* No active authorization warning */}
-      {hasHardBlockDiagnosis && activeRecords.length === 0 && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <FontAwesomeIcon icon={faExclamationTriangle} className="text-amber-500 shrink-0" />
-          <p className="text-xs text-amber-800 font-medium">
-            No active authorization on record. AI features are blocked for this client.
+      {/* Special-category: authorized — soft info note */}
+      {hasHardBlockDiagnosis && activeRecords.length > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <FontAwesomeIcon icon={faInfoCircle} className="text-blue-500 shrink-0" />
+          <p className="text-xs text-blue-800">
+            <strong>Protected category</strong> — authorization on file. AI features are available for this client.
           </p>
-        </div>
-      )}
-
-      {/* Info for non-hard-block clients */}
-      {!hasHardBlockDiagnosis && (
-        <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-3">
-          <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
-          <span>
-            Authorization records are sent to ACLX with every AI evaluation call.
-            Required for research purposes or any data use outside standard treatment/payment/operations.
-          </span>
         </div>
       )}
 
@@ -261,6 +290,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
               <input
                 type="date"
                 value={addExpiry}
+                min={new Date().toISOString().slice(0, 10)}
                 onChange={(e) => setAddExpiry(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
               />
@@ -354,6 +384,11 @@ function AuthorizationCard({
           )}
         </div>
         <div className="flex flex-wrap gap-1 mb-1">
+          {record.scope.length === 0 && (
+            <span className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-500 italic">
+              All treatment categories
+            </span>
+          )}
           {record.scope.map((s) => (
             <span key={s} className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
               {s}

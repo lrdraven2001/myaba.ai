@@ -5,6 +5,7 @@ import {
   faSortAlphaDown, faSortAlphaUp, faFilter, faCommentDots,
   faFileAlt, faFolderOpen, faLink, faSpinner, faTimes,
   faRobot, faComments, faExternalLinkAlt,
+  faUserNurse, faUsers, faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import type { Client, PolicyDocument, Chat } from '../types';
 import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
@@ -271,7 +272,16 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
             )}
 
             {activeTab === 'ai_data' && <ConnectedAIDataTab clientId={selectedClient.id} onStartChat={onStartChat ? () => onStartChat!(selectedClient.id) : undefined} />}
-            {activeTab === 'treatment_team' && <EmptyTab message="No team members assigned" sub="Add BCBAs and RBTs to this client's treatment team" />}
+            {activeTab === 'treatment_team' && (
+              <TreatmentTeamTab
+                client={selectedClient}
+                orgId={currentUser?.orgId ?? ''}
+                onUpdate={(updated) => {
+                  setSelectedClient(updated);
+                  setClients((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+                }}
+              />
+            )}
             {activeTab === 'ehr' && <EmptyTab message="No EHR connected" sub="Connect an EHR provider to sync client data automatically" />}
             {activeTab === 'resources' && <ConnectedResourcesTab clientId={selectedClient.id} />}
 
@@ -280,8 +290,8 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
                 <div className="mb-5">
                   <h2 className="text-base font-semibold text-gray-800 mb-1">Authorization Records</h2>
                   <p className="text-sm text-gray-500">
-                    Consent, research, and special-category authorization records for this client.
-                    These are included with every ACLX evaluate call to verify legally-required authorizations.
+                    Written consent and authorization records for this client.
+                    Required before AI features can process client data.
                   </p>
                 </div>
                 {!selectedClient && (
@@ -1083,6 +1093,290 @@ function ConnectedResourcesTab({ clientId }: { clientId: string }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Treatment Team Tab ────────────────────────────────────────────────────────
+
+const TEAM_ROLE_LABEL: Record<string, string> = {
+  TREATING_BCBA:    'Treating BCBA',
+  SUPERVISING_BCBA: 'Supervising BCBA',
+  BCBA_STUDENT:     'BCBA Student',
+  RBT:              'Behavior Technician',
+  ORG_ADMIN:        'Administrator',
+  ORG_SUPER_ADMIN:  'Super Admin',
+};
+
+const TEAM_ROLE_COLORS: Record<string, { bg: string; text: string }> = {
+  TREATING_BCBA:    { bg: '#d1fae5', text: '#065f46' },
+  SUPERVISING_BCBA: { bg: '#dbeafe', text: '#1e40af' },
+  BCBA_STUDENT:     { bg: '#ede9fe', text: '#5b21b6' },
+  RBT:              { bg: '#EEF4FF', text: '#1E88FF'  },
+};
+
+function memberInitials(name: string) {
+  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function TreatmentTeamTab({
+  client, orgId, onUpdate,
+}: {
+  client: Client;
+  orgId: string;
+  onUpdate: (updated: Client) => void;
+}) {
+  type OrgMember = { id: string; displayName: string; email: string; role: string; active: boolean };
+
+  const [members,        setMembers]        = useState<OrgMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+
+  // supervisorIds = all supervisors on the case roster (multi-select)
+  const [supervisorIds,     setSupervisorIds]     = useState<string[]>(client.supervisorIds ?? (client.supervisingBcbaId ? [client.supervisingBcbaId] : []));
+  // supervisingBcbaId = the current/active supervisor (must be one of supervisorIds)
+  const [supervisingBcbaId, setSupervisingBcbaId] = useState(client.supervisingBcbaId ?? '');
+  const [rbtIds,            setRbtIds]            = useState<string[]>(client.rbtIds ?? []);
+
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
+  const [error,  setError]  = useState('');
+
+  useEffect(() => {
+    if (!orgId) { setLoadingMembers(false); return; }
+    api.getOrgMembers(orgId)
+      .then((data) => setMembers(data.filter((m) => m.active)))
+      .catch(() => {})
+      .finally(() => setLoadingMembers(false));
+  }, [orgId]);
+
+  const supervisorOpts = members.filter((m) => m.role === 'SUPERVISING_BCBA');
+  const rbtOptions     = members.filter((m) => ['RBT', 'BCBA_STUDENT'].includes(m.role));
+
+  // Toggle a supervisor on/off the roster; if removed and was current, clear current
+  const toggleSupervisor = (id: string) => {
+    setSupervisorIds((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((x) => x !== id);
+        if (supervisingBcbaId === id) {
+          setSupervisingBcbaId(next[0] ?? '');
+        }
+        return next;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const dirty =
+    JSON.stringify([...supervisorIds].sort()) !==
+      JSON.stringify([...(client.supervisorIds ?? (client.supervisingBcbaId ? [client.supervisingBcbaId] : []))].sort()) ||
+    supervisingBcbaId !== (client.supervisingBcbaId ?? '') ||
+    JSON.stringify([...rbtIds].sort()) !== JSON.stringify([...(client.rbtIds ?? [])].sort());
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await api.updateClientAuthorizations(client.id, {
+        supervisorIds,
+        supervisingBcbaId: supervisingBcbaId || undefined,
+        rbtIds,
+      });
+      onUpdate({
+        ...client,
+        supervisorIds,
+        supervisingBcbaId: supervisingBcbaId || undefined,
+        rbtIds,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save treatment team');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleRbt = (id: string) =>
+    setRbtIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+  if (loadingMembers) {
+    return (
+      <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+        <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
+        <span className="text-sm">Loading team members…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-xl space-y-5">
+
+      {/* Supervisors — multi-select roster + "Current" designation */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <FontAwesomeIcon icon={faUserNurse} style={{ color: '#1e40af', fontSize: 13 }} />
+          <h4 className="font-semibold text-gray-800 text-sm">Supervisors</h4>
+          <span className="text-xs text-gray-400 ml-auto">{supervisorIds.length} on case</span>
+        </div>
+
+        {supervisorOpts.length === 0 ? (
+          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+            No active Supervising BCBAs found. Invite one from the Team page.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs text-gray-400">
+              Check all supervisors on this case. Mark one as <strong>Current</strong> — the active supervisor responsible for the case right now.
+            </p>
+            <div className="space-y-2">
+              {supervisorOpts.map((m) => {
+                const onRoster  = supervisorIds.includes(m.id);
+                const isCurrent = supervisingBcbaId === m.id;
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors"
+                    style={{
+                      border: `2px solid ${onRoster ? '#1e40af' : '#e5e7eb'}`,
+                      background: onRoster ? '#eff6ff' : 'white',
+                    }}
+                  >
+                    {/* Roster toggle checkbox */}
+                    <button
+                      onClick={() => toggleSupervisor(m.id)}
+                      className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors"
+                      style={{
+                        borderColor: onRoster ? '#1e40af' : '#d1d5db',
+                        background:  onRoster ? '#1e40af' : 'white',
+                      }}
+                      title={onRoster ? 'Remove from case' : 'Add to case'}
+                    >
+                      {onRoster && <FontAwesomeIcon icon={faCheck} style={{ color: 'white', fontSize: 9 }} />}
+                    </button>
+
+                    {/* Avatar */}
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                      style={{ background: onRoster ? '#1e40af' : '#9ca3af' }}
+                    >
+                      {memberInitials(m.displayName)}
+                    </div>
+
+                    {/* Name / email */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">{m.displayName}</p>
+                      <p className="text-xs text-gray-400">{m.email}</p>
+                    </div>
+
+                    {/* Current badge / Set as Current button */}
+                    {onRoster && (
+                      isCurrent ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-600 text-white shrink-0">
+                          Current
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setSupervisingBcbaId(m.id)}
+                          className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-blue-300 text-blue-600 hover:bg-blue-50 shrink-0 transition-colors"
+                        >
+                          Set as Current
+                        </button>
+                      )
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {supervisorIds.length > 0 && !supervisingBcbaId && (
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                No current supervisor set. Click "Set as Current" on one of the supervisors above.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Behavior Technicians — multi-select toggle */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <FontAwesomeIcon icon={faUsers} style={{ color: '#1E88FF', fontSize: 13 }} />
+          <h4 className="font-semibold text-gray-800 text-sm">Behavior Technicians</h4>
+          <span className="text-xs text-gray-400 ml-auto">{rbtIds.length} assigned</span>
+        </div>
+        {rbtOptions.length === 0 ? (
+          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+            No active Behavior Technicians or BCBA Students found. Invite RBTs from the Team page.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {rbtOptions.map((m) => {
+              const selected = rbtIds.includes(m.id);
+              const c = TEAM_ROLE_COLORS[m.role] ?? { bg: '#f3f4f6', text: '#374151' };
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => toggleRbt(m.id)}
+                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors text-left"
+                  style={{
+                    border: `2px solid ${selected ? '#1E88FF' : '#e5e7eb'}`,
+                    background: selected ? '#EEF4FF' : 'white',
+                  }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                    style={{ background: selected ? '#1E88FF' : '#9ca3af' }}
+                  >
+                    {memberInitials(m.displayName)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{m.displayName}</p>
+                    <p className="text-xs text-gray-400">{m.email}</p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0" style={{ background: c.bg, color: c.text }}>
+                    {TEAM_ROLE_LABEL[m.role] ?? m.role}
+                  </span>
+                  <div
+                    className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                    style={{ borderColor: selected ? '#1E88FF' : '#d1d5db', background: selected ? '#1E88FF' : 'white' }}
+                  >
+                    {selected && <FontAwesomeIcon icon={faCheck} style={{ color: 'white', fontSize: 9 }} />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {error && <p className="text-sm text-red-500">{error}</p>}
+
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={!dirty || saving}
+          className="px-6 py-2.5 rounded-lg text-white text-sm font-semibold"
+          style={{
+            background: saved ? '#16a34a' : dirty ? '#3F9B2F' : '#d1d5db',
+            cursor: (!dirty || saving) ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Treatment Team'}
+        </button>
+        {dirty && !saving && (
+          <button
+            onClick={() => {
+              setSupervisorIds(client.supervisorIds ?? (client.supervisingBcbaId ? [client.supervisingBcbaId] : []));
+              setSupervisingBcbaId(client.supervisingBcbaId ?? '');
+              setRbtIds(client.rbtIds ?? []);
+            }}
+            className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+
     </div>
   );
 }
