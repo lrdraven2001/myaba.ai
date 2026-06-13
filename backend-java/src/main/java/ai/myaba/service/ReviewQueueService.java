@@ -187,18 +187,22 @@ public class ReviewQueueService {
     // ── Enqueue ───────────────────────────────────────────────────────────────
 
     /**
-     * Store an escalated AI output for human review.
+     * Store an escalated AI output for the review queue / audit log.
      * Called by any controller that receives an ACLX ESCALATE decision.
      *
      * @param authDenyReason  value from {@code aclx.audit.authorization_audit.deny_reason}
      *                        in the ACLX response; {@code NOT_PROVIDED | REVOKED | EXPIRED}.
      *                        Null when no authorization check was performed.
+     * @param blocking        when {@code true} the item is created as PENDING (requires human
+     *                        approval before content is released).  When {@code false} the item
+     *                        is created as LOGGED — recorded for audit purposes only; the
+     *                        content was already released to the end-user.
      */
     public String enqueue(String orgId, String contentId, String eventType,
                           String requestingUserId, String clientId,
                           String rawContent, String aclxReason,
                           String aclxSensitivity, String aclxCategory,
-                          String authDenyReason) {
+                          String authDenyReason, boolean blocking) {
         String id  = "rq-" + UUID.randomUUID().toString().substring(0, 8);
         String now = Instant.now().toString();
 
@@ -216,7 +220,9 @@ public class ReviewQueueService {
         if (authDenyReason != null && !authDenyReason.isBlank()) {
             item.put("authDenyReason", authDenyReason);
         }
-        item.put("status",           "PENDING");
+        // PENDING = blocking (requires admin approval before content is seen)
+        // LOGGED  = non-blocking (content already delivered; entry is audit-only)
+        item.put("status",           blocking ? "PENDING" : "LOGGED");
         item.put("createdAt",        now);
 
         if (devMode) {
@@ -295,8 +301,12 @@ public class ReviewQueueService {
         if (devMode) {
             Map<String, Object> item = devQueue.get(itemId);
             if (item == null) throw new NoSuchElementException("Review item not found: " + itemId);
-            if (!"PENDING".equals(item.get("status")))
-                throw new IllegalStateException("Item " + itemId + " is not pending");
+            String itemStatus = (String) item.get("status");
+            if (!"PENDING".equals(itemStatus))
+                throw new IllegalStateException(
+                    "LOGGED".equals(itemStatus)
+                        ? "Item " + itemId + " is an audit-log entry and does not require review"
+                        : "Item " + itemId + " is not pending");
 
             item.put("status",        verdict);
             item.put("reviewedBy",    reviewer.getUid());

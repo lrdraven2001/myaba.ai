@@ -54,7 +54,8 @@ public final class UserRole {
     public static boolean isAdmin(String role)        { return ADMIN_ROLES.contains(role); }
     public static boolean canInitiateClinicalChat(String role) {
         return TREATING_BCBA.equals(role) || SUPERVISING_BCBA.equals(role)
-                || BCBA_STUDENT.equals(role) || RBT.equals(role);
+                || BCBA_STUDENT.equals(role) || RBT.equals(role)
+                || ORG_SUPER_ADMIN.equals(role); // super admins have full platform access
     }
 
     /** Returns true if {@code role} is one of the 8 known role constants. */

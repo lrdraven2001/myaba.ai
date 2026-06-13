@@ -220,6 +220,20 @@ export const api = {
 
   // ── Templates ─────────────────────────────────────────────────────────────
 
+  /**
+   * Strip PHI from AI-generated text so it can be saved as a reusable template.
+   * The backend looks up the client record and replaces name / DOB with
+   * {{clientName}} / {{dateOfBirth}} placeholders.
+   *
+   * Returns the sanitized content and a list of field categories that were
+   * found and replaced (e.g. ["full name", "date of birth"]).
+   */
+  deidentifyForTemplate: (clientId: string, content: string) =>
+    request<{ deidentifiedContent: string; redactedFields: string[] }>('/templates/deidentify', {
+      method: 'POST',
+      body: JSON.stringify({ clientId, content }),
+    }),
+
   getTemplates: () => request<Template[]>('/templates'),
 
   getTemplate: (templateId: string) => request<Template>(`/templates/${templateId}`),
@@ -304,6 +318,44 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
+
+  /** Update the org's display name (ORG_ADMIN only). */
+  updateOrgName: (orgId: string, name: string) =>
+    request<{ name: string }>(`/orgs/${orgId}/name`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+
+  /** Get the org's insurance company list (all members). */
+  getInsuranceCompanies: (orgId: string) =>
+    request<{ companies: string[] }>(`/orgs/${orgId}/insurance-companies`),
+
+  /** Replace the org's insurance company list (ORG_ADMIN only). */
+  setInsuranceCompanies: (orgId: string, companies: string[]) =>
+    request<{ companies: string[] }>(`/orgs/${orgId}/insurance-companies`, {
+      method: 'PUT',
+      body: JSON.stringify({ companies }),
+    }),
+
+  /** Update one or more org settings keys (ORG_ADMIN only). */
+  updateOrgSettings: (orgId: string, settings: Record<string, unknown>) =>
+    request<void>(`/orgs/${orgId}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  /** Assign or clear the supervisor for a member. Pass empty string to clear. Admin only. */
+  setMemberSupervisor: (orgId: string, uid: string, supervisorId: string) =>
+    request<void>(`/orgs/${orgId}/members/${uid}/supervisor`, {
+      method: 'PUT',
+      body: JSON.stringify({ supervisorId }),
+    }),
+
+  /** Returns the list of members for the org. Admin only. */
+  getOrgMembers: (orgId: string) =>
+    request<Array<{ id: string; displayName: string; email: string; role: string; active: boolean }>>(
+      `/orgs/${orgId}/members`,
+    ),
 
   /** Generate an invite link for a given role. Returns { inviteUrl }. */
   generateInvite: (orgId: string, role: string) =>

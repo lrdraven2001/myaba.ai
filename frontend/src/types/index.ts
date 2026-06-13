@@ -46,8 +46,12 @@ export function canInitiateChat(role: UserRole): boolean {
 
 export interface Client {
   id: string;
-  legalName: string;
-  preferredName: string;
+  firstName: string;
+  lastName: string;
+  /** Optional preferred / goes-by name (de-identified display in chats). */
+  preferredName?: string;
+  /** Computed full name — firstName + ' ' + lastName. Returned by API for search/legacy compat. */
+  legalName?: string;
   dateOfBirth: string;
   gender: string;
   diagnosis: string;
@@ -84,6 +88,7 @@ export type TemplateCategory =
   | 'bip'
   | 'fba'
   | 'progress_note'
+  | 'schedule'
   | 'skill_acquisition'
   | 'parent_training'
   | 'other';
@@ -107,8 +112,7 @@ export type PolicyCategory =
   | 'sop'
   | 'handbook'
   | 'clinical_sop'
-  | 'hipaa'
-  | 'billing';
+  | 'template';
 
 export interface PolicyDocument {
   id: string;
@@ -136,6 +140,11 @@ export interface Org {
   settings?: {
     sessionTimeoutMinutes: number;
     mfaRequired: boolean;
+    /** When false, ACLX escalations are logged but do not block content delivery. Defaults true. */
+    reviewRequired?: boolean;
+    aclxEnabled?: boolean;
+    hipaaMode?: boolean;
+    aiAudit?: boolean;
   };
 }
 
@@ -177,6 +186,13 @@ export interface Chat {
   updatedAt: string;
 }
 
+export interface AclxMessageLabel {
+  domain?: string;
+  category?: string;
+  subcategory?: string;
+  sensitivity?: 'HIGH' | 'MEDIUM' | 'LOW' | string;
+}
+
 export interface ChatMessage {
   id: string;
   chatId?: string;
@@ -185,6 +201,10 @@ export interface ChatMessage {
   timestamp?: string;    // frontend-only convenience alias for createdAt
   createdAt?: string;
   aclxDecision?: ACLXDecision;
+  /** ACLX governance label stored on every AI response. Present on assistant messages only. */
+  aclxLabel?: AclxMessageLabel;
+  /** ACLX content_id for this response — links to the review queue / audit log entry. */
+  aclxContentId?: string;
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -260,7 +280,11 @@ export interface DriveVerifyResult {
 
 // ── Review queue ─────────────────────────────────────────────────────────────
 
-export type ReviewStatus  = 'PENDING' | 'APPROVED' | 'DENIED';
+/** PENDING = blocking (admin must approve before content was seen by user)
+ *  LOGGED  = non-blocking audit entry (content was already delivered; recorded for oversight)
+ *  APPROVED / DENIED = reviewed decision on a formerly-PENDING item
+ */
+export type ReviewStatus  = 'PENDING' | 'APPROVED' | 'DENIED' | 'LOGGED';
 export type ReviewVerdict = 'APPROVED' | 'DENIED';
 
 export type ReviewEventType =

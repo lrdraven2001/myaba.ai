@@ -29,6 +29,14 @@ public class ClaudeService {
             - Be specific and measurable in all behavioral descriptions
             - All client context provided is de-identified; do not re-identify or infer personal details
             - If insufficient clinical information is provided, ask clarifying questions
+
+            Formatting rules (strictly enforced):
+            - Do NOT use emoji, icons, unicode symbols, or decorative characters of any kind
+            - Use plain text and standard punctuation only
+            - Use numbered lists or bullet points (- or *) for structured content
+            - Do NOT use markdown bold (**text**) or italic (*text*) — use plain text labels instead
+            - Do NOT use markdown headers (##, ###) — use ALL CAPS labels like "SECTION:" instead
+            - Keep responses professional and clinical in tone
             """;
 
     private static final Map<String, String> DOCUMENT_PROMPTS = Map.of(

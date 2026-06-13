@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
  * <pre>
  *   id:             String
  *   title:          String
- *   category:       String  (bip|fba|progress_note|skill_acquisition|parent_training|other)
+ *   category:       String  (bip|fba|progress_note|schedule|skill_acquisition|parent_training|other)
  *   content:        String  (template body text)
  *   visibleToRoles: List<String>  (empty = all roles can see it)
  *   orgId:          String
@@ -43,6 +44,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TemplateService {
+
+    private final ClientService clientService;
 
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -81,7 +84,7 @@ public class TemplateService {
             Map.entry("title",          "FBA Report"),
             Map.entry("category",       "fba"),
             Map.entry("content",        "# Functional Behavior Assessment\n\n**Client:** {{clientName}}\n**Assessment Period:** {{startDate}} – {{endDate}}\n\n## Referral Concerns\n\n## Background Information\n\n## Assessment Methods\n\n## Behavioral Observations\n\n## Hypothesis Statement\n\n## Recommendations\n"),
-            Map.entry("visibleToRoles", List.of(UserRole.TREATING_BCBA, UserRole.SUPERVISING_BCBA, UserRole.BCBA_STUDENT)),
+            Map.entry("visibleToRoles", List.of(UserRole.SUPERVISING_BCBA)),
             Map.entry("orgId",          "dev-org-001"),
             Map.entry("createdBy",      "dev-user-001"),
             Map.entry("createdAt",      "2026-01-01T00:00:00Z"),
@@ -242,5 +245,121 @@ public class TemplateService {
             m.put("id", d.getId());
             return m;
         }).collect(Collectors.toList());
+    }
+
+    // ── De-identification ─────────────────────────────────────────────────
+
+    /**
+     * Strips client PHI from {@code content} and returns the sanitized text
+     * along with a list of field types that were redacted.
+     *
+     * <p>Replacements applied (in order, most-specific first):
+     * <ul>
+     *   <li>Full legal name (firstName + lastName) → {@code {{clientName}}}</li>
+     *   <li>Preferred name (when different from firstName) → {@code {{clientName}}}</li>
+     *   <li>First name alone → {@code {{clientName}}}</li>
+     *   <li>Date of birth in ISO, US, and EU formats → {@code {{dateOfBirth}}}</li>
+     * </ul>
+     *
+     * Last name alone is intentionally NOT redacted — it is too likely to appear
+     * as a common word (e.g. "Smith", "Brown") and produce false positives in
+     * clinical text.
+     *
+     * @param user     requesting user (used to scope the client lookup)
+     * @param clientId Firestore client document ID
+     * @param content  raw AI-generated text to de-identify
+     * @return map with keys {@code deidentifiedContent} (String) and
+     *         {@code redactedFields} (List&lt;String&gt;)
+     */
+    public Map<String, Object> deidentify(AppUser user, String clientId, String content) throws Exception {
+        Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+        List<String> redacted = new ArrayList<>();
+        String text = stripPhi(content, client, redacted);
+        Map<String, Object> result = new HashMap<>();
+        result.put("deidentifiedContent", text);
+        result.put("redactedFields", redacted);
+        return result;
+    }
+
+    /**
+     * Applies PHI-stripping regexes to {@code text} using values from {@code client}.
+     * Mutates {@code redacted} to record which field categories were found.
+     */
+    private String stripPhi(String text, Map<String, Object> client, List<String> redacted) {
+        String firstName     = safeStr(client, "firstName");
+        String lastName      = safeStr(client, "lastName");
+        String preferredName = safeStr(client, "preferredName");
+        String dob           = safeStr(client, "dob");   // stored as YYYY-MM-DD
+
+        // 1. Full legal name (most specific — do this first so partial replacements
+        //    don't break the phrase match)
+        if (!firstName.isEmpty() && !lastName.isEmpty()) {
+            String full = Pattern.quote(firstName + " " + lastName);
+            String replaced = text.replaceAll("(?i)" + full, "{{clientName}}");
+            if (!replaced.equals(text)) {
+                text = replaced;
+                redacted.add("full name");
+            }
+        }
+
+        // 2. Preferred name (if distinct from first name)
+        if (!preferredName.isEmpty() && !preferredName.equalsIgnoreCase(firstName)) {
+            String pq = "(?i)\\b" + Pattern.quote(preferredName) + "\\b";
+            String replaced = text.replaceAll(pq, "{{clientName}}");
+            if (!replaced.equals(text)) {
+                text = replaced;
+                redacted.add("preferred name");
+            }
+        }
+
+        // 3. First name alone
+        if (!firstName.isEmpty()) {
+            String fq = "(?i)\\b" + Pattern.quote(firstName) + "\\b";
+            String replaced = text.replaceAll(fq, "{{clientName}}");
+            if (!replaced.equals(text)) {
+                text = replaced;
+                if (!redacted.contains("full name")) redacted.add("first name");
+            }
+        }
+
+        // 4. Date of birth — try ISO (YYYY-MM-DD), US (M/D/YYYY, MM/DD/YYYY),
+        //    EU (D/M/YYYY, DD/MM/YYYY)
+        if (!dob.isEmpty()) {
+            String[] parts = dob.split("-");
+            if (parts.length == 3) {
+                try {
+                    int yr = Integer.parseInt(parts[0]);
+                    int mo = Integer.parseInt(parts[1]);
+                    int da = Integer.parseInt(parts[2]);
+
+                    List<String> variants = List.of(
+                        dob,                                         // 2015-03-15
+                        mo + "/" + da + "/" + yr,                    // 3/15/2015
+                        String.format("%02d/%02d/%d", mo, da, yr),   // 03/15/2015
+                        da + "/" + mo + "/" + yr,                    // 15/3/2015
+                        String.format("%02d/%02d/%d", da, mo, yr)    // 15/03/2015
+                    );
+
+                    for (String v : variants) {
+                        String replaced = text.replace(v, "{{dateOfBirth}}");
+                        if (!replaced.equals(text)) {
+                            text = replaced;
+                            if (!redacted.contains("date of birth")) {
+                                redacted.add("date of birth");
+                            }
+                        }
+                    }
+                } catch (NumberFormatException ignored) {
+                    log.warn("Could not parse client DOB for de-identification: {}", dob);
+                }
+            }
+        }
+
+        return text;
+    }
+
+    private String safeStr(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        return (v instanceof String s) ? s.trim() : "";
     }
 }

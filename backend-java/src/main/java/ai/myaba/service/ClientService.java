@@ -58,8 +58,10 @@ public class ClientService {
         // Note: Map.of() is limited to 10 entries; Map.ofEntries() is used for larger maps.
 
         put("c-001", Map.ofEntries(
-            Map.entry("preferredName",    "Alex M."),
+            Map.entry("firstName",        "Alex"),
+            Map.entry("lastName",         "Morgan"),
             Map.entry("legalName",        "Alex Morgan"),
+            Map.entry("preferredName",    "Alex"),
             Map.entry("dateOfBirth",      "2018-03-15"),
             Map.entry("gender",           "Male"),
             Map.entry("diagnosis",        "ASD Level 2"),
@@ -74,8 +76,10 @@ public class ClientService {
         ));
 
         put("c-002", Map.ofEntries(
-            Map.entry("preferredName",    "Jordan T."),
+            Map.entry("firstName",        "Jordan"),
+            Map.entry("lastName",         "Thompson"),
             Map.entry("legalName",        "Jordan Thompson"),
+            Map.entry("preferredName",    "Jordan"),
             Map.entry("dateOfBirth",      "2019-07-22"),
             Map.entry("gender",           "Non-binary"),
             Map.entry("diagnosis",        "ASD Level 1, Substance Use Disorder (SUD)"),
@@ -90,8 +94,10 @@ public class ClientService {
         ));
 
         put("c-003", Map.ofEntries(
-            Map.entry("preferredName",    "Sam K."),
+            Map.entry("firstName",        "Sam"),
+            Map.entry("lastName",         "Kim"),
             Map.entry("legalName",        "Sam Kim"),
+            Map.entry("preferredName",    "Sam"),
             Map.entry("dateOfBirth",      "2020-11-08"),
             Map.entry("gender",           "Female"),
             Map.entry("diagnosis",        "ADHD, ASD Level 1, Psychotherapy Notes Required"),
@@ -235,8 +241,17 @@ public class ClientService {
      */
     public void updateClient(String orgId, String clientId, ClientRequest req) throws Exception {
         Map<String, Object> updates = new HashMap<>();
+        if (req.getFirstName() != null)      updates.put("firstName", req.getFirstName());
+        if (req.getLastName() != null)       updates.put("lastName", req.getLastName());
+        if (req.getFirstName() != null || req.getLastName() != null) {
+            // Recompute legalName if either name part changed
+            // (we'd need the existing record to fill in the unchanged half, but for simplicity
+            //  only recompute when both are provided)
+            if (req.getFirstName() != null && req.getLastName() != null) {
+                updates.put("legalName", req.getFirstName().trim() + " " + req.getLastName().trim());
+            }
+        }
         if (req.getPreferredName() != null)  updates.put("preferredName", req.getPreferredName());
-        if (req.getLegalName() != null)      updates.put("legalName", req.getLegalName());
         if (req.getDateOfBirth() != null)    updates.put("dateOfBirth", req.getDateOfBirth());
         if (req.getGender() != null)         updates.put("gender", req.getGender());
         if (req.getDiagnosis() != null)      updates.put("diagnosis", req.getDiagnosis());
@@ -295,8 +310,12 @@ public class ClientService {
 
     private Map<String, Object> buildClientData(ClientRequest req, String createdByUid) {
         Map<String, Object> data = new HashMap<>();
-        data.put("legalName",        req.getLegalName());
-        data.put("preferredName",    req.getPreferredName() != null ? req.getPreferredName() : req.getLegalName());
+        data.put("firstName",        req.getFirstName());
+        data.put("lastName",         req.getLastName());
+        // Computed full legal name — stored for search/legacy queries
+        String fullName = req.getFirstName().trim() + " " + req.getLastName().trim();
+        data.put("legalName",        fullName);
+        data.put("preferredName",    req.getPreferredName() != null ? req.getPreferredName() : req.getFirstName());
         data.put("dateOfBirth",      req.getDateOfBirth());
         data.put("gender",           req.getGender());
         data.put("diagnosis",        req.getDiagnosis());

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMicrophone, faWaveSquare, faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
@@ -10,13 +10,18 @@ import NewChatModal from '../components/chat/NewChatModal';
 import type { NewChatData } from '../components/chat/NewChatModal';
 import FileAttachModal from '../components/chat/FileAttachModal';
 
-/** Derive initials from a preferredName e.g. "Alex M." → "AM" */
+/** Derive initials from a name string. */
 function toInitials(name: string): string {
   return name
     .split(/\s+/)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('')
     .slice(0, 2);
+}
+
+/** Returns the best display name for a client — preferred name or first name, never full legal name. */
+function clientDisplayName(c: { firstName?: string; lastName?: string; preferredName?: string }): string {
+  return c.preferredName || c.firstName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
 }
 
 interface ChatViewProps {
@@ -37,6 +42,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
   const [showNewChat, setShowNewChat]           = useState(false);
   const [showFileAttach, setShowFileAttach]     = useState(false);
   const [attachedFiles, setAttachedFiles]       = useState<AttachedFile[]>([]);
+  const [templateSourceContent, setTemplateSourceContent] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const activeChat   = chats.find((c) => c.id === activeChatId) ?? null;
@@ -59,8 +65,8 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
         setSidebarClients(
           clientsData.map((c) => ({
             id: c.id,
-            preferredName: c.preferredName,
-            initials: toInitials(c.preferredName),
+            preferredName: clientDisplayName(c),
+            initials: toInitials(clientDisplayName(c)),
           }))
         );
         // If we navigated here with an initialChatId, make sure that chat is in the list.
@@ -198,7 +204,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
       id:        Date.now().toString(),
       role:      'user',
       content:   text + (attachedFiles.length > 0
-        ? `\n\n📎 *Context: ${attachedFiles.map((f) => f.name).join(', ')}*`
+        ? `\n\n[Context: ${attachedFiles.map((f) => f.name).join(', ')}]`
         : ''),
       timestamp: new Date().toISOString(),
     };
@@ -257,12 +263,35 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea to fit content
+  const resizeTextarea = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    resizeTextarea();
+  };
+
+  // Ctrl+Enter / ⌘+Enter sends; plain Enter inserts newline
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       sendMessage();
     }
   };
+
+  // Reset textarea height after send
+  useEffect(() => {
+    if (!loading && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [loading]);
 
   // Ctrl+K / ⌘K → open new chat from anywhere
   useEffect(() => {
@@ -319,7 +348,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
             )}
             {activeChat.projectLabel && (
               <span className="px-3 py-1 bg-purple-50 border border-purple-200 rounded-full text-sm text-purple-700 font-medium">
-                📁 {activeChat.projectLabel}
+                {activeChat.projectLabel}
               </span>
             )}
             <span className="text-sm font-semibold text-gray-700">{activeChat.title}</span>
@@ -348,7 +377,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                   >
                     <div
                       className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
@@ -361,6 +390,18 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                         <AclxBadge decision={msg.aclxDecision} />
                       )}
                     </div>
+                    {/* Save as Template — only on non-blocked assistant messages */}
+                    {msg.role === 'assistant' &&
+                      (!msg.aclxDecision || msg.aclxDecision === 'ALLOW') && (
+                      <button
+                        onClick={() => setTemplateSourceContent(msg.content)}
+                        className="mt-1 flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors px-1"
+                        title="Save de-identified version as a reusable template"
+                      >
+                        <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
+                        Save as Template
+                      </button>
+                    )}
                   </div>
                 ))}
                 {loading && <TypingIndicator />}
@@ -381,7 +422,7 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
                       style={{ background: '#e8f4f8', borderColor: '#5fb3d0', color: '#1e4d5c' }}
                     >
-                      📎 {f.name}
+                      <FontAwesomeIcon icon={faPaperclip} className="text-xs" /> {f.name}
                       <button
                         className="hover:text-red-500 transition-colors"
                         onClick={() => removeAttached(f.id)}
@@ -393,30 +434,49 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
                 </div>
               )}
 
-              <div className="chat-input-container">
+              <div
+                className="flex items-end gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2"
+                style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}
+              >
+                {/* Attach */}
                 <button
-                  className="text-gray-400 hover:text-teal-600 transition-colors"
+                  className="text-gray-400 hover:text-teal-600 transition-colors mb-1 flex-shrink-0"
                   title="Attach templates or client files"
                   onClick={() => setShowFileAttach(true)}
                 >
-                  <FontAwesomeIcon icon={faPaperclip} style={{ fontSize: 18 }} />
+                  <FontAwesomeIcon icon={faPaperclip} style={{ fontSize: 16 }} />
                 </button>
-                <input
-                  type="text"
-                  className="chat-input"
-                  placeholder="Ask anything"
+
+                {/* Multi-line textarea */}
+                <textarea
+                  ref={textareaRef}
+                  className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
+                  placeholder="Ask anything  —  Enter for new line  ·  Ctrl+Enter to send"
+                  rows={1}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   disabled={loading}
+                  style={{ maxHeight: 200, minHeight: 28 }}
                 />
-                <button className="text-gray-400 hover:text-gray-600">
-                  <FontAwesomeIcon icon={faMicrophone} style={{ fontSize: 18 }} />
-                </button>
-                <button className="text-gray-400 hover:text-gray-600">
-                  <FontAwesomeIcon icon={faWaveSquare} style={{ fontSize: 18 }} />
+
+                {/* Green send button */}
+                <button
+                  onClick={sendMessage}
+                  disabled={loading || !input.trim() || !activeChatId}
+                  title="Send (Ctrl+Enter)"
+                  className="flex-shrink-0 mb-0.5 transition-all"
+                  style={{
+                    color: input.trim() && activeChatId ? '#3F9B2F' : '#C8D8C8',
+                    cursor: input.trim() && activeChatId ? 'pointer' : 'default',
+                  }}
+                >
+                  <FontAwesomeIcon icon={faArrowCircleUp} style={{ fontSize: 28 }} />
                 </button>
               </div>
+              <p className="text-center text-xs mt-1.5" style={{ color: '#B0BEC5' }}>
+                Enter for new line &nbsp;·&nbsp; Ctrl+Enter to send
+              </p>
             </div>
           </div>
         </div>
@@ -439,6 +499,13 @@ export default function ChatView({ initialChatId }: ChatViewProps = {}) {
           alreadyAttached={attachedFiles.map((f) => f.id)}
         />
       )}
+      {templateSourceContent !== null && (
+        <SaveAsTemplateModal
+          rawContent={templateSourceContent}
+          clientId={activeChat?.clientId ?? null}
+          onClose={() => setTemplateSourceContent(null)}
+        />
+      )}
     </div>
   );
 }
@@ -455,10 +522,11 @@ function AclxBadge({ decision }: { decision: string }) {
   const s = ACLX_STYLES[decision] ?? { bg: '#f3f4f6', text: '#6b7280', label: decision };
   return (
     <span
-      className="inline-block mt-2 text-xs px-2.5 py-0.5 rounded-full font-semibold"
+      className="inline-flex items-center gap-1 mt-2 text-xs px-2.5 py-0.5 rounded-full font-semibold"
       style={{ background: s.bg, color: s.text }}
     >
-      🛡️ {s.label}
+      <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 10 }} />
+      {s.label}
     </span>
   );
 }
@@ -552,6 +620,208 @@ function TypingIndicator() {
               style={{ animationDelay: `${delay}ms` }}
             />
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Save as Template modal ────────────────────────────────────────────────────
+
+const TEMPLATE_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'progress_note',     label: 'Progress Note'     },
+  { value: 'schedule',          label: 'Schedule'          },
+  { value: 'bip',               label: 'BIP'               },
+  { value: 'fba',               label: 'FBA'               },
+  { value: 'skill_acquisition', label: 'Skill Acquisition' },
+  { value: 'parent_training',   label: 'Parent Training'   },
+  { value: 'other',             label: 'Other'             },
+];
+
+function SaveAsTemplateModal({
+  rawContent,
+  clientId,
+  onClose,
+}: {
+  rawContent: string;
+  clientId: string | null;
+  onClose: () => void;
+}) {
+  const [title, setTitle]       = useState('');
+  const [category, setCategory] = useState('schedule');
+  const [content, setContent]   = useState('');
+  const [redactedFields, setRedactedFields] = useState<string[]>([]);
+  const [deidentifying, setDeidentifying]   = useState(false);
+  const [saving, setSaving]                 = useState(false);
+  const [saved, setSaved]                   = useState(false);
+  const [error, setError]                   = useState('');
+
+  // On mount: de-identify if we have a client, otherwise use raw content
+  useEffect(() => {
+    if (!clientId) {
+      setContent(rawContent);
+      return;
+    }
+    setDeidentifying(true);
+    api.deidentifyForTemplate(clientId, rawContent)
+      .then(({ deidentifiedContent, redactedFields: rf }) => {
+        setContent(deidentifiedContent);
+        setRedactedFields(rf);
+      })
+      .catch(() => {
+        // Fallback: use raw content and warn
+        setContent(rawContent);
+        setError('Could not reach the backend for de-identification — review content manually before saving.');
+      })
+      .finally(() => setDeidentifying(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    if (!title.trim()) { setError('Template title is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      await api.createTemplate({ title: title.trim(), category, content });
+      setSaved(true);
+      setTimeout(onClose, 1400);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Save failed — please try again.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: '90vh' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <FontAwesomeIcon icon={faBookmark} className="text-teal-600" />
+            <h2 className="text-base font-semibold text-gray-900">Save as Template</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <FontAwesomeIcon icon={faTimes} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+          {/* De-identification status */}
+          {deidentifying && (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <FontAwesomeIcon icon={faSpinner} className="animate-spin text-teal-600" />
+              Removing client PHI…
+            </div>
+          )}
+
+          {!deidentifying && redactedFields.length > 0 && (
+            <div
+              className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
+              style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}
+            >
+              <FontAwesomeIcon icon={faCheckCircle} className="mt-0.5 shrink-0" style={{ color: '#16a34a' }} />
+              <span>
+                <strong>PHI removed:</strong> {redactedFields.join(', ')} replaced with{' '}
+                <code className="font-mono text-xs">{'{{clientName}}'}</code>
+                {redactedFields.includes('date of birth') && (
+                  <> / <code className="font-mono text-xs">{'{{dateOfBirth}}'}</code></>
+                )} placeholders.
+              </span>
+            </div>
+          )}
+
+          {!deidentifying && !clientId && (
+            <div
+              className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
+              style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+            >
+              <FontAwesomeIcon icon={faExclamationTriangle} className="mt-0.5 shrink-0" style={{ color: '#d97706' }} />
+              <span>
+                This chat has no associated client — review the content below for any patient identifiers before saving.
+              </span>
+            </div>
+          )}
+
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Template Name
+            </label>
+            <input
+              type="text"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              placeholder="e.g. 5-Day Morning Schedule"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Category
+            </label>
+            <select
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {TEMPLATE_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Content — editable so clinician can make final corrections */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Template Content
+              <span className="ml-1 font-normal normal-case text-gray-400">
+                (review and edit before saving)
+              </span>
+            </label>
+            <textarea
+              rows={10}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              disabled={deidentifying}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:bg-gray-50 disabled:text-gray-400"
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-500">{error}</p>
+          )}
+
+          {saved && (
+            <div
+              className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium"
+              style={{ background: '#f0fdf4', color: '#166534' }}
+            >
+              <FontAwesomeIcon icon={faCheckCircle} />
+              Template saved!
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 px-6 py-4 border-t border-gray-100 shrink-0">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || deidentifying || saved}
+            className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-60"
+            style={{ background: '#2a5f6f' }}
+          >
+            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Template'}
+          </button>
         </div>
       </div>
     </div>

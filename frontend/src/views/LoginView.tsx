@@ -1,14 +1,28 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBrain } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faLock, faEnvelope } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 
+// Google "G" logo as a clean inline SVG — no extra package dependency
+function GoogleLogo() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" fill="#4285F4"/>
+      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z" fill="#34A853"/>
+      <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z" fill="#FBBC05"/>
+      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z" fill="#EA4335"/>
+    </svg>
+  );
+}
+
 export default function LoginView() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const { login, loginWithGoogle } = useAuth();
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,69 +37,249 @@ export default function LoginView() {
     }
   };
 
+  const handleGoogle = async () => {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch {
+      setError('Google sign-in failed. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   return (
-    <div className="h-screen flex items-center justify-center" style={{ background: '#f0f7fa' }}>
-      <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-md">
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div
-            className="flex items-center justify-center rounded-xl mb-3"
-            style={{ background: '#2a5f6f', width: 72, height: 72 }}
-          >
-            <FontAwesomeIcon icon={faBrain} style={{ fontSize: 38, color: 'white' }} />
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#F0F7FA',
+      padding: 24,
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 420,
+        background: 'white',
+        borderRadius: 20,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.09)',
+        padding: '40px 36px 32px',
+        border: '1px solid #E4EEF3',
+      }}>
+
+        {/* ── Logo + wordmark ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32 }}>
+          <div style={{
+            width: 72,
+            height: 72,
+            borderRadius: 18,
+            background: 'white',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.10)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 14,
+            overflow: 'hidden',
+          }}>
+            <img
+              src="/app-icon.png"
+              alt="myABA.ai"
+              style={{ width: 58, height: 58, objectFit: 'contain' }}
+              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+            />
           </div>
-          <h1 className="text-2xl font-bold" style={{ color: '#2a5f6f' }}>
-            myABA.ai
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">AI-Powered ABA Clinical Documentation</p>
+
+          <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            <span style={{ color: '#1E3347' }}>my</span>
+            <span style={{ color: '#1E88FF' }}>ABA</span>
+            <span style={{ color: '#3F9B2F' }}>.ai</span>
+          </div>
+          <div style={{ fontSize: 13, color: '#6B7B88', marginTop: 5 }}>
+            AI-Powered ABA Clinical Documentation
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* ── Google button ── */}
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={googleLoading || loading}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            padding: '11px 0',
+            background: 'white',
+            border: '1.5px solid #DCE7EE',
+            borderRadius: 10,
+            fontSize: 14,
+            fontWeight: 600,
+            color: '#1E3347',
+            cursor: googleLoading || loading ? 'not-allowed' : 'pointer',
+            opacity: googleLoading || loading ? 0.6 : 1,
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+            marginBottom: 20,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+          }}
+          onMouseEnter={(e) => {
+            if (!googleLoading && !loading) {
+              e.currentTarget.style.borderColor = '#1E88FF';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(30,136,255,0.12)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#DCE7EE';
+            e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)';
+          }}
+        >
+          <GoogleLogo />
+          {googleLoading ? 'Signing in…' : 'Continue with Google'}
+        </button>
+
+        {/* ── Divider ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <div style={{ flex: 1, height: 1, background: '#E4EEF3' }} />
+          <span style={{ fontSize: 12, color: '#A8B4BF', fontWeight: 500 }}>or sign in with email</span>
+          <div style={{ flex: 1, height: 1, background: '#E4EEF3' }} />
+        </div>
+
+        {/* ── Email / password form ── */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Email */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
               Email Address
             </label>
-            <input
-              type="email"
-              required
-              className="w-full border-2 border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-teal-600 text-sm"
-              placeholder="bcba@clinic.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-            />
+            <div style={{ position: 'relative' }}>
+              <FontAwesomeIcon
+                icon={faEnvelope}
+                style={{
+                  position: 'absolute', left: 12, top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#A8B4BF', fontSize: 13, pointerEvents: 'none',
+                }}
+              />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="bcba@clinic.com"
+                disabled={loading || googleLoading}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px 10px 34px',
+                  border: '1.5px solid #DCE7EE',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  color: '#1E3347',
+                  background: 'white',
+                  outline: 'none',
+                  transition: 'border-color 0.15s',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => (e.target.style.borderColor = '#1E88FF')}
+                onBlur={(e) => (e.target.style.borderColor = '#DCE7EE')}
+              />
+            </div>
           </div>
+
+          {/* Password */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
               Password
             </label>
-            <input
-              type="password"
-              required
-              className="w-full border-2 border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-teal-600 text-sm"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-            />
+            <div style={{ position: 'relative' }}>
+              <FontAwesomeIcon
+                icon={faLock}
+                style={{
+                  position: 'absolute', left: 12, top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#A8B4BF', fontSize: 13, pointerEvents: 'none',
+                }}
+              />
+              <input
+                type={showPw ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                disabled={loading || googleLoading}
+                style={{
+                  width: '100%',
+                  padding: '10px 38px 10px 34px',
+                  border: '1.5px solid #DCE7EE',
+                  borderRadius: 10,
+                  fontSize: 14,
+                  color: '#1E3347',
+                  background: 'white',
+                  outline: 'none',
+                  transition: 'border-color 0.15s',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => (e.target.style.borderColor = '#1E88FF')}
+                onBlur={(e) => (e.target.style.borderColor = '#DCE7EE')}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                tabIndex={-1}
+                style={{
+                  position: 'absolute', right: 10, top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none', border: 'none',
+                  color: '#A8B4BF', cursor: 'pointer', padding: '2px 4px',
+                }}
+              >
+                <FontAwesomeIcon icon={showPw ? faEyeSlash : faEye} style={{ fontSize: 13 }} />
+              </button>
+            </div>
           </div>
 
+          {/* Error message */}
           {error && (
-            <p className="text-red-600 text-sm">{error}</p>
+            <div style={{
+              padding: '9px 12px',
+              borderRadius: 8,
+              background: '#FFF1F1',
+              border: '1px solid #FFC9C9',
+              color: '#C0392B',
+              fontSize: 13,
+            }}>
+              {error}
+            </div>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-3 rounded-lg font-semibold text-white text-sm transition-opacity"
-            style={{ background: '#2a5f6f', opacity: loading ? 0.7 : 1 }}
+            disabled={loading || googleLoading}
+            style={{
+              padding: '12px 0',
+              background: loading ? '#A8B4BF' : 'linear-gradient(135deg, #1E88FF, #1565C0)',
+              border: 'none',
+              borderRadius: 10,
+              color: 'white',
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: loading || googleLoading ? 'not-allowed' : 'pointer',
+              marginTop: 2,
+              letterSpacing: '0.01em',
+              boxShadow: loading ? 'none' : '0 2px 8px rgba(30,136,255,0.30)',
+              transition: 'opacity 0.15s',
+            }}
           >
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          HIPAA-compliant platform. All data encrypted.
+        {/* ── Footer ── */}
+        <p style={{ textAlign: 'center', fontSize: 11, color: '#A8B4BF', marginTop: 24, lineHeight: 1.5 }}>
+          HIPAA-compliant platform &nbsp;·&nbsp; All data encrypted in transit
         </p>
       </div>
     </div>

@@ -94,6 +94,37 @@ public class TemplateController {
         return ResponseEntity.noContent().build();
     }
 
+    // ── De-identification ─────────────────────────────────────────────────
+
+    /**
+     * POST /api/templates/deidentify
+     *
+     * Strips client PHI from a piece of AI-generated text so it can be
+     * safely saved as a reusable template without retaining any patient
+     * identifiers.
+     *
+     * Request body: { clientId: String, content: String }
+     * Response: { deidentifiedContent: String, redactedFields: List<String> }
+     *
+     * Any authenticated org member may call this endpoint — reading the
+     * client record is governed by the same access-control rules that apply
+     * to ClientController.
+     */
+    @PostMapping("/deidentify")
+    public ResponseEntity<?> deidentify(
+            @AuthenticationPrincipal AppUser user,
+            @RequestBody Map<String, String> body) throws Exception {
+        String clientId = body.get("clientId");
+        String content  = body.get("content");
+        if (clientId == null || clientId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "clientId is required"));
+        }
+        if (content == null || content.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "content is required"));
+        }
+        return ResponseEntity.ok(templateService.deidentify(user, clientId, content));
+    }
+
     // ── Exception handling ────────────────────────────────────────────────
 
     @ExceptionHandler(SecurityException.class)

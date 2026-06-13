@@ -35,7 +35,25 @@
       "Bash(curl -sf http://localhost:9090/api/health)",
       "Bash(tee /tmp/sb3.log)",
       "Bash(curl -s -X POST http://localhost:9090/api/projects -H \"Content-Type: application/json\" -d '{\"title\":\"Test Project\",\"description\":\"Integration test\"}')",
-      "Bash(echo \"Exit code: $?\")"
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(node -e \"const fa = require\\('@fortawesome/free-solid-svg-icons'\\); ['faMailBulk','faHistory','faUserCog','faMobileAlt','faLock'].forEach\\(n => console.log\\(n, !!fa[n]\\)\\)\")",
+      "Bash(cd /mnt/d/myaba.ai/myaba.ai/frontend && npx tsc --noEmit 2>&1 | head -40)",
+      "PowerShell(java -version 2>&1)",
+      "PowerShell(mvn -version 2>&1)",
+      "Bash(mvn spring-boot:run -Dspring-boot.run.jvmArguments=\"-Djava.nio.channels.spi.SelectorProvider=sun.nio.ch.WindowsSelectorProvider -Dspring.profiles.active=local\")",
+      "PowerShell(try { $response = Invoke-WebRequest -Uri \"http://localhost:9090/api/clients\" -Method GET -ErrorAction Stop; $response.Content } catch { $_.Exception.Response.StatusCode; $stream = $_.Exception.Response.GetResponseStream\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); $reader.ReadToEnd\\(\\) })",
+      "Bash(npx vue-tsc *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(D:\\\\myaba.ai\\\\myaba.ai\\\\frontend\\\\node_modules\\\\.bin\\\\tsc --noEmit)",
+      "Read(//mnt/**)",
+      "Bash(ls /d)",
+      "Read(//c/Users/**)",
+      "Bash(cd ~/../../myaba.ai/myaba.ai/frontend && ./node_modules/.bin/tsc --noEmit 2>&1 | head -20)",
+      "Bash(find / -maxdepth 4 -name \"tsconfig.json\" -path \"*/myaba*\" 2>/dev/null | head -5)",
+      "Bash(/d/myaba.ai/myaba.ai/frontend/node_modules/.bin/tsc --noEmit --project /d/myaba.ai/myaba.ai/frontend/tsconfig.json)",
+      "Bash(dir \"D:\\\\myaba.ai\\\\myaba.ai\\\\frontend\\\\public\")",
+      "Bash(Get-ChildItem -Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\frontend\\\\src\\\\views\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name)"
     ]
   }
 }

@@ -355,7 +355,8 @@ function Step3Permissions({
   const handleClientSelect = (clientId: string) => {
     const c = clients.find((cl) => cl.id === clientId) ?? null;
     setSelectedClient(c);
-    onChange({ ...state, clientId, clientName: c?.legalName ?? '' });
+    const clientFullName = c ? [c.firstName, c.lastName].filter(Boolean).join(' ') || c.legalName || '' : '';
+    onChange({ ...state, clientId, clientName: clientFullName });
   };
 
   const addEmail = () => {
@@ -494,7 +495,7 @@ function Step3Permissions({
               >
                 <option value="">Select a client…</option>
                 {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.legalName}</option>
+                  <option key={c.id} value={c.id}>{[c.firstName, c.lastName].filter(Boolean).join(' ') || c.legalName}</option>
                 ))}
               </select>
             )}
@@ -504,7 +505,7 @@ function Step3Permissions({
                 {/* Inherited permissions summary */}
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
                   <p className="font-semibold text-gray-700 mb-1">
-                    Inheriting access from {selectedClient.legalName}&rsquo;s record:
+                    Inheriting access from {[selectedClient.firstName, selectedClient.lastName].filter(Boolean).join(' ') || selectedClient.legalName}&rsquo;s record:
                   </p>
                   {selectedClient.treatingBcbaId && (
                     <p>Treating BCBA &middot; {selectedClient.treatingBcbaId}</p>

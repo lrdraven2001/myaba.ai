@@ -54,9 +54,13 @@ public class SearchService {
         // 1. Clients — getAuthorizedClients() is already permission-gated
         try {
             for (var c : clientService.getAuthorizedClients(user)) {
-                if (matches(q, str(c, "legalName"), str(c, "preferredName"), str(c, "diagnosis"))) {
+                String fullName = str(c, "legalName").isBlank()
+                        ? (str(c, "firstName") + " " + str(c, "lastName")).trim()
+                        : str(c, "legalName");
+                if (matches(q, fullName, str(c, "firstName"), str(c, "lastName"),
+                            str(c, "preferredName"), str(c, "diagnosis"))) {
                     String diag = str(c, "diagnosis");
-                    hits.add(hit("client", str(c, "id"), str(c, "legalName"),
+                    hits.add(hit("client", str(c, "id"), fullName,
                             diag.isBlank() ? "" : "Diagnosis: " + diag));
                 }
             }
@@ -178,7 +182,8 @@ public class SearchService {
                         aclx.getDecision().getReason(),
                         aclx.getAclx() != null ? aclx.getAclx().getSensitivity() : null,
                         aclx.getAclx() != null ? aclx.getAclx().getCategory()    : null,
-                        searchAuthDenyReason);
+                        searchAuthDenyReason,
+                        true /* search summary escalations always block */);
             }
 
             summary = switch (summaryDecision) {

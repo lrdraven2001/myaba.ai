@@ -248,9 +248,18 @@ public class ChatService {
     /**
      * Append a user message and the assistant response to a chat.
      * Also bumps the chat's updatedAt timestamp.
+     *
+     * @param aclxDecision  ACLX decision that was applied to the assistant response
+     *                      (ALLOW | REDACT | BLOCK | ESCALATE). Stored on the message
+     *                      so API consumers and the audit trail have the label.
+     * @param aclxLabelData flattened label fields from the ACLX response
+     *                      (domain, category, subcategory, sensitivity). May be empty.
+     * @param aclxContentId ACLX content_id assigned to this response. May be null.
      */
     public void appendMessages(AppUser user, String chatId,
-                                String userText, String assistantText) throws Exception {
+                                String userText, String assistantText,
+                                String aclxDecision, Map<String, Object> aclxLabelData,
+                                String aclxContentId) throws Exception {
         String now = Instant.now().toString();
 
         if (devMode) {
@@ -269,6 +278,11 @@ public class ChatService {
             asstMsg.put("role",      "assistant");
             asstMsg.put("content",   assistantText);
             asstMsg.put("createdAt", now);
+            if (aclxDecision != null)  asstMsg.put("aclxDecision",  aclxDecision);
+            if (aclxContentId != null) asstMsg.put("aclxContentId", aclxContentId);
+            if (aclxLabelData != null && !aclxLabelData.isEmpty()) {
+                asstMsg.put("aclxLabel", new HashMap<>(aclxLabelData));
+            }
             msgs.add(asstMsg);
 
             // bump updatedAt on chat doc
@@ -294,6 +308,11 @@ public class ChatService {
         asstMsg.put("role", "assistant");
         asstMsg.put("content", assistantText);
         asstMsg.put("createdAt", now);
+        if (aclxDecision != null)  asstMsg.put("aclxDecision",  aclxDecision);
+        if (aclxContentId != null) asstMsg.put("aclxContentId", aclxContentId);
+        if (aclxLabelData != null && !aclxLabelData.isEmpty()) {
+            asstMsg.put("aclxLabel", new HashMap<>(aclxLabelData));
+        }
         messagesRef.add(asstMsg).get();
 
         chatRef.update("updatedAt", now).get();

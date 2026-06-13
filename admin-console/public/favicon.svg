@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500">
+  <defs>
+    <!-- Bar chart bar gradients -->
+    <linearGradient id="barBlue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1a7fd4"/>
+      <stop offset="100%" stop-color="#2196f3"/>
+    </linearGradient>
+    <linearGradient id="barYellow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f5a800"/>
+      <stop offset="100%" stop-color="#ffc107"/>
+    </linearGradient>
+    <linearGradient id="barOrange" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e53935"/>
+      <stop offset="100%" stop-color="#ef5350"/>
+    </linearGradient>
+    <!-- Card gradients -->
+    <linearGradient id="firstCardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5ab4f7"/>
+      <stop offset="100%" stop-color="#2196f3"/>
+    </linearGradient>
+    <linearGradient id="thenCardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8bc34a"/>
+      <stop offset="100%" stop-color="#4caf50"/>
+    </linearGradient>
+    <!-- Drop shadows -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="3" stdDeviation="4" flood-color="#00000044"/>
+    </filter>
+    <filter id="barShadow" x="-20%" y="-10%" width="140%" height="130%">
+      <feDropShadow dx="2" dy="3" stdDeviation="3" flood-color="#00000033"/>
+    </filter>
+    <filter id="arrowShadow">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#00000044"/>
+    </filter>
+    <filter id="textShadow">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#00000022"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent background -->
+
+  <!-- ===== BAR CHART (background) ===== -->
+  <!-- Blue bar -->
+  <rect x="175" y="165" width="44" height="130" rx="4" fill="url(#barBlue)" filter="url(#barShadow)"/>
+  <!-- Yellow bar -->
+  <rect x="228" y="130" width="44" height="165" rx="4" fill="url(#barYellow)" filter="url(#barShadow)"/>
+  <!-- Orange/Red bar -->
+  <rect x="281" y="95" width="44" height="200" rx="4" fill="url(#barOrange)" filter="url(#barShadow)"/>
+
+  <!-- Trend line overlaying bars -->
+  <polyline
+    points="175,245 228,205 281,170 320,125"
+    fill="none"
+    stroke="#e53935"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Trend line dots -->
+  <circle cx="175" cy="245" r="6" fill="#e53935" stroke="white" stroke-width="2"/>
+  <circle cx="228" cy="205" r="6" fill="#e53935" stroke="white" stroke-width="2"/>
+  <circle cx="281" cy="170" r="6" fill="#e53935" stroke="white" stroke-width="2"/>
+  <!-- Arrow head at end of trend line -->
+  <polygon points="320,125 305,132 308,118" fill="#e53935"/>
+
+  <!-- ===== FIRST CARD ===== -->
+  <rect x="75" y="210" width="140" height="115" rx="14" fill="url(#firstCardGrad)" filter="url(#cardShadow)"/>
+  <!-- Card top label bar -->
+  <rect x="75" y="210" width="140" height="32" rx="14" fill="#1565c0"/>
+  <rect x="75" y="226" width="140" height="16" fill="#1565c0"/>
+  <text x="145" y="233" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="white" text-anchor="middle">FIRST</text>
+
+  <!-- ===== GREEN ARROW — centered between cards ===== -->
+  <polygon
+    points="222,257 252,257 252,247 280,267 252,287 252,277 222,277"
+    fill="#43a047"
+    filter="url(#arrowShadow)"
+  />
+
+  <!-- ===== THEN CARD ===== -->
+  <rect x="285" y="210" width="140" height="115" rx="14" fill="url(#thenCardGrad)" filter="url(#cardShadow)"/>
+  <!-- Card top label -->
+  <rect x="285" y="210" width="140" height="32" rx="14" fill="#2e7d32"/>
+  <rect x="285" y="226" width="140" height="16" fill="#2e7d32"/>
+  <text x="355" y="233" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="white" text-anchor="middle">THEN</text>
+
+  <!-- ===== TEXT: myABA.ai ===== -->
+  <text x="250" y="370" font-family="Arial Rounded MT Bold, Arial Black, sans-serif" font-size="58" text-anchor="middle" filter="url(#textShadow)">
+    <tspan fill="#2196f3" font-style="italic">my</tspan><tspan fill="#1565c0" font-weight="900">ABA</tspan><tspan fill="#43a047" font-weight="900">.ai</tspan>
+  </text>
+</svg>

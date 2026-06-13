@@ -1,0 +1,144 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// myABA.ai Firestore Security Rules
+//
+// Design principle: the Spring Boot backend (Firebase Admin SDK) bypasses these
+// rules entirely — it uses elevated service-account credentials.  These rules
+// protect direct client-SDK access, e.g. if the frontend ever reads Firestore
+// directly (currently it does not; all reads go through the REST API).
+//
+// All write operations are backend-only.  Client reads are limited to documents
+// within the caller's own organization (enforced via the custom claim `orgId`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Is the caller authenticated with a verified Firebase token?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Does the caller's orgId claim match the org document being accessed?
+    function isOrgMember(orgId) {
+      return isAuthenticated() && request.auth.token.orgId == orgId;
+    }
+
+    // Is the caller an admin (ORG_ADMIN or ORG_SUPER_ADMIN)?
+    function isAdmin() {
+      return isAuthenticated() &&
+             (request.auth.token.role == 'ORG_ADMIN' ||
+              request.auth.token.role == 'ORG_SUPER_ADMIN');
+    }
+
+    // Is the caller a platform super-admin?
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'ORG_SUPER_ADMIN';
+    }
+
+    // ── organizations/{orgId} ─────────────────────────────────────────────────
+
+    match /organizations/{orgId} {
+
+      // Org document: members can read their own org; only backend writes.
+      allow read:  if isOrgMember(orgId);
+      allow write: if false;  // backend-only via Admin SDK
+
+      // ── members subcollection ─────────────────────────────────────────────
+
+      match /members/{uid} {
+        // Any org member can read the member list (needed for TeamView).
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;  // backend-only
+      }
+
+      // ── chats ─────────────────────────────────────────────────────────────
+
+      match /chats/{chatId} {
+        // Only org members can read chats; memberIds check enforced at backend.
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;
+
+        match /messages/{msgId} {
+          allow read:  if isOrgMember(orgId);
+          allow write: if false;
+        }
+      }
+
+      // ── clients ───────────────────────────────────────────────────────────
+
+      match /clients/{clientId} {
+        // Admins see all clients; clinicians see only their assigned clients.
+        // Fine-grained filtering is done in the backend query; here we just
+        // require org membership.
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;
+      }
+
+      // ── projects ──────────────────────────────────────────────────────────
+
+      match /projects/{projectId} {
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;
+
+        match /knowledgeDocs/{docId} {
+          allow read:  if isOrgMember(orgId);
+          allow write: if false;
+        }
+      }
+
+      // ── templates ─────────────────────────────────────────────────────────
+
+      match /templates/{templateId} {
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;
+      }
+
+      // ── reviewQueue ───────────────────────────────────────────────────────
+
+      match /reviewQueue/{itemId} {
+        // Only org admins can read the review queue.
+        allow read:  if isOrgMember(orgId) && isAdmin();
+        allow write: if false;
+      }
+
+      // ── inviteTokens ──────────────────────────────────────────────────────
+      // The /invite page resolves a token before the user is fully logged in,
+      // so we allow any authenticated user to read (just the token document).
+
+      match /inviteTokens/{token} {
+        allow read:  if isAuthenticated();
+        allow write: if false;
+      }
+
+      // ── policies (org-level ABA policy docs) ──────────────────────────────
+
+      match /policies/{policyId} {
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;
+
+        match /chunks/{chunkId} {
+          allow read:  if isOrgMember(orgId);
+          allow write: if false;
+        }
+      }
+    }
+
+    // ── auditLog (flat top-level collection) ──────────────────────────────────
+    // Never readable by clients — platform auditing only via backend.
+
+    match /auditLog/{docId} {
+      allow read:  if false;
+      allow write: if false;
+    }
+
+    // ── Deny everything else ─────────────────────────────────────────────────
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

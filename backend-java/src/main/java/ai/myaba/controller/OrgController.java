@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -115,6 +116,144 @@ public class OrgController {
             log.error("Failed to update org settings {}: {}", orgId, e.getMessage());
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "Failed to update settings"));
+        }
+    }
+
+    // ── Update org name ───────────────────────────────────────────────────────
+
+    /**
+     * PUT /api/orgs/{orgId}/name
+     * Body: { name: string }
+     * ORG_ADMIN or ORG_SUPER_ADMIN only.
+     */
+    @PutMapping("/api/orgs/{orgId}/name")
+    public ResponseEntity<?> updateOrgName(
+            @PathVariable String orgId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Admin access required"));
+        }
+        String name = body.get("name");
+        if (name == null || name.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "name is required"));
+        }
+        try {
+            orgService.updateOrgName(orgId, name.trim());
+            return ResponseEntity.ok(Map.of("name", name.trim()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("updateOrgName failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update org name"));
+        }
+    }
+
+    // ── Insurance companies ───────────────────────────────────────────────────
+
+    /**
+     * GET /api/orgs/{orgId}/insurance-companies
+     * Returns the org's configured insurance company list (all members of the org may read).
+     */
+    @GetMapping("/api/orgs/{orgId}/insurance-companies")
+    public ResponseEntity<?> getInsuranceCompanies(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!orgId.equals(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+        try {
+            return ResponseEntity.ok(Map.of("companies", orgService.getInsuranceCompanies(orgId)));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("getInsuranceCompanies failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to fetch insurance companies"));
+        }
+    }
+
+    /**
+     * PUT /api/orgs/{orgId}/insurance-companies
+     * Body: { companies: ["Aetna", ...] }
+     * ORG_ADMIN or ORG_SUPER_ADMIN only.
+     */
+    @PutMapping("/api/orgs/{orgId}/insurance-companies")
+    public ResponseEntity<?> setInsuranceCompanies(
+            @PathVariable String orgId,
+            @RequestBody Map<String, List<String>> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Admin access required"));
+        }
+        List<String> companies = body.get("companies");
+        if (companies == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "companies list is required"));
+        }
+        try {
+            orgService.setInsuranceCompanies(orgId, companies);
+            return ResponseEntity.ok(Map.of("companies", companies));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("setInsuranceCompanies failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update insurance companies"));
+        }
+    }
+
+    // ── List org members ──────────────────────────────────────────────────────
+
+    /**
+     * GET /api/orgs/{orgId}/members
+     * Returns member records for the org. ORG_ADMIN or ORG_SUPER_ADMIN only.
+     * Each record: { id, displayName, email, role, purpose, active }
+     */
+    @GetMapping("/api/orgs/{orgId}/members")
+    public ResponseEntity<?> getOrgMembers(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.getOrgMembers(orgId));
+        } catch (Exception e) {
+            log.error("getOrgMembers failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to retrieve members"));
+        }
+    }
+
+    // ── Set member supervisor ─────────────────────────────────────────────────
+
+    /**
+     * PUT /api/orgs/{orgId}/members/{uid}/supervisor
+     * Body: { supervisorId: string }  — pass empty string to clear.
+     * ORG_ADMIN or ORG_SUPER_ADMIN only.
+     */
+    @PutMapping("/api/orgs/{orgId}/members/{uid}/supervisor")
+    public ResponseEntity<?> setMemberSupervisor(
+            @PathVariable String orgId,
+            @PathVariable String uid,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            orgService.setSupervisor(orgId, uid, body.get("supervisorId"));
+            return ResponseEntity.noContent().build();
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("setSupervisor failed org={} uid={}: {}", orgId, uid, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update supervisor"));
         }
     }
 

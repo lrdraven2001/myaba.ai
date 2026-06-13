@@ -65,11 +65,14 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
     if (activeTab !== 'client_files' || clients.length > 0) return;
     api.getClients()
       .then((data: Client[]) => {
-        const mapped = data.map((c) => ({
-          id: c.id,
-          preferredName: c.preferredName,
-          initials: c.preferredName.split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 2),
-        }));
+        const mapped = data.map((c) => {
+          const name = c.preferredName || c.firstName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
+          return {
+            id: c.id,
+            preferredName: name,
+            initials: name.split(/\s+/).map((w: string) => w[0]?.toUpperCase() ?? '').join('').slice(0, 2),
+          };
+        });
         setClients(mapped);
         setExpandedClients(new Set(mapped.map((c) => c.id)));
       })

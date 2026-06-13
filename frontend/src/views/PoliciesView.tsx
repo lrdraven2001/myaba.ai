@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faEdit, faTrash, faSpinner, faTimes, faCloudUploadAlt,
-  faFile, faFolder, faCheckCircle, faExclamationTriangle, faUnlink,
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
@@ -15,17 +14,15 @@ const CATEGORY_LABELS: Record<PolicyCategory, string> = {
   sop:           'SOP',
   handbook:      'Handbook',
   clinical_sop:  'Clinical SOP',
-  hipaa:         'HIPAA',
-  billing:       'Billing',
+  template:      'Template',
 };
 
 const CATEGORY_COLORS: Record<PolicyCategory, { bg: string; text: string }> = {
-  hipaa:         { bg: '#fee2e2', text: '#991b1b' },
-  clinical_sop:  { bg: '#e8f4f8', text: '#1e4d5c' },
   policy_manual: { bg: '#f3f4f6', text: '#374151' },
   sop:           { bg: '#fdf4e7', text: '#92400e' },
   handbook:      { bg: '#f0fdf4', text: '#166534' },
-  billing:       { bg: '#faf5ff', text: '#6b21a8' },
+  clinical_sop:  { bg: '#e8f4f8', text: '#1e4d5c' },
+  template:      { bg: '#EEF4FF', text: '#1E88FF' },
 };
 
 const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as PolicyCategory[];
@@ -96,8 +93,6 @@ export default function PoliciesView({ embedded = false }: { embedded?: boolean 
 
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center gap-4 flex-wrap">
-        {!embedded && <h1 className="text-lg font-semibold text-gray-900">Resources</h1>}
-
         <div className="flex-1" />
 
         {/* Drive connection buttons */}
@@ -152,28 +147,29 @@ export default function PoliciesView({ embedded = false }: { embedded?: boolean 
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-4xl mx-auto">
 
-          {/* Connected Sources */}
+          {/* Connected Sources — compact link list */}
           {driveConnections.length > 0 && (
-            <div className="mb-6">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                Connected Sources
-              </h2>
-              <div className="space-y-2">
-                {driveConnections.map((conn) => (
-                  <DriveConnectionRow
-                    key={conn.id}
-                    connection={conn}
-                    onUnlink={async (id) => {
-                      try {
-                        await api.deleteDriveConnection(id);
-                        setDriveConnections((prev) => prev.filter((c) => c.id !== id));
-                      } catch { /* ignore */ }
-                    }}
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0">
+                Connected:
+              </span>
+              {driveConnections.map((conn) => (
+                <a
+                  key={conn.id}
+                  href={conn.driveItemUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium hover:bg-gray-50 transition-colors"
+                  style={{ borderColor: '#d1d5db', color: '#374151' }}
+                >
+                  <FontAwesomeIcon
+                    icon={conn.driveSource === 'google' ? faGoogle : faMicrosoft}
+                    style={{ color: conn.driveSource === 'google' ? '#ea4335' : '#0078d4', fontSize: 10 }}
                   />
-                ))}
-              </div>
+                  {conn.driveItemName}
+                </a>
+              ))}
             </div>
           )}
 
@@ -203,7 +199,6 @@ export default function PoliciesView({ embedded = false }: { embedded?: boolean 
               ))}
             </div>
           )}
-        </div>
       </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
@@ -452,68 +447,6 @@ function PolicyFormModal({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Drive connection row ──────────────────────────────────────────────────────
-
-function DriveConnectionRow({
-  connection,
-  onUnlink,
-}: {
-  connection: DriveConnection;
-  onUnlink: (id: string) => void;
-}) {
-  const [unlinking, setUnlinking] = useState(false);
-  const providerIcon  = connection.driveSource === 'google' ? faGoogle : faMicrosoft;
-  const providerColor = connection.driveSource === 'google' ? '#ea4335' : '#0078d4';
-
-  const permLabel = (() => {
-    if (connection.permissionType === 'org_roles')
-      return `Org roles (${connection.allowedRoles.length})`;
-    if (connection.permissionType === 'individual')
-      return `${connection.allowedUserIds.length} individual user${connection.allowedUserIds.length !== 1 ? 's' : ''}`;
-    return `Client${connection.clientId ? ` · ${connection.inheritClientPermissions ? 'inherited' : 'manual'}` : ''}`;
-  })();
-
-  const handleUnlink = async () => {
-    setUnlinking(true);
-    try { await onUnlink(connection.id); } finally { setUnlinking(false); }
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
-      <FontAwesomeIcon
-        icon={connection.driveItemType === 'folder' ? faFolder : faFile}
-        className="text-gray-400 shrink-0"
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-gray-900 truncate">{connection.driveItemName}</span>
-          <FontAwesomeIcon icon={providerIcon} style={{ color: providerColor, fontSize: 12 }} />
-          {connection.hipaaVerified ? (
-            <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-              <FontAwesomeIcon icon={faCheckCircle} className="text-xs" /> Verified
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-              <FontAwesomeIcon icon={faExclamationTriangle} className="text-xs" /> Acknowledged
-            </span>
-          )}
-          <span className="text-xs text-gray-400">{permLabel}</span>
-        </div>
-      </div>
-      <button
-        onClick={handleUnlink}
-        disabled={unlinking}
-        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 shrink-0 transition-colors"
-        title="Unlink"
-      >
-        {unlinking
-          ? <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xs" />
-          : <FontAwesomeIcon icon={faUnlink} className="text-sm" />}
-      </button>
     </div>
   );
 }

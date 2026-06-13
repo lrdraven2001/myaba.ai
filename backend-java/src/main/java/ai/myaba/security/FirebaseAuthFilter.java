@@ -46,11 +46,20 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     @Value("${dev.auth-enabled:false}")
     private boolean devAuthEnabled;
 
+    /** Injected as nullable — will be null when no Firebase credentials are configured. */
+    private final com.google.firebase.FirebaseApp firebaseApp;
+
+    public FirebaseAuthFilter(
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.google.firebase.FirebaseApp firebaseApp) {
+        this.firebaseApp = firebaseApp;
+    }
+
     private static final AppUser DEV_USER = AppUser.builder()
             .uid("dev-user-001")
-            .email("bcba@myaba.dev")
-            .displayName("Dev BCBA")
-            .role(UserRole.TREATING_BCBA)
+            .email("admin@myaba.dev")
+            .displayName("Chris Hunt")
+            .role(UserRole.ORG_SUPER_ADMIN)
             .purpose("treatment")
             .orgId("dev-org-001")
             .supervisorId(null)
@@ -60,7 +69,11 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        if (devAuthEnabled) {
+        // Dev mode: use stub user (explicit flag OR no Firebase configured)
+        if (devAuthEnabled || firebaseApp == null) {
+            if (firebaseApp == null && !devAuthEnabled) {
+                log.warn("Firebase not configured — using dev stub user. Set DEV_AUTH=true explicitly for dev mode.");
+            }
             setAuthentication(DEV_USER);
             filterChain.doFilter(request, response);
             return;

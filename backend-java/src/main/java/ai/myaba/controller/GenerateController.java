@@ -7,6 +7,7 @@ import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.ClaudeService;
 import ai.myaba.service.ClientService;
+import ai.myaba.service.OrgService;
 import ai.myaba.service.PolicyRagService;
 import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
@@ -21,6 +22,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -39,6 +42,7 @@ public class GenerateController {
     private final AuthorizationService authorizationService;
     private final SubjectAuthorizationService subjectAuthorizationService;
     private final ChatService chatService;
+    private final OrgService orgService;
     private final PolicyService policyService;
     private final PolicyRagService policyRagService;
     private final ProjectService projectService;
@@ -163,7 +167,8 @@ public class GenerateController {
                         aclxResult.getDecision().getReason(),
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
-                        authDenyReason);
+                        authDenyReason,
+                        true /* document escalations always block */);
                 yield ResponseEntity.accepted().body(GenerateDocumentResponse.builder()
                         .status("PENDING_REVIEW")
                         .message("Document flagged for human review before release")
@@ -275,9 +280,22 @@ public class GenerateController {
         auditService.log("CHAT_RESPONSE", user.getUid(), req.getClientId(),
                 null, aclxResult.getContentId(), decision, aclxResult.getAclx());
 
+        // §4: QUARANTINE_SUSPECTED in BLOCK — don't surface raw reason to end user
+        String chatBlockReason = aclxResult.getDecision().getReason();
+        boolean chatIsQuarantine = "BLOCK".equals(decision) && chatBlockReason != null
+                && chatBlockReason.startsWith("QUARANTINE_SUSPECTED");
+        if (chatIsQuarantine) {
+            log.warn("QUARANTINE_SUSPECTED chat block: client={} user={} reason={}",
+                    req.getClientId(), user.getUid(), chatBlockReason);
+        }
+
+        // Check org's reviewRequired setting to decide whether ESCALATE blocks delivery
+        boolean reviewRequired = orgService.isReviewRequired(user.getOrgId());
+
         if ("ESCALATE".equals(decision)) {
             // §4: Pass authorization deny reason into review queue for reviewers
             String chatAuthDenyReason = extractAuthDenyReason(aclxResult);
+            // blocking=true → PENDING (holds content); blocking=false → LOGGED (audit-only)
             reviewQueueService.enqueue(
                     user.getOrgId(),
                     aclxResult.getContentId(),
@@ -288,28 +306,29 @@ public class GenerateController {
                     aclxResult.getDecision().getReason(),
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
-                    chatAuthDenyReason);
+                    chatAuthDenyReason,
+                    reviewRequired);
         }
 
-        // §4: QUARANTINE_SUSPECTED in BLOCK — don't surface raw reason to end user
-        String chatBlockReason = aclxResult.getDecision().getReason();
-        boolean chatIsQuarantine = "BLOCK".equals(decision) && chatBlockReason != null
-                && chatBlockReason.startsWith("QUARANTINE_SUSPECTED");
-        if (chatIsQuarantine) {
-            log.warn("QUARANTINE_SUSPECTED chat block: client={} user={} reason={}",
-                    req.getClientId(), user.getUid(), chatBlockReason);
+        // Build reply — BLOCK always withholds, ESCALATE withholds only when reviewRequired
+        String reply;
+        if ("BLOCK".equals(decision)) {
+            reply = "I cannot share that information based on your current access level.";
+        } else if ("ESCALATE".equals(decision) && reviewRequired) {
+            reply = "This response has been flagged for compliance review and will be available once approved.";
+        } else {
+            // ALLOW, REDACT, or non-blocking ESCALATE
+            reply = aclxResult.getDecision().getFinalText();
         }
 
-        String reply = "BLOCK".equals(decision)
-                ? "I cannot share that information based on your current access level."
-                : "ESCALATE".equals(decision)
-                ? "This response has been flagged for compliance review and will be available once approved."
-                : aclxResult.getDecision().getFinalText();
+        // Build flattened ACLX label map — stored on the assistant message for API consumers
+        Map<String, Object> aclxLabelMap = buildAclxLabelMap(aclxResult);
 
         // Persist messages to Firestore when a chatId is provided
         if (req.getChatId() != null && !req.getChatId().isBlank()) {
             try {
-                chatService.appendMessages(user, req.getChatId(), req.getMessage(), reply);
+                chatService.appendMessages(user, req.getChatId(), req.getMessage(), reply,
+                        decision, aclxLabelMap, aclxResult.getContentId());
             } catch (Exception e) {
                 // Non-fatal: log but don't fail the response
                 log.warn("Failed to persist messages for chat {}: {}", req.getChatId(), e.getMessage());
@@ -392,6 +411,21 @@ public class GenerateController {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Build a flat label map from the ACLX response for storage on the assistant message.
+     * Every AI response gets this label so API consumers can enforce their own governance.
+     */
+    private Map<String, Object> buildAclxLabelMap(AclxResponse aclxResult) {
+        if (aclxResult == null || aclxResult.getAclx() == null) return Map.of();
+        AclxResponse.AclxLabel label = aclxResult.getAclx();
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (label.getDomain() != null)      m.put("domain",      label.getDomain());
+        if (label.getCategory() != null)    m.put("category",    label.getCategory());
+        if (label.getSubcategory() != null) m.put("subcategory", label.getSubcategory());
+        if (label.getSensitivity() != null) m.put("sensitivity", label.getSensitivity());
+        return m;
     }
 
     /** Merges clientId + clientIds into a deduplicated list. */

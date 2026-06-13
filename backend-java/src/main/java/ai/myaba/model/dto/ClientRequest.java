@@ -9,8 +9,10 @@ import java.util.List;
 public class ClientRequest {
     // ── Demographics ──────────────────────────────────────────────────────
     @NotBlank
-    private String legalName;
-    private String preferredName;      // de-identified display name
+    private String firstName;
+    @NotBlank
+    private String lastName;
+    private String preferredName;      // optional "goes by" / de-identified display name
     private String dateOfBirth;
     private String gender;
     private String diagnosis;

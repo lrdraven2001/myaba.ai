@@ -96,6 +96,11 @@
                     <layers>
                         <enabled>true</enabled>
                     </layers>
+                    <!-- Local dev: activate 'local' profile so application-local.yml is loaded.
+                         Production/Docker: override with -Dspring.profiles.active=prod or env var. -->
+                    <profiles>
+                        <profile>local</profile>
+                    </profiles>
                 </configuration>
             </plugin>
         </plugins>

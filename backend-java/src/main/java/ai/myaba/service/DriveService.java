@@ -51,7 +51,7 @@ public class DriveService {
         seed.put("hipaaLabelName",         "PHI – Restricted");
         seed.put("hipaaAcknowledged",      true);
         seed.put("permissionType",         "org_roles");
-        seed.put("allowedRoles",           List.of("TREATING_BCBA", "SUPERVISING_BCBA", "ORG_ADMIN"));
+        seed.put("allowedRoles",           List.of("SUPERVISING_BCBA", "ORG_ADMIN", "ORG_SUPER_ADMIN"));
         seed.put("allowedUserIds",         List.of());
         seed.put("clientId",               "");
         seed.put("inheritClientPermissions", false);

@@ -40,20 +40,17 @@ public class FirebaseConfig {
             return FirebaseApp.getInstance();
         }
 
+        // Dev mode: skip Firebase entirely — auth filter uses stub user instead.
         if (devAuthEnabled) {
             log.warn("DEV_AUTH=true — Firebase auth is disabled. DO NOT use in production.");
-            // Initialize with Application Default Credentials if available,
-            // otherwise skip — auth filter won't call Firebase anyway.
-            try {
-                FirebaseOptions options = FirebaseOptions.builder()
-                        .setCredentials(GoogleCredentials.getApplicationDefault())
-                        .setProjectId(projectId.isBlank() ? "dev-project" : projectId)
-                        .build();
-                return FirebaseApp.initializeApp(options);
-            } catch (Exception e) {
-                log.warn("No ADC found in dev mode — Firebase will not be initialized.");
-                return null;
-            }
+            return null;
+        }
+
+        // No Firebase project configured — treat as local dev, skip gracefully.
+        if (projectId.isBlank() && serviceAccountPath.isBlank() && clientEmail.isBlank()) {
+            log.warn("No Firebase credentials configured — running without Firebase. " +
+                     "Set DEV_AUTH=true or supply Firebase credentials.");
+            return null;
         }
 
         GoogleCredentials credentials;

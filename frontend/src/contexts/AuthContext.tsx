@@ -10,12 +10,12 @@ const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
 const DEV_USER: AppUser = {
   uid: 'dev-user-001',
-  email: 'bcba@myaba.dev',
+  email: 'admin@myaba.dev',
   displayName: 'Chris Hunt',
-  role: 'TREATING_BCBA',
+  role: 'ORG_SUPER_ADMIN',
   purpose: 'treatment',
   orgId: 'dev-org-001',
-  supervisorId: 'supervisor-001',
+  supervisorId: undefined,
 };
 
 interface AuthContextValue {
@@ -23,6 +23,7 @@ interface AuthContextValue {
   firebaseUser: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -74,6 +75,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
+  const loginWithGoogle = async () => {
+    if (DEV_AUTH) {
+      setCurrentUser({ ...DEV_USER, email: 'dev@google.com' });
+      return;
+    }
+    const { auth } = await import('../lib/firebase');
+    const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+    await signInWithPopup(auth, new GoogleAuthProvider());
+    // onAuthStateChanged above will pick up the resulting user automatically
+  };
+
   const logout = async () => {
     if (DEV_AUTH) {
       setCurrentUser(null);
@@ -85,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, logout }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

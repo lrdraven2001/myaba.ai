@@ -27,11 +27,10 @@ type FilterType = SearchHitType | 'all';
 
 const FILTER_TABS: { id: FilterType; label: string }[] = [
   { id: 'all',      label: 'All'       },
-  { id: 'client',   label: 'Clients'   },
-  { id: 'project',  label: 'Projects'  },
-  { id: 'resource', label: 'Resources' },
-  { id: 'template', label: 'Templates' },
   { id: 'chat',     label: 'Chats'     },
+  { id: 'project',  label: 'Projects'  },
+  { id: 'client',   label: 'Clients'   },
+  { id: 'resource', label: 'Resources' },
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -101,15 +100,7 @@ export default function SearchView({ onNavigate }: Props) {
 
       {/* ── Search bar header ───────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-8 py-5">
-        <div className="max-w-3xl mx-auto">
-          {/* Title row */}
-          <div className="flex items-center gap-2 mb-4">
-            <FontAwesomeIcon icon={faShieldAlt} className="text-teal-600 text-sm" />
-            <span className="text-xs text-gray-400 font-medium">
-              Results are filtered to what you're authorised to access
-            </span>
-          </div>
-
+        <div>
           {/* Input */}
           <div className="relative flex items-center">
             <FontAwesomeIcon
@@ -122,7 +113,7 @@ export default function SearchView({ onNavigate }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search clients, projects, resources, templates, chats…"
+              placeholder="Search chats, projects, clients, resources…"
               className="w-full pl-10 pr-10 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-teal-500 transition-colors bg-white"
             />
             {query && (
@@ -136,7 +127,7 @@ export default function SearchView({ onNavigate }: Props) {
           </div>
 
           {/* Search button */}
-          <div className="flex items-center gap-3 mt-3">
+          <div className="mt-3">
             <button
               onClick={() => runSearch(query)}
               disabled={!query.trim() || loading}
@@ -145,25 +136,14 @@ export default function SearchView({ onNavigate }: Props) {
             >
               {loading ? 'Searching…' : 'Search'}
             </button>
-            {committed && !loading && (
-              <span className="text-xs text-gray-400">
-                {hasResults
-                  ? `${allHits.length} result${allHits.length !== 1 ? 's' : ''} for "${committed}"`
-                  : `No results for "${committed}"`}
-              </span>
-            )}
           </div>
         </div>
       </div>
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-3xl mx-auto space-y-5">
+        <div className="space-y-5">
 
-          {/* Empty / idle state */}
-          {!loading && !result && !error && (
-            <EmptyState />
-          )}
 
           {/* Error */}
           {error && (
@@ -397,20 +377,20 @@ function FilterChip({
 
 function EmptyState() {
   return (
-    <div className="text-center py-16 text-gray-400">
+    <div className="py-12 text-gray-400">
       <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
         style={{ background: '#e8f4f8' }}
       >
-        <FontAwesomeIcon icon={faSearch} style={{ fontSize: 28, color: '#2a5f6f' }} />
+        <FontAwesomeIcon icon={faSearch} style={{ fontSize: 24, color: '#2a5f6f' }} />
       </div>
-      <h2 className="text-lg font-semibold text-gray-700 mb-2">Search your workspace</h2>
-      <p className="text-sm max-w-md mx-auto leading-relaxed">
-        Find clients, projects, resource documents, templates, and chats in one place.
-        Results are summarised by AI and filtered to what you're permitted to see.
+      <h2 className="text-base font-semibold text-gray-700 mb-1">Search your workspace</h2>
+      <p className="text-sm leading-relaxed mb-4" style={{ maxWidth: 420 }}>
+        Find chats, projects, clients, and resources in one place.
+        Results are filtered to what you're permitted to see.
       </p>
-      <div className="flex flex-wrap justify-center gap-2 mt-5">
-        {(['Clients', 'Projects', 'Resources', 'Templates', 'Chats'] as const).map((label) => (
+      <div className="flex flex-wrap gap-2">
+        {(['Chats', 'Projects', 'Clients', 'Resources'] as const).map((label) => (
           <span
             key={label}
             className="px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-500"

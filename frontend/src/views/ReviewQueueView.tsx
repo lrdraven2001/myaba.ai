@@ -4,6 +4,7 @@ import {
   faShieldAlt, faSpinner, faCheckCircle, faBan, faClock,
   faChevronDown, faChevronUp, faInfoCircle,
   faChartBar, faListAlt, faTag, faPlus, faTrash, faLock,
+  faBookOpen, faComments, faUser,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -60,6 +61,198 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
+function toInitials(name: string) {
+  return name.split(' ').map((p) => p[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtRelative(iso: string) {
+  const d   = new Date(iso);
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7)  return `${diff}d ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ── Chat review types & stub data ─────────────────────────────────────────────
+
+interface StubChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  aclxLabel?: string;
+  aclxSensitivity?: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+interface StubChatSession {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  supervisorId?: string;   // set on RBT sessions — which BCBA supervises them
+  clientId?: string;
+  clientName?: string;
+  projectId?: string;
+  projectName?: string;
+  topic: string;
+  lastActivity: string;
+  messages: StubChatMessage[];
+  aclxLabels: string[];
+}
+
+const ACLX_LABEL_META: Record<string, { bg: string; text: string; label: string }> = {
+  PHI_DETECTED:    { bg: '#fef3c7', text: '#92400e', label: 'PHI Detected'    },
+  PII_DETECTED:    { bg: '#fee2e2', text: '#991b1b', label: 'PII Detected'    },
+  BEHAVIORAL_DATA: { bg: '#ede9fe', text: '#5b21b6', label: 'Behavioral Data' },
+  CLINICAL_NOTE:   { bg: '#e0f2fe', text: '#075985', label: 'Clinical Note'   },
+};
+
+const CHAT_USER_COLORS: Record<string, string> = {
+  ORG_SUPER_ADMIN:  '#2a5f6f',
+  ORG_ADMIN:        '#1d4ed8',
+  SUPERVISING_BCBA: '#7c3aed',
+  RBT:              '#3F9B2F',
+};
+
+const CHAT_ROLE_CHIP: Record<string, { bg: string; text: string }> = {
+  ORG_SUPER_ADMIN:  { bg: '#e8f4f8', text: '#1e4d5c' },
+  ORG_ADMIN:        { bg: '#eff6ff', text: '#1d4ed8' },
+  SUPERVISING_BCBA: { bg: '#ede9fe', text: '#5b21b6' },
+  RBT:              { bg: '#EEF7EA', text: '#3F9B2F' },
+};
+
+const CHAT_ROLE_LABELS: Record<string, string> = {
+  ORG_SUPER_ADMIN:  'Super Admin',
+  ORG_ADMIN:        'Full Administrator',
+  SUPERVISING_BCBA: 'Clinical Supervisor',
+  RBT:              'Behavior Technician',
+};
+
+const STUB_CHAT_SESSIONS: StubChatSession[] = [
+  {
+    id: 'cs-001',
+    userId: 'dev-user-003', userName: 'Mike Torres', userRole: 'RBT', supervisorId: 'dev-user-002',
+    clientId: 'client-001', clientName: 'Alex R.',
+    topic: 'Session Notes — DTT Program',
+    lastActivity: '2026-06-10T14:32:00Z',
+    aclxLabels: ['PHI_DETECTED'],
+    messages: [
+      {
+        id: 'm1-1', role: 'user', timestamp: '2026-06-10T14:28:00Z',
+        content: "Help me write session notes for Alex after a 2-hour DTT session. Target skills: tacting and manding. Alex hit 80% accuracy on tacting with 3D objects today.",
+      },
+      {
+        id: 'm1-2', role: 'assistant', timestamp: '2026-06-10T14:29:00Z',
+        aclxLabel: 'PHI_DETECTED', aclxSensitivity: 'MEDIUM',
+        content: "Session Notes — June 10, 2026\n\nSession Duration: 2 hours\nProgram: Discrete Trial Training (DTT)\nTarget Skills: Tacting, Manding\n\nSummary:\nClient demonstrated strong progress in tacting 3D objects at 80% accuracy across trials. Manding targets were embedded throughout with prompts faded to partial physical. Recommend maintaining current prompt hierarchy for manding in the next session.",
+      },
+      {
+        id: 'm1-3', role: 'user', timestamp: '2026-06-10T14:31:00Z',
+        content: "Also add a behavior incident — 3-minute tantrum during activity transition at 2pm.",
+      },
+      {
+        id: 'm1-4', role: 'assistant', timestamp: '2026-06-10T14:32:00Z',
+        content: "Behavior Incident (2:00 PM):\nAntecedent: Transition from preferred (iPad) to non-preferred (tabletop) activity.\nBehavior: Vocal protest, dropped to floor — duration approx. 3 minutes.\nConsequence: Brief delay, then guided transition with verbal prompt.\n\nRecommendation: Review transition protocol and consider adding a visual schedule to ease activity transitions.",
+      },
+    ],
+  },
+  {
+    id: 'cs-002',
+    userId: 'dev-user-002', userName: 'Sarah Johnson', userRole: 'SUPERVISING_BCBA',
+    clientId: 'client-001', clientName: 'Alex R.',
+    topic: 'BIP Review — Escape Behaviors',
+    lastActivity: '2026-06-09T10:15:00Z',
+    aclxLabels: ['PHI_DETECTED', 'BEHAVIORAL_DATA'],
+    messages: [
+      {
+        id: 'm2-1', role: 'user', timestamp: '2026-06-09T10:10:00Z',
+        content: "Updating Alex's BIP for escape-maintained behaviors. Current intervention is extinction plus FCT. Alex is showing an increase in behavior lately — should we adjust the protocol?",
+      },
+      {
+        id: 'm2-2', role: 'assistant', timestamp: '2026-06-09T10:13:00Z',
+        aclxLabel: 'PHI_DETECTED', aclxSensitivity: 'HIGH',
+        content: "Given an increase in escape behavior during extinction, consider these adjustments:\n\n1. Schedule Thinning Review — verify demand difficulty isn't too high\n2. FCT Prompt Fading — ensure the functional communication response is robust before fading extinction\n3. Antecedent Modifications — embed preferred items within demands (high-p sequences)\n4. Data Review — plot behavior frequency against session demands to check for ratio strain\n\nWould you like a draft revision for the BIP antecedent section?",
+      },
+      {
+        id: 'm2-3', role: 'user', timestamp: '2026-06-09T10:14:00Z',
+        content: "Yes, please draft the antecedent modification section.",
+      },
+      {
+        id: 'm2-4', role: 'assistant', timestamp: '2026-06-09T10:15:00Z',
+        aclxLabel: 'BEHAVIORAL_DATA', aclxSensitivity: 'MEDIUM',
+        content: "Antecedent Modification Strategies:\n\n• High-Probability Sequence: Present 2–3 easy, preferred tasks before non-preferred demands to build behavioral momentum.\n• Demand Fading: Temporarily reduce difficulty or duration of non-preferred tasks and increase gradually.\n• Choice Provision: Offer limited choice (e.g., which task first) to increase perceived control.\n• Pre-Session Pairing: Begin each session with 5 min of non-contingent pairing with preferred items.\n\nDocument implementation fidelity in session notes alongside the existing FCT protocol.",
+      },
+    ],
+  },
+  {
+    id: 'cs-003',
+    userId: 'dev-user-003', userName: 'Mike Torres', userRole: 'RBT', supervisorId: 'dev-user-002',
+    projectId: 'proj-001', projectName: 'Q2 Program Review',
+    topic: 'Goal Progress Summary',
+    lastActivity: '2026-06-08T09:45:00Z',
+    aclxLabels: [],
+    messages: [
+      {
+        id: 'm3-1', role: 'user', timestamp: '2026-06-08T09:42:00Z',
+        content: "Help me summarize goal progress for Q2 program review. Goals: manding 10+ novel items ✓, tacting actions from video clips ✓, listener responding to 50 targets — currently at 60%.",
+      },
+      {
+        id: 'm3-2', role: 'assistant', timestamp: '2026-06-08T09:45:00Z',
+        content: "Q2 Program Review — Goal Progress Summary\n\nGoals Met:\n✅ Manding: Client independently mands for 10+ novel items across environments.\n✅ Tacting Actions: Correctly labels actions from video clips with >80% accuracy.\n\nGoal In Progress:\n⏳ Listener Responding (50 targets): Currently at 60% accuracy. Recommend continued drilling with stimulus rotation. Target mastery: 80% over 3 consecutive sessions.",
+      },
+    ],
+  },
+  {
+    id: 'cs-004',
+    userId: 'dev-user-002', userName: 'Sarah Johnson', userRole: 'SUPERVISING_BCBA',
+    topic: 'Staff Training — Data Collection Methods',
+    lastActivity: '2026-06-07T16:20:00Z',
+    aclxLabels: ['CLINICAL_NOTE'],
+    messages: [
+      {
+        id: 'm4-1', role: 'user', timestamp: '2026-06-07T16:15:00Z',
+        content: "Write training material on proper ABA data collection for RBTs — covering partial interval recording, whole interval, and momentary time sampling.",
+      },
+      {
+        id: 'm4-2', role: 'assistant', timestamp: '2026-06-07T16:19:00Z',
+        aclxLabel: 'CLINICAL_NOTE', aclxSensitivity: 'LOW',
+        content: "ABA Data Collection Methods — RBT Training Guide\n\nPartial Interval Recording\nRecord whether the behavior occurred at ANY point during the interval. Overestimates frequency. Best for: low-rate behaviors you want to increase (e.g., verbalizations).\n\nWhole Interval Recording\nRecord whether the behavior occurred for the ENTIRE interval. Underestimates frequency. Best for: sustained behaviors (e.g., on-task).\n\nMomentary Time Sampling\nRecord whether the behavior is occurring at the EXACT moment the interval ends. Good estimate of overall prevalence. Less intrusive for ongoing activities.",
+      },
+      {
+        id: 'm4-3', role: 'user', timestamp: '2026-06-07T16:20:00Z',
+        content: "Can you add a quick-reference comparison table?",
+      },
+      {
+        id: 'm4-4', role: 'assistant', timestamp: '2026-06-07T16:20:00Z',
+        content: "Quick Reference: Recording Methods\n\nMethod               | Over-estimates | Under-estimates | Best For\nPartial Interval     | ✓              |                 | Low-rate target behavior\nWhole Interval       |                | ✓               | Sustained / on-task\nMomentary Sampling   | —              | —               | Prevalence estimate",
+      },
+    ],
+  },
+  {
+    id: 'cs-005',
+    userId: 'dev-user-001', userName: 'Chris Hunt', userRole: 'ORG_SUPER_ADMIN',
+    topic: 'System Prompt Review',
+    lastActivity: '2026-06-06T11:05:00Z',
+    aclxLabels: [],
+    messages: [
+      {
+        id: 'm5-1', role: 'user', timestamp: '2026-06-06T11:00:00Z',
+        content: "Review the current system prompt and suggest improvements for HIPAA-safe clinical documentation.",
+      },
+      {
+        id: 'm5-2', role: 'assistant', timestamp: '2026-06-06T11:05:00Z',
+        content: "Recommended improvements for HIPAA-safe documentation:\n\n1. PHI handling: 'Use [Client Name] or initials only. Never include full names, SSNs, or insurance IDs in AI output.'\n\n2. Behavioral data: 'Skill acquisition percentages and behavior frequency data should not include identifying information beyond the session date.'\n\n3. Safety disclaimer: 'AI-generated content requires clinical review before inclusion in official records.'",
+      },
+    ],
+  },
+];
+
 function statusChip(status: ReviewStatus) {
   if (status === 'PENDING') return (
     <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
@@ -71,6 +264,12 @@ function statusChip(status: ReviewStatus) {
       <FontAwesomeIcon icon={faCheckCircle} className="text-xs" /> Approved
     </span>
   );
+  if (status === 'LOGGED') return (
+    <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+      style={{ background: '#e8f4f8', color: '#2a5f6f', border: '1px solid #b2dce8' }}>
+      <FontAwesomeIcon icon={faBookOpen} className="text-xs" /> Logged
+    </span>
+  );
   return (
     <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
       <FontAwesomeIcon icon={faBan} className="text-xs" /> Denied
@@ -80,15 +279,23 @@ function statusChip(status: ReviewStatus) {
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 
-type TabId = 'pending' | 'history' | 'analytics' | 'policy';
+type TabId = 'queue' | 'auditlog' | 'analytics' | 'rules' | 'chats';
+type ChatGroupBy = 'all' | 'user' | 'client' | 'project';
 
 export default function ReviewQueueView() {
   const { currentUser } = useAuth();
-  const [items, setItems]     = useState<ReviewQueueItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab]         = useState<TabId>('pending');
+  const [items, setItems]             = useState<ReviewQueueItem[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [reviewRequired, setReviewRequired] = useState(true);
+  const [tab, setTab]                 = useState<TabId>('auditlog');
 
-  const orgId = currentUser?.orgId ?? '';
+  const orgId       = currentUser?.orgId ?? '';
+  const currentRole = currentUser?.role  ?? '';
+  const currentUid  = (currentUser as any)?.uid ?? currentUser?.id ?? '';
+
+  const canViewChats = currentRole === 'ORG_SUPER_ADMIN'
+                    || currentRole === 'ORG_ADMIN'
+                    || currentRole === 'SUPERVISING_BCBA';
 
   const load = () => {
     setLoading(true);
@@ -98,14 +305,36 @@ export default function ReviewQueueView() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  // Load review queue items + org's reviewRequired setting in parallel
+  useEffect(() => {
+    load();
+    if (!orgId) return;
+    api.getOrg(orgId)
+      .then((o) => {
+        const rr = o.settings?.reviewRequired !== false;
+        setReviewRequired(rr);
+        // Default to Review Queue when human review is on; Audit Log otherwise
+        setTab(rr ? 'queue' : 'auditlog');
+      })
+      .catch(() => {});
+  }, [orgId]);
 
   const pending  = items.filter((i) => i.status === 'PENDING');
-  const history  = items.filter((i) => i.status !== 'PENDING');
+  const auditLog = items.filter((i) => i.status === 'LOGGED');
+  const history  = items.filter((i) => i.status === 'APPROVED' || i.status === 'DENIED');
 
   const handleReviewed = (updated: ReviewQueueItem) => {
     setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
   };
+
+  const tabs = [
+    // Review Queue tab only appears when Human Review is on
+    ...(reviewRequired ? [{ id: 'queue' as TabId,    label: 'Review Queue',  icon: faListAlt,  count: pending.length }] : []),
+    {                    id: 'auditlog' as TabId,     label: 'Audit Log',     icon: faBookOpen, count: auditLog.length  },
+    ...(canViewChats    ? [{ id: 'chats' as TabId,   label: 'Chat Review',   icon: faComments, count: null             }] : []),
+    {                    id: 'analytics' as TabId,    label: 'Insights',      icon: faChartBar, count: null             },
+    {                    id: 'rules' as TabId,        label: 'Content Rules', icon: faTag,      count: null             },
+  ];
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
@@ -119,13 +348,15 @@ export default function ReviewQueueView() {
           <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#2a5f6f', fontSize: 16 }} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">ACLX Review Queue</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Review &amp; Rules</h1>
           <p className="text-xs text-gray-500">
-            AI outputs flagged by ACLX for human compliance review
+            {reviewRequired
+              ? 'Flagged content is held for review before being delivered.'
+              : 'Human review is off — flagged items are logged for audit automatically.'}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {pending.length > 0 && (
+          {reviewRequired && pending.length > 0 && (
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white">
               {pending.length} pending
             </span>
@@ -135,12 +366,7 @@ export default function ReviewQueueView() {
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 px-8 flex gap-0">
-        {([
-          { id: 'pending',   label: 'Pending Review',      icon: faClock,    count: pending.length },
-          { id: 'history',   label: 'Decision History',    icon: faListAlt,  count: history.length },
-          { id: 'analytics', label: 'Patterns & Insights', icon: faChartBar, count: null           },
-          { id: 'policy',    label: 'Org Policy',          icon: faTag,      count: null           },
-        ] as const).map(({ id, label, icon, count }) => (
+        {tabs.map(({ id, label, icon, count }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -156,8 +382,10 @@ export default function ReviewQueueView() {
               <span
                 className="px-1.5 py-0.5 rounded-full text-xs font-bold"
                 style={
-                  id === 'pending' && count > 0
+                  id === 'aclx' && count > 0
                     ? { background: '#fef3c7', color: '#92400e' }
+                    : id === 'auditlog' && count > 0
+                    ? { background: '#e8f4f8', color: '#2a5f6f' }
                     : { background: '#f3f4f6', color: '#6b7280' }
                 }
               >
@@ -168,23 +396,81 @@ export default function ReviewQueueView() {
         ))}
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="max-w-4xl mx-auto">
+      {/* Body — left-justified, no max-width centering */}
+      {/* Chat Review gets its own flex layout so its two panels can scroll independently */}
+      {tab === 'chats' ? (
+        <div className="flex-1 overflow-hidden px-8 py-6">
+          <ChatReviewTab currentUserId={currentUid} currentUserRole={currentRole} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-8 py-6">
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <FontAwesomeIcon icon={faSpinner} className="animate-spin text-gray-400 text-2xl" />
             </div>
           ) : (
             <>
-              {tab === 'pending'   && <PendingTab   items={pending} orgId={orgId} onReviewed={handleReviewed} />}
-              {tab === 'history'   && <HistoryTab   items={history} />}
-              {tab === 'analytics' && <AnalyticsTab items={items}   />}
-              {tab === 'policy'    && <OrgPolicyTab orgId={orgId}   />}
+              {tab === 'queue'     && <ReviewQueueTab pending={pending} history={history} orgId={orgId} reviewRequired={reviewRequired} onReviewed={handleReviewed} />}
+              {tab === 'auditlog'  && <AuditLogTab   items={auditLog}  />}
+              {tab === 'analytics' && <InsightsTab />}
+              {tab === 'rules'     && <OrgPolicyTab  orgId={orgId}     />}
             </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Review Queue tab ─────────────────────────────────────────────────────────
+
+function ReviewQueueTab({
+  pending, history, orgId, onReviewed,
+}: {
+  pending: ReviewQueueItem[];
+  history: ReviewQueueItem[];
+  orgId: string;
+  onReviewed: (item: ReviewQueueItem) => void;
+}) {
+  const [sub, setSub] = useState<'pending' | 'history'>('pending');
+
+  return (
+    <div>
+      {/* Sub-navigation */}
+      <div className="flex gap-1 mb-5">
+        {([
+          { id: 'pending' as const, label: 'Pending Review',   count: pending.length },
+          { id: 'history' as const, label: 'Decision History', count: history.length },
+        ]).map(({ id, label, count }) => (
+          <button
+            key={id}
+            onClick={() => setSub(id)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border"
+            style={sub === id
+              ? { background: '#2a5f6f', color: 'white', borderColor: '#2a5f6f' }
+              : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
+            }
+          >
+            {label}
+            {count > 0 && (
+              <span
+                className="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                style={sub === id
+                  ? { background: 'rgba(255,255,255,0.25)', color: 'white' }
+                  : id === 'pending'
+                  ? { background: '#fef3c7', color: '#92400e' }
+                  : { background: '#f3f4f6', color: '#6b7280' }
+                }
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
+
+      {sub === 'pending' && <PendingTab items={pending} orgId={orgId} onReviewed={onReviewed} />}
+      {sub === 'history' && <HistoryTab items={history} />}
     </div>
   );
 }
@@ -213,7 +499,7 @@ function PendingTab({
       <p className="text-sm text-gray-500">
         Review each flagged AI output and approve or deny it. Decisions and notes
         are stored permanently as part of the compliance audit trail. You can
-        optionally promote a decision to an org policy rule so ACLX learns from it.
+        optionally promote a decision to an org policy rule.
       </p>
       {items.map((item) => (
         <ReviewCard key={item.id} item={item} orgId={orgId} onReviewed={onReviewed} />
@@ -248,171 +534,322 @@ function HistoryTab({ items }: { items: ReviewQueueItem[] }) {
   );
 }
 
-// ── Analytics tab ─────────────────────────────────────────────────────────────
+// ── Audit Log tab ─────────────────────────────────────────────────────────────
 
-function AnalyticsTab({ items }: { items: ReviewQueueItem[] }) {
-  const total    = items.length;
-  const pending  = items.filter((i) => i.status === 'PENDING').length;
-  const approved = items.filter((i) => i.status === 'APPROVED').length;
-  const denied   = items.filter((i) => i.status === 'DENIED').length;
-  const reviewed = approved + denied;
-  const approvalRate = reviewed > 0 ? Math.round((approved / reviewed) * 100) : null;
+function AuditLogTab({ items }: { items: ReviewQueueItem[] }) {
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <FontAwesomeIcon icon={faBookOpen} className="text-5xl mb-4" style={{ color: '#b2dce8' }} />
+        <p className="text-base font-medium">No audit log entries yet</p>
+        <p className="text-sm mt-1 max-w-xs mx-auto leading-relaxed">
+          When <strong>Human Review Required</strong> is off, ACLX escalations are delivered
+          to users immediately and recorded here for oversight.
+        </p>
+      </div>
+    );
+  }
 
-  const byType: Record<string, { total: number; approved: number; denied: number }> = {};
-  items.forEach((i) => {
-    if (!byType[i.eventType]) byType[i.eventType] = { total: 0, approved: 0, denied: 0 };
-    byType[i.eventType].total++;
-    if (i.status === 'APPROVED') byType[i.eventType].approved++;
-    if (i.status === 'DENIED')   byType[i.eventType].denied++;
-  });
-
-  const bySensitivity: Record<string, number> = {};
-  items.forEach((i) => {
-    const s = i.aclxSensitivity ?? 'UNKNOWN';
-    bySensitivity[s] = (bySensitivity[s] ?? 0) + 1;
-  });
-
-  const reasons = items
-    .map((i) => i.aclxReason?.split('.')[0]?.trim())
-    .filter(Boolean) as string[];
-  const reasonCounts: Record<string, number> = {};
-  reasons.forEach((r) => { reasonCounts[r] = (reasonCounts[r] ?? 0) + 1; });
-  const topReasons = Object.entries(reasonCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
+  const sorted = [...items].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total Escalations" value={total} />
-        <StatCard label="Pending Review"    value={pending}  accent="amber" />
-        <StatCard label="Approved"          value={approved} accent="green" />
-        <StatCard label="Denied"            value={denied}   accent="red"   />
+    <div className="space-y-4">
+      <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+        style={{ background: '#e8f4f8', border: '1px solid #b2dce8', color: '#1e4d5c' }}>
+        <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
+        <p className="text-xs leading-relaxed">
+          These items were flagged by ACLX but delivered to users without blocking — because
+          <strong> Human Review Required</strong> is currently <strong>off</strong> for this org.
+          ACLX labeling ran on every response. Review these entries to validate that your HIPAA
+          authorizations cover the content being generated, and adjust Org Policy rules as needed.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {sorted.map((item) => (
+          <AuditLogCard key={item.id} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuditLogCard({ item }: { item: ReviewQueueItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const sensColors = SENSITIVITY_COLORS[item.aclxSensitivity ?? ''] ?? { bg: '#f3f4f6', text: '#374151' };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="p-4 flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-sm font-semibold text-gray-800">
+              {EVENT_LABELS[item.eventType] ?? item.eventType}
+            </span>
+            {statusChip(item.status)}
+            {item.aclxSensitivity && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                style={{ background: sensColors.bg, color: sensColors.text }}>
+                {item.aclxSensitivity} sensitivity
+              </span>
+            )}
+          </div>
+          {item.aclxReason && (
+            <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
+              <span className="font-medium text-gray-600">ACLX flag: </span>{item.aclxReason}
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-1">Logged {fmtDate(item.createdAt)}</p>
+        </div>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 shrink-0"
+        >
+          <FontAwesomeIcon icon={expanded ? faChevronUp : faChevronDown} className="text-sm" />
+        </button>
       </div>
 
-      {approvalRate !== null && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Approval Rate</h3>
-          <div className="flex items-center gap-4">
-            <div className="text-3xl font-bold" style={{ color: '#2a5f6f' }}>
-              {approvalRate}%
+      {expanded && (
+        <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">AI Output (delivered)</p>
+            <pre className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed max-h-40 overflow-y-auto">
+              {item.rawContent}
+            </pre>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-gray-400 font-medium">Content type: </span>
+              <span className="text-gray-700">{EVENT_LABELS[item.eventType]}</span>
             </div>
-            <div className="flex-1">
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: `${approvalRate}%`, background: '#2a5f6f' }}
-                />
+            <div>
+              <span className="text-gray-400 font-medium">ACLX category: </span>
+              <span className="text-gray-700">{item.aclxCategory ?? '--'}</span>
+            </div>
+            {item.clientId && (
+              <div>
+                <span className="text-gray-400 font-medium">Client ID: </span>
+                <span className="text-gray-700 font-mono">{item.clientId}</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {approved} approved, {denied} denied out of {reviewed} reviewed items
-              </p>
+            )}
+            <div>
+              <span className="text-gray-400 font-medium">Content ID: </span>
+              <span className="text-gray-700 font-mono truncate">{item.contentId}</span>
             </div>
           </div>
-          {approvalRate > 80 && (
-            <div className="mt-3 flex items-start gap-2 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-lg p-3">
-              <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
-              High approval rate may indicate ACLX thresholds are too sensitive for this content
-              type. Consider adding ALLOW rules in the Org Policy tab for frequently approved patterns.
+          {item.authDenyReason && AUTH_DENY_LABELS[item.authDenyReason] && (
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <FontAwesomeIcon icon={faLock} className="text-amber-500 mt-0.5 shrink-0 text-sm" />
+              <div>
+                <p className="text-xs font-semibold text-amber-800">
+                  Authorization check failed: {AUTH_DENY_LABELS[item.authDenyReason].label}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                  {AUTH_DENY_LABELS[item.authDenyReason].action}
+                </p>
+              </div>
             </div>
           )}
-          {approvalRate < 30 && reviewed >= 3 && (
-            <div className="mt-3 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
-              High denial rate suggests the AI is regularly generating content that conflicts
-              with HIPAA policy. Review system prompt guidance and document generation templates.
-            </div>
-          )}
-        </div>
-      )}
-
-      {Object.keys(byType).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Escalations by Content Type</h3>
-          <div className="space-y-3">
-            {Object.entries(byType).map(([type, counts]) => (
-              <div key={type} className="flex items-center gap-3">
-                <span className="text-xs text-gray-600 w-40 shrink-0">
-                  {EVENT_LABELS[type] ?? type}
-                </span>
-                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden flex">
-                  {counts.approved > 0 && (
-                    <div className="h-full bg-green-400"
-                      style={{ width: `${(counts.approved / counts.total) * 100}%` }} />
-                  )}
-                  {counts.denied > 0 && (
-                    <div className="h-full bg-red-400"
-                      style={{ width: `${(counts.denied / counts.total) * 100}%` }} />
-                  )}
-                  {(counts.total - counts.approved - counts.denied) > 0 && (
-                    <div className="h-full bg-amber-300"
-                      style={{ width: `${((counts.total - counts.approved - counts.denied) / counts.total) * 100}%` }} />
-                  )}
-                </div>
-                <span className="text-xs text-gray-400 w-10 text-right shrink-0">
-                  {counts.total}
-                </span>
-              </div>
-            ))}
-            <div className="flex gap-4 text-xs text-gray-400 pt-1">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> Approved</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Denied</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-300 inline-block" /> Pending</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {Object.keys(bySensitivity).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">ACLX Sensitivity Breakdown</h3>
-          <div className="flex gap-4 flex-wrap">
-            {Object.entries(bySensitivity).map(([s, count]) => {
-              const colors = SENSITIVITY_COLORS[s] ?? { bg: '#f3f4f6', text: '#374151' };
-              return (
-                <div key={s} className="px-4 py-3 rounded-xl text-center min-w-[80px]"
-                  style={{ background: colors.bg }}>
-                  <div className="text-2xl font-bold" style={{ color: colors.text }}>{count}</div>
-                  <div className="text-xs font-semibold mt-0.5" style={{ color: colors.text }}>{s}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {topReasons.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">Most Common Flag Reasons</h3>
-          <p className="text-xs text-gray-400 mb-3">
-            Use these patterns to add BLOCK rules in the Org Policy tab and reduce future escalations.
-          </p>
-          <div className="space-y-2">
-            {topReasons.map(([reason, count], i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                  style={{ background: '#e8f4f8', color: '#2a5f6f' }}
-                >
-                  {count}
-                </span>
-                <p className="text-sm text-gray-600 leading-snug">{reason}</p>
-              </div>
-            ))}
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: 'amber' | 'green' | 'red' }) {
-  const color = accent === 'amber' ? '#92400e' : accent === 'green' ? '#166534' : accent === 'red' ? '#991b1b' : '#1f2937';
-  const bg    = accent === 'amber' ? '#fef9c3' : accent === 'green' ? '#dcfce7' : accent === 'red' ? '#fee2e2'  : '#f9fafb';
+// ── Analytics tab ─────────────────────────────────────────────────────────────
+
+// ── Activity stub data ────────────────────────────────────────────────────────
+
+interface ActivityItem {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  type: 'Chat' | 'Document' | 'Search';
+  detail: string;
+  context?: string;
+  timestamp: string;
+  messageCount?: number;
+}
+
+const STUB_ACTIVITY: ActivityItem[] = [
+  { id: 'act-001', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Chat',     detail: 'Session Notes — DTT Program',         context: 'Client: Alex R.',           timestamp: '2026-06-10T14:32:00Z', messageCount: 4 },
+  { id: 'act-002', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Document', detail: 'Behavior Intervention Plan',           context: 'Client: Alex R.',           timestamp: '2026-06-10T09:15:00Z' },
+  { id: 'act-003', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Chat',     detail: 'BIP Review — Escape Behaviors',        context: 'Client: Alex R.',           timestamp: '2026-06-09T10:15:00Z', messageCount: 4 },
+  { id: 'act-004', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Document', detail: 'Session Note — June 9',                context: 'Client: Alex R.',           timestamp: '2026-06-09T09:00:00Z' },
+  { id: 'act-005', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Chat',     detail: 'Goal Progress Summary',                context: 'Project: Q2 Program Review', timestamp: '2026-06-08T09:45:00Z', messageCount: 2 },
+  { id: 'act-006', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Search',   detail: 'ABA data collection methods',          timestamp: '2026-06-08T08:30:00Z' },
+  { id: 'act-007', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Chat',     detail: 'Staff Training — Data Collection',     timestamp: '2026-06-07T16:20:00Z',    messageCount: 4 },
+  { id: 'act-008', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Document', detail: 'Session Note — June 6',                context: 'Client: Alex R.',           timestamp: '2026-06-07T15:10:00Z' },
+  { id: 'act-009', userId: 'dev-user-001', userName: 'Chris Hunt',     userRole: 'ORG_SUPER_ADMIN',  type: 'Chat',     detail: 'System Prompt Review',                 timestamp: '2026-06-06T11:05:00Z',    messageCount: 2 },
+  { id: 'act-010', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Search',   detail: 'BCBA supervision requirements',        timestamp: '2026-06-05T10:00:00Z' },
+];
+
+const ACTIVITY_TYPE_STYLE: Record<string, { bg: string; text: string; icon: typeof faComments }> = {
+  Chat:     { bg: '#EEF7EA', text: '#3F9B2F', icon: faComments  },
+  Document: { bg: '#EEF4FF', text: '#1E88FF', icon: faBookOpen  },
+  Search:   { bg: '#fef3c7', text: '#92400e', icon: faListAlt   },
+};
+
+// ── Insights tab ──────────────────────────────────────────────────────────────
+
+function InsightsTab() {
+  const sorted = [...STUB_ACTIVITY].sort(
+    (a, b) => b.timestamp.localeCompare(a.timestamp),
+  );
+
+  // Stats
+  const totalInteractions = sorted.length;
+  const activeUsers       = new Set(sorted.map((a) => a.userId)).size;
+  const chatCount         = sorted.filter((a) => a.type === 'Chat').length;
+  const docCount          = sorted.filter((a) => a.type === 'Document').length;
+
+  // Usage by user
+  const byUser: Record<string, { name: string; role: string; count: number }> = {};
+  sorted.forEach((a) => {
+    if (!byUser[a.userId]) byUser[a.userId] = { name: a.userName, role: a.userRole, count: 0 };
+    byUser[a.userId].count++;
+  });
+  const userRows = Object.entries(byUser)
+    .sort(([, a], [, b]) => b.count - a.count);
+  const maxUserCount = userRows[0]?.[1].count ?? 1;
+
+  // Usage by type
+  const byType: Record<string, number> = {};
+  sorted.forEach((a) => { byType[a.type] = (byType[a.type] ?? 0) + 1; });
+
   return (
-    <div className="rounded-xl border border-gray-200 p-4" style={{ background: bg }}>
-      <div className="text-2xl font-bold" style={{ color }}>{value}</div>
-      <div className="text-xs text-gray-500 mt-0.5">{label}</div>
+    <div className="max-w-3xl space-y-6">
+
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: 'Total Interactions', value: totalInteractions, bg: '#f9fafb',  color: '#1f2937' },
+          { label: 'Active Users',        value: activeUsers,       bg: '#e8f4f8',  color: '#1e4d5c' },
+          { label: 'AI Chats',            value: chatCount,         bg: '#EEF7EA',  color: '#166534' },
+          { label: 'Documents Generated', value: docCount,          bg: '#EEF4FF',  color: '#1d4ed8' },
+        ].map(({ label, value, bg, color }) => (
+          <div key={label} className="rounded-xl border border-gray-200 p-4" style={{ background: bg }}>
+            <div className="text-2xl font-bold" style={{ color }}>{value}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Recent activity feed ── */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">Recent Activity</h3>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {sorted.map((item) => {
+            const ts   = ACTIVITY_TYPE_STYLE[item.type] ?? ACTIVITY_TYPE_STYLE.Chat;
+            const chip = CHAT_ROLE_CHIP[item.userRole] ?? { bg: '#f3f4f6', text: '#374151' };
+            const avatarColor = CHAT_USER_COLORS[item.userRole] ?? '#6b7280';
+            return (
+              <div key={item.id} className="flex items-center gap-3 px-5 py-3">
+                {/* Avatar */}
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                  style={{ background: avatarColor }}
+                >
+                  {toInitials(item.userName)}
+                </div>
+
+                {/* Type icon */}
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: ts.bg }}
+                >
+                  <FontAwesomeIcon icon={ts.icon} style={{ fontSize: 11, color: ts.text }} />
+                </div>
+
+                {/* Detail */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-800 truncate">{item.detail}</span>
+                    {item.messageCount != null && (
+                      <span className="text-xs text-gray-400">{item.messageCount} messages</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="text-xs font-medium text-gray-600">{item.userName}</span>
+                    <span className="text-xs px-1.5 rounded font-medium leading-5"
+                      style={{ background: chip.bg, color: chip.text }}>
+                      {CHAT_ROLE_LABELS[item.userRole] ?? item.userRole}
+                    </span>
+                    {item.context && (
+                      <span className="text-xs text-gray-400">{item.context}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Time */}
+                <span className="text-xs text-gray-400 shrink-0 ml-2">{fmtRelative(item.timestamp)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Usage by user ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Usage by Team Member</h3>
+        <div className="space-y-3">
+          {userRows.map(([userId, { name, role, count }]) => {
+            const avatarColor = CHAT_USER_COLORS[role] ?? '#6b7280';
+            const chip        = CHAT_ROLE_CHIP[role] ?? { bg: '#f3f4f6', text: '#374151' };
+            return (
+              <div key={userId} className="flex items-center gap-3">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                  style={{ background: avatarColor }}
+                >
+                  {toInitials(name)}
+                </div>
+                <div className="w-28 shrink-0">
+                  <p className="text-xs font-medium text-gray-800 truncate">{name}</p>
+                  <span className="text-xs px-1.5 rounded font-medium leading-5"
+                    style={{ background: chip.bg, color: chip.text }}>
+                    {CHAT_ROLE_LABELS[role] ?? role}
+                  </span>
+                </div>
+                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${(count / maxUserCount) * 100}%`, background: avatarColor, opacity: 0.7 }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-gray-600 w-6 text-right shrink-0">{count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Breakdown by type ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Interactions by Type</h3>
+        <div className="flex gap-4 flex-wrap">
+          {Object.entries(byType).map(([type, count]) => {
+            const ts = ACTIVITY_TYPE_STYLE[type];
+            if (!ts) return null;
+            const pct = Math.round((count / totalInteractions) * 100);
+            return (
+              <div key={type}
+                className="flex-1 min-w-[100px] rounded-xl p-4 flex flex-col items-center"
+                style={{ background: ts.bg }}>
+                <FontAwesomeIcon icon={ts.icon} style={{ color: ts.text, fontSize: 18, marginBottom: 6 }} />
+                <div className="text-2xl font-bold" style={{ color: ts.text }}>{count}</div>
+                <div className="text-xs font-semibold mt-0.5" style={{ color: ts.text }}>{type}</div>
+                <div className="text-xs mt-0.5" style={{ color: ts.text, opacity: 0.7 }}>{pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
     </div>
   );
 }
@@ -420,32 +857,23 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 // ── Org Policy tab ────────────────────────────────────────────────────────────
 
 function OrgPolicyTab({ orgId }: { orgId: string }) {
-  const [policy, setPolicy]         = useState<OrgAclxPolicy | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
+  const [policy, setPolicy]   = useState<OrgAclxPolicy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
 
   // Add-rule form
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addType, setAddType]       = useState<OrgPolicyRuleType>('BLOCK');
-  const [addSlug, setAddSlug]       = useState('');
-  const [addDesc, setAddDesc]       = useState('');
-  const [addSaving, setAddSaving]   = useState(false);
-  const [addError, setAddError]     = useState('');
-
-  // Sensitivity
-  const [sensEdit, setSensEdit]     = useState(false);
-  const [sensitivity, setSensitivity] = useState('');
-  const [sensSaving, setSensSaving] = useState(false);
+  const [addType, setAddType]         = useState<OrgPolicyRuleType>('BLOCK');
+  const [addDesc, setAddDesc]         = useState('');
+  const [addSaving, setAddSaving]     = useState(false);
+  const [addError, setAddError]       = useState('');
 
   const loadPolicy = () => {
     if (!orgId) return;
     setLoading(true);
     api.getOrgAclxPolicy(orgId)
-      .then((p) => {
-        setPolicy(p);
-        setSensitivity(p.escalateAtSensitivity ?? '');
-      })
-      .catch(() => setError('Failed to load org policy.'))
+      .then(setPolicy)
+      .catch(() => setError('Failed to load content rules.'))
       .finally(() => setLoading(false));
   };
 
@@ -456,35 +884,24 @@ function OrgPolicyTab({ orgId }: { orgId: string }) {
       await api.deleteOrgPolicyRule(orgId, ruleId);
       loadPolicy();
     } catch {
-      setError('Failed to delete rule.');
+      setError('Failed to remove rule.');
     }
   };
 
   const handleAddRule = async () => {
-    if (!addSlug.trim()) { setAddError('Slug is required.'); return; }
-    if (!addDesc.trim()) { setAddError('Description is required.'); return; }
+    const desc = addDesc.trim();
+    if (!desc) { setAddError('A description is required.'); return; }
+    const slug = slugify(desc);
+    if (!slug) { setAddError('Description must contain at least one letter or number.'); return; }
     setAddSaving(true); setAddError('');
     try {
-      await api.addOrgPolicyRule(orgId, { type: addType, slug: addSlug.trim(), description: addDesc.trim() });
+      await api.addOrgPolicyRule(orgId, { type: addType, slug, description: desc });
       setShowAddForm(false);
-      setAddSlug('');
       setAddDesc('');
       loadPolicy();
     } catch (e: unknown) {
-      setAddError(e instanceof Error ? e.message : 'Failed to add rule.');
+      setAddError(e instanceof Error ? e.message : 'Failed to save rule.');
     } finally { setAddSaving(false); }
-  };
-
-  const handleSaveSensitivity = async () => {
-    if (!sensitivity) return;
-    setSensSaving(true);
-    try {
-      await api.setOrgPolicySensitivity(orgId, sensitivity);
-      setSensEdit(false);
-      loadPolicy();
-    } catch {
-      // ignore
-    } finally { setSensSaving(false); }
   };
 
   if (loading) return (
@@ -495,233 +912,168 @@ function OrgPolicyTab({ orgId }: { orgId: string }) {
 
   const allowRules = policy?.allowRules ?? [];
   const blockRules = policy?.blockRules ?? [];
+  const totalRules = allowRules.length + blockRules.length;
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-3xl space-y-6">
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      {/* Intro */}
-      <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-sm text-teal-800">
-        <p className="font-semibold mb-1">What is the Org Policy?</p>
-        <p className="text-xs leading-relaxed">
-          These rules are sent to ACLX on every evaluation call. <strong>ALLOW rules</strong> tell
-          ACLX that your org has reviewed and approved certain content patterns, reducing unnecessary
-          escalations. <strong>BLOCK rules</strong> add stricter-than-baseline restrictions specific
-          to your organisation. You can add rules manually or promote them directly from a review decision.
+      {/* Page header */}
+      <div>
+        <h2 className="text-base font-semibold text-gray-800">Content Governance Rules</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Define what content is always permitted or always restricted for your organization,
+          beyond the default compliance baseline. Rules can be added manually or promoted
+          from a review decision.
         </p>
       </div>
 
-      {/* Escalation sensitivity */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-semibold text-gray-700">Escalation Sensitivity Threshold</h3>
-          {!sensEdit && (
-            <button
-              onClick={() => { setSensEdit(true); setSensitivity(policy?.escalateAtSensitivity ?? ''); }}
-              className="text-xs text-teal-700 hover:underline"
-            >
-              Change
-            </button>
-          )}
+      {/* Rule list */}
+      {totalRules === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 py-14 text-center">
+          <FontAwesomeIcon icon={faTag} className="text-3xl text-gray-200 mb-3" />
+          <p className="text-sm font-medium text-gray-500">No rules yet</p>
+          <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+            Add an exception or a restriction below. Rules can also be promoted
+            directly from a reviewed item.
+          </p>
         </div>
-        <p className="text-xs text-gray-400 mb-3">
-          Only escalate AI outputs at or above this sensitivity level.
-          "HIGH" means MEDIUM-sensitivity content is auto-allowed rather than escalated.
-          Leave unset to use ACLX defaults (escalate at MEDIUM+).
-        </p>
-        {!sensEdit ? (
-          <span className="px-3 py-1 rounded-full text-xs font-bold"
-            style={policy?.escalateAtSensitivity
-              ? { background: SENSITIVITY_COLORS[policy.escalateAtSensitivity]?.bg, color: SENSITIVITY_COLORS[policy.escalateAtSensitivity]?.text }
-              : { background: '#f3f4f6', color: '#6b7280' }}>
-            {policy?.escalateAtSensitivity ?? 'ACLX default (MEDIUM+)'}
-          </span>
-        ) : (
-          <div className="flex items-center gap-3">
-            <select
-              value={sensitivity}
-              onChange={(e) => setSensitivity(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
-            >
-              <option value="">ACLX default</option>
-              <option value="HIGH">HIGH only</option>
-              <option value="MEDIUM">MEDIUM+</option>
-              <option value="LOW">LOW+ (all)</option>
-            </select>
+      ) : (
+        <div className="space-y-2">
+          {[
+            ...allowRules.map((r) => ({ ...r, type: 'ALLOW' as OrgPolicyRuleType })),
+            ...blockRules.map((r) => ({ ...r, type: 'BLOCK' as OrgPolicyRuleType })),
+          ]
+            .sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''))
+            .map((rule) => {
+              const isAllow = rule.type === 'ALLOW';
+              return (
+                <div
+                  key={rule.id}
+                  className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-start gap-4"
+                >
+                  {/* Type pill */}
+                  <span
+                    className="mt-0.5 shrink-0 text-xs font-bold px-2 py-0.5 rounded-full"
+                    style={isAllow
+                      ? { background: '#dcfce7', color: '#15803d' }
+                      : { background: '#fee2e2', color: '#b91c1c' }}
+                  >
+                    {isAllow ? 'Approved' : 'Restricted'}
+                  </span>
+
+                  {/* Description */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 leading-snug">{rule.description}</p>
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-xs text-gray-400">Added {fmtDate(rule.addedAt)}</span>
+                      {rule.sourceReviewItemId && (
+                        <span className="text-xs text-gray-400 italic">· promoted from review</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => handleDelete(rule.id)}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 shrink-0 transition-colors"
+                    title="Remove rule"
+                  >
+                    <FontAwesomeIcon icon={faTrash} style={{ fontSize: 11 }} />
+                  </button>
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {/* Add rule */}
+      {showAddForm ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-700">New Rule</h3>
+
+          {/* Type toggle */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Rule type
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAddType('ALLOW')}
+                className="flex-1 py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors"
+                style={addType === 'ALLOW'
+                  ? { borderColor: '#16a34a', background: '#f0fdf4', color: '#15803d' }
+                  : { borderColor: '#e5e7eb', background: 'white', color: '#6b7280' }}
+              >
+                ✓ &nbsp;Approved exception
+              </button>
+              <button
+                onClick={() => setAddType('BLOCK')}
+                className="flex-1 py-2.5 rounded-lg border-2 text-sm font-semibold transition-colors"
+                style={addType === 'BLOCK'
+                  ? { borderColor: '#dc2626', background: '#fef2f2', color: '#b91c1c' }
+                  : { borderColor: '#e5e7eb', background: 'white', color: '#6b7280' }}
+              >
+                ✕ &nbsp;Restricted topic
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              {addType === 'ALLOW'
+                ? 'This content pattern is approved for use in your organization and should not be flagged.'
+                : 'This content pattern should always be blocked, regardless of context.'}
+            </p>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              Description
+            </label>
+            <textarea
+              autoFocus
+              rows={3}
+              value={addDesc}
+              onChange={(e) => { setAddDesc(e.target.value); setAddError(''); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              placeholder={addType === 'ALLOW'
+                ? 'e.g. Progress session data without direct client name references is approved for clinical notes.'
+                : 'e.g. Social security numbers must never appear in any AI output.'}
+            />
+            {addDesc.trim() && (
+              <p className="text-xs text-gray-400 mt-1">
+                Rule ID: <code className="font-mono">{slugify(addDesc) || '—'}</code>
+              </p>
+            )}
+          </div>
+
+          {addError && <p className="text-xs text-red-500">{addError}</p>}
+
+          <div className="flex gap-2 pt-1">
             <button
-              onClick={handleSaveSensitivity}
-              disabled={sensSaving}
-              className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50"
+              onClick={handleAddRule}
+              disabled={addSaving}
+              className="px-5 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
               style={{ background: '#2a5f6f' }}
             >
-              {sensSaving ? 'Saving...' : 'Save'}
+              {addSaving ? 'Saving…' : 'Save Rule'}
             </button>
-            <button onClick={() => setSensEdit(false)} className="text-xs text-gray-400 hover:underline">
+            <button
+              onClick={() => { setShowAddForm(false); setAddDesc(''); setAddError(''); }}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
+            >
               Cancel
             </button>
           </div>
-        )}
-      </div>
-
-      {/* Allow rules */}
-      <RuleSection
-        title="ALLOW Rules"
-        subtitle="Patterns your org has explicitly approved — ACLX will reduce escalation likelihood for matching content."
-        rules={allowRules}
-        type="ALLOW"
-        onDelete={handleDelete}
-      />
-
-      {/* Block rules */}
-      <RuleSection
-        title="BLOCK Rules"
-        subtitle="Patterns your org has explicitly blocked — stricter than the HIPAA baseline. ACLX will always block matching content."
-        rules={blockRules}
-        type="BLOCK"
-        onDelete={handleDelete}
-      />
-
-      {/* Add rule */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">Add New Rule</h3>
-          {!showAddForm && (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
-              style={{ background: '#2a5f6f' }}
-            >
-              <FontAwesomeIcon icon={faPlus} className="text-xs" />
-              Add Rule
-            </button>
-          )}
         </div>
-
-        {showAddForm && (
-          <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Rule Type</label>
-                <div className="flex gap-2">
-                  {(['ALLOW', 'BLOCK'] as OrgPolicyRuleType[]).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setAddType(t)}
-                      className="flex-1 py-2 rounded-lg border-2 text-xs font-semibold transition-colors"
-                      style={addType === t
-                        ? t === 'ALLOW'
-                          ? { borderColor: '#16a34a', background: '#f0fdf4', color: '#16a34a' }
-                          : { borderColor: '#dc2626', background: '#fef2f2', color: '#dc2626' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#6b7280' }}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Slug <span className="normal-case font-normal text-gray-400">(machine-readable, no spaces)</span>
-              </label>
-              <input
-                type="text"
-                value={addSlug}
-                onChange={(e) => setAddSlug(slugify(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-600"
-                placeholder="e.g. progress_data_without_direct_phi"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</label>
-              <textarea
-                rows={2}
-                value={addDesc}
-                onChange={(e) => setAddDesc(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
-                placeholder="Explain what content pattern this rule covers..."
-              />
-            </div>
-
-            {addError && <p className="text-xs text-red-500">{addError}</p>}
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleAddRule}
-                disabled={addSaving}
-                className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
-                style={{ background: '#2a5f6f' }}
-              >
-                {addSaving ? 'Saving...' : 'Add Rule'}
-              </button>
-              <button
-                onClick={() => { setShowAddForm(false); setAddSlug(''); setAddDesc(''); setAddError(''); }}
-                className="px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!showAddForm && (
-          <p className="text-xs text-gray-400">
-            You can add rules manually here, or use "Promote to Rule" after reviewing an escalated item.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RuleSection({
-  title, subtitle, rules, type, onDelete,
-}: {
-  title: string;
-  subtitle: string;
-  rules: OrgPolicyRule[];
-  type: OrgPolicyRuleType;
-  onDelete: (id: string) => void;
-}) {
-  const isAllow = type === 'ALLOW';
-  const accentColor = isAllow ? '#16a34a' : '#dc2626';
-  const accentBg    = isAllow ? '#f0fdf4' : '#fef2f2';
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-700 mb-0.5">{title}</h3>
-      <p className="text-xs text-gray-400 mb-4">{subtitle}</p>
-
-      {rules.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">No {type.toLowerCase()} rules defined yet.</p>
       ) : (
-        <div className="space-y-2">
-          {rules.map((rule) => (
-            <div key={rule.id}
-              className="flex items-start gap-3 p-3 rounded-lg border"
-              style={{ background: accentBg, borderColor: isAllow ? '#bbf7d0' : '#fecaca' }}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <code className="text-xs font-bold" style={{ color: accentColor }}>{rule.slug}</code>
-                  {rule.sourceReviewItemId && (
-                    <span className="text-xs text-gray-400 italic">from review</span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 leading-snug">{rule.description}</p>
-                <p className="text-xs text-gray-400 mt-1">Added {fmtDate(rule.addedAt)}</p>
-              </div>
-              <button
-                onClick={() => onDelete(rule.id)}
-                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 shrink-0 transition-colors"
-                title="Remove rule"
-              >
-                <FontAwesomeIcon icon={faTrash} className="text-xs" />
-              </button>
-            </div>
-          ))}
-        </div>
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-white text-sm font-semibold"
+          style={{ background: '#2a5f6f' }}
+        >
+          <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
+          Add Rule
+        </button>
       )}
     </div>
   );
@@ -1042,6 +1394,355 @@ function ReviewCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Chat Review tab ───────────────────────────────────────────────────────────
+
+function ChatReviewTab({
+  currentUserId,
+  currentUserRole,
+}: {
+  currentUserId: string;
+  currentUserRole: string;
+}) {
+  const [selectedSession, setSelectedSession] = useState<StubChatSession | null>(null);
+  const [groupBy, setGroupBy] = useState<ChatGroupBy>('all');
+
+  const isAdmin = currentUserRole === 'ORG_SUPER_ADMIN' || currentUserRole === 'ORG_ADMIN';
+
+  // Access-filter: admin sees all; BCBA sees own sessions + supervisees' sessions
+  const visibleSessions = STUB_CHAT_SESSIONS.filter((s) => {
+    if (isAdmin) return true;
+    if (currentUserRole === 'SUPERVISING_BCBA') {
+      return s.userId === currentUserId || s.supervisorId === currentUserId;
+    }
+    return false;
+  });
+
+  // Group sessions by the selected dimension
+  type GroupEntry = { key: string; label: string; sessions: StubChatSession[] };
+  const grouped: GroupEntry[] = (() => {
+    const sorted = [...visibleSessions].sort(
+      (a, b) => b.lastActivity.localeCompare(a.lastActivity),
+    );
+    if (groupBy === 'all') {
+      return [{ key: 'all', label: 'All Conversations', sessions: sorted }];
+    }
+    if (groupBy === 'user') {
+      const map: Record<string, StubChatSession[]> = {};
+      sorted.forEach((s) => { (map[s.userId] = map[s.userId] ?? []).push(s); });
+      return Object.entries(map).map(([, sessions]) => ({
+        key: sessions[0].userId,
+        label: sessions[0].userName,
+        sessions,
+      }));
+    }
+    if (groupBy === 'client') {
+      const map: Record<string, StubChatSession[]> = {};
+      sorted.forEach((s) => {
+        const k = s.clientId ?? '__none';
+        (map[k] = map[k] ?? []).push(s);
+      });
+      return Object.entries(map).map(([k, sessions]) => ({
+        key: k,
+        label: k === '__none' ? 'No Client' : (sessions[0].clientName ?? k),
+        sessions,
+      }));
+    }
+    // project
+    const map: Record<string, StubChatSession[]> = {};
+    sorted.forEach((s) => {
+      const k = s.projectId ?? '__none';
+      (map[k] = map[k] ?? []).push(s);
+    });
+    return Object.entries(map).map(([k, sessions]) => ({
+      key: k,
+      label: k === '__none' ? 'No Project' : (sessions[0].projectName ?? k),
+      sessions,
+    }));
+  })();
+
+  return (
+    <div className="flex gap-5 h-full">
+
+      {/* ── Left panel: session list ── */}
+      <div
+        className="w-72 shrink-0 flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden"
+        style={{ height: 'calc(100vh - 230px)' }}
+      >
+        {/* Group-by filter */}
+        <div className="p-2.5 border-b border-gray-100 shrink-0">
+          <div className="flex gap-1">
+            {(['all', 'user', 'client', 'project'] as const).map((id) => (
+              <button
+                key={id}
+                onClick={() => setGroupBy(id)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors"
+                style={groupBy === id
+                  ? { background: '#2a5f6f', color: 'white' }
+                  : { background: '#f3f4f6', color: '#6b7280' }}
+              >
+                {id === 'all' ? 'All' : id.charAt(0).toUpperCase() + id.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Session list */}
+        <div className="flex-1 overflow-y-auto">
+          {visibleSessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-2 text-gray-400">
+              <FontAwesomeIcon icon={faComments} className="text-4xl text-gray-200" />
+              <p className="text-sm font-medium">No conversations to review</p>
+            </div>
+          ) : (
+            grouped.map((group) => (
+              <div key={group.key}>
+                {groupBy !== 'all' && (
+                  <div
+                    className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide sticky top-0 z-10"
+                    style={{ background: '#f9fafb', color: '#9ca3af', borderBottom: '1px solid #f3f4f6' }}
+                  >
+                    {group.label}
+                  </div>
+                )}
+                {group.sessions.map((session) => (
+                  <ChatSessionItem
+                    key={session.id}
+                    session={session}
+                    selected={selectedSession?.id === session.id}
+                    groupBy={groupBy}
+                    onClick={() => setSelectedSession(session)}
+                  />
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* ── Right panel: conversation detail ── */}
+      <div
+        className="flex-1 flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden"
+        style={{ height: 'calc(100vh - 230px)' }}
+      >
+        {selectedSession ? (
+          <ChatSessionDetail session={selectedSession} />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3 px-8">
+            <FontAwesomeIcon icon={faComments} className="text-5xl text-gray-200" />
+            <p className="text-base font-medium text-gray-500">Select a conversation</p>
+            <p className="text-sm text-center leading-relaxed">
+              Choose a session from the list to review the conversation thread, ACLX labels,
+              and clinical context.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Chat session list item ────────────────────────────────────────────────────
+
+function ChatSessionItem({
+  session, selected, groupBy, onClick,
+}: {
+  session: StubChatSession;
+  selected: boolean;
+  groupBy: ChatGroupBy;
+  onClick: () => void;
+}) {
+  const avatarColor = CHAT_USER_COLORS[session.userRole] ?? '#6b7280';
+  const roleChip    = CHAT_ROLE_CHIP[session.userRole] ?? { bg: '#f3f4f6', text: '#374151' };
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left px-3 py-3 flex items-start gap-2.5 transition-colors"
+      style={{
+        borderBottom: '1px solid #f3f4f6',
+        background: selected ? '#f0f9fb' : 'white',
+        borderLeft: selected ? '3px solid #2a5f6f' : '3px solid transparent',
+      }}
+    >
+      {/* Avatar */}
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5"
+        style={{ background: avatarColor }}
+      >
+        {toInitials(session.userName)}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        {/* Name + role */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-semibold text-gray-800 truncate">{session.userName}</span>
+          <span
+            className="text-xs px-1.5 py-0 rounded font-medium shrink-0 leading-5"
+            style={{ background: roleChip.bg, color: roleChip.text }}
+          >
+            {CHAT_ROLE_LABELS[session.userRole] ?? session.userRole}
+          </span>
+        </div>
+
+        {/* Topic */}
+        <p className="text-xs text-gray-600 truncate mt-0.5">{session.topic}</p>
+
+        {/* Client / project context (hide in the matching group-by mode to avoid duplication) */}
+        {groupBy !== 'client' && session.clientName && (
+          <p className="text-xs text-gray-400 truncate">Client: {session.clientName}</p>
+        )}
+        {groupBy !== 'project' && session.projectName && (
+          <p className="text-xs text-gray-400 truncate">Project: {session.projectName}</p>
+        )}
+
+        {/* Time + ACLX badges */}
+        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          <span className="text-xs text-gray-400">{fmtRelative(session.lastActivity)}</span>
+          {session.aclxLabels.map((lbl) => {
+            const meta = ACLX_LABEL_META[lbl];
+            if (!meta) return null;
+            return (
+              <span key={lbl} className="text-xs px-1.5 rounded font-semibold leading-5"
+                style={{ background: meta.bg, color: meta.text }}>
+                {meta.label}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ── Chat session detail ───────────────────────────────────────────────────────
+
+function ChatSessionDetail({ session }: { session: StubChatSession }) {
+  const avatarColor = CHAT_USER_COLORS[session.userRole] ?? '#6b7280';
+  const roleChip    = CHAT_ROLE_CHIP[session.userRole] ?? { bg: '#f3f4f6', text: '#374151' };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-gray-200 shrink-0 bg-white">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+            style={{ background: avatarColor }}
+          >
+            {toInitials(session.userName)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-gray-900">{session.userName}</span>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: roleChip.bg, color: roleChip.text }}
+              >
+                {CHAT_ROLE_LABELS[session.userRole] ?? session.userRole}
+              </span>
+              {session.clientName && (
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  Client: {session.clientName}
+                </span>
+              )}
+              {session.projectName && (
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  Project: {session.projectName}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">{session.topic}</p>
+          </div>
+        </div>
+
+        {/* ACLX label strip */}
+        {session.aclxLabels.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-gray-400">ACLX labels:</span>
+            {session.aclxLabels.map((lbl) => {
+              const meta = ACLX_LABEL_META[lbl];
+              if (!meta) return null;
+              return (
+                <span key={lbl}
+                  className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background: meta.bg, color: meta.text }}
+                >
+                  {meta.label}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Message thread */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50">
+        {session.messages.map((msg) => (
+          <ChatBubble key={msg.id} message={msg} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Chat bubble ───────────────────────────────────────────────────────────────
+
+function ChatBubble({ message }: { message: StubChatMessage }) {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+
+      {/* Avatar */}
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mb-0.5"
+        style={{ background: isUser ? '#DCE7EE' : '#e8f4f8' }}
+      >
+        {isUser
+          ? <FontAwesomeIcon icon={faUser} style={{ fontSize: 11, color: '#2a5f6f' }} />
+          : <span className="text-xs font-bold" style={{ color: '#2a5f6f' }}>AI</span>
+        }
+      </div>
+
+      <div className={`max-w-[78%] space-y-1`}>
+        {/* Bubble */}
+        <div
+          className="px-4 py-3 text-sm leading-relaxed"
+          style={isUser
+            ? { background: '#f3f4f6', color: '#111827', borderRadius: '18px 18px 4px 18px' }
+            : { background: 'white',   color: '#111827', border: '1px solid #e5e7eb', borderRadius: '18px 18px 18px 4px' }
+          }
+        >
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{message.content}</pre>
+        </div>
+
+        {/* Meta: timestamp + ACLX labels */}
+        <div className={`flex items-center gap-2 flex-wrap ${isUser ? 'justify-end' : 'justify-start'}`}>
+          <span className="text-xs text-gray-400">{fmtTime(message.timestamp)}</span>
+          {message.aclxLabel && ACLX_LABEL_META[message.aclxLabel] && (() => {
+            const meta = ACLX_LABEL_META[message.aclxLabel!]!;
+            return (
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: meta.bg, color: meta.text }}>
+                {meta.label}
+              </span>
+            );
+          })()}
+          {message.aclxSensitivity && (() => {
+            const sc = SENSITIVITY_COLORS[message.aclxSensitivity!] ?? { bg: '#f3f4f6', text: '#374151' };
+            return (
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: sc.bg, color: sc.text }}>
+                {message.aclxSensitivity}
+              </span>
+            );
+          })()}
+        </div>
+      </div>
     </div>
   );
 }
