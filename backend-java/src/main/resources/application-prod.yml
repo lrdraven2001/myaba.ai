@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# application-prod.yml — production-hardened overrides
+#
+# Activated when SPRING_PROFILES_ACTIVE=prod (set in Cloud Run env vars or
+# Dockerfile CMD).  All sensitive values must be supplied via environment
+# variables — never committed to this file.
+#
+# SOC 2 relevance: this file documents and enforces production security
+# posture as code, making the controls auditable and version-controlled.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Safety guards ────────────────────────────────────────────────────────────
+# Dev auth MUST be disabled in production.  Redundant with the default but
+# explicit — auditors can see this in the file.
+dev:
+  auth-enabled: false
+
+# ── Rate limiting — tighter in production ────────────────────────────────────
+rate-limit:
+  enabled:                  true
+  ip.requests-per-minute:   200   # more conservative than default (300)
+  user.requests-per-minute: 60
+
+# ── DLP — all controls on in production ──────────────────────────────────────
+dlp:
+  enabled:          true
+  ssn:              true
+  payment-cards:    true
+  drivers-license:  true
+
+# ── ACLX — always on in production ───────────────────────────────────────────
+aclx:
+  enabled: true
+
+# ── CORS — restrict to production domain only ────────────────────────────────
+# Override CORS_ALLOWED_ORIGINS env var — set to https://app.myaba.ai
+# Do NOT leave the default localhost:5173 in production.
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}   # required — no default in prod
+
+# ── Logging — structured JSON for Cloud Logging ingestion ────────────────────
+logging:
+  pattern:
+    console: >
+      {"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}","level":"%p",
+      "logger":"%logger{36}","correlationId":"%X{correlationId}",
+      "sourceIp":"%X{sourceIp}","message":"%msg"}%n
+  level:
+    root:       WARN
+    ai.myaba:   INFO
+    # Set to DEBUG temporarily if investigating an incident, then revert.
+    # ai.myaba.service.guard: DEBUG
+
+# ── Spring — production server tuning ────────────────────────────────────────
+server:
+  # Require HTTPS at the load-balancer level; this API only serves over TLS.
+  # Cloud Run terminates TLS; the backend sees HTTP on 9090.
+  port: ${PORT:9090}
+  tomcat:
+    # Reduce connection timeout to limit slow-loris-style attacks
+    connection-timeout: 5000
+    # Drop connections that don't send a request within 10 seconds
+    keep-alive-timeout: 10000
+
+spring:
+  # Disable Actuator exposure in production — health check only
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health
+    endpoint:
+      health:
+        show-details: never

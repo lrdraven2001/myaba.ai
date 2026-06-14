@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OWASP Dependency-Check suppression file.
+
+  Add entries here when a CVE is:
+    - A false positive (the vulnerable code path is not used)
+    - Already mitigated by a compensating control
+    - Accepted risk (document the justification and expiration date)
+
+  Format:
+    <suppress until="YYYY-MM-DD">
+      <notes>Justification — owner — date accepted</notes>
+      <cve>CVE-YYYY-NNNNN</cve>
+    </suppress>
+
+  Suppressions without an "until" date never expire — avoid these unless
+  the CVE is a confirmed false positive with no plausible impact path.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+  <!-- No suppressions at initial policy adoption.
+       Add entries here as needed with justification and expiration date. -->
+
+</suppressions>

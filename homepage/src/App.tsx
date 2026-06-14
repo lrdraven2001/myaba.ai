@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route, useLocation, Link } from 'react-router-dom';
+import DocumentsPage from './DocumentsPage';
 
 const APP_URL = import.meta.env.VITE_APP_URL ?? 'http://localhost:5173';
 
@@ -26,6 +28,9 @@ function IconLock() {
 function IconCheck() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
 }
+function IconDash() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+}
 function IconArrow() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>;
 }
@@ -52,9 +57,14 @@ function Wordmark({ size = 22 }: { size?: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation
 // ─────────────────────────────────────────────────────────────────────────────
-function NavBar() {
+export function NavBar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+
+  // Section links work as anchors on the homepage; navigate back from other pages
+  const sectionHref = (anchor: string) => isHome ? anchor : `/${anchor}`;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -62,7 +72,17 @@ function NavBar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const navLink = (href: string, label: string) => (
+  const navLink = (href: string, label: string, isRoute = false) => isRoute ? (
+    <Link
+      key={label}
+      to={href}
+      style={{ fontSize: 14, fontWeight: 500, color: location.pathname === href ? '#1E3347' : '#5A7184', transition: 'color 0.15s', textDecoration: 'none' }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = '#1E3347')}
+      onMouseLeave={(e) => (e.currentTarget.style.color = location.pathname === href ? '#1E3347' : '#5A7184')}
+    >
+      {label}
+    </Link>
+  ) : (
     <a
       key={label}
       href={href}
@@ -85,7 +105,7 @@ function NavBar() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 
         {/* Logo */}
-        <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
           <img
             src="/app-icon.png"
             alt="myABA.ai"
@@ -93,13 +113,14 @@ function NavBar() {
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
           <Wordmark size={20} />
-        </a>
+        </Link>
 
         {/* Desktop nav */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 28 }} className="desktop-nav">
-          {navLink('#features', 'Features')}
-          {navLink('#how-it-works', 'How It Works')}
-          {navLink('#security', 'Security')}
+          {navLink(sectionHref('#features'), 'Features')}
+          {navLink(sectionHref('#how-it-works'), 'How It Works')}
+          {navLink(sectionHref('#security'), 'Security')}
+          {navLink('/documents', 'Docs', true)}
         </div>
 
         {/* Desktop CTAs */}
@@ -117,19 +138,19 @@ function NavBar() {
             Sign In
           </a>
           <a
-            href={`${APP_URL}/onboard`}
+            href="mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest"
             style={{
               padding: '8px 18px', fontSize: 14, fontWeight: 600,
               color: 'white',
-              background: 'linear-gradient(135deg, #1E88FF, #1565C0)',
+              background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
               borderRadius: 8,
-              boxShadow: '0 2px 8px rgba(30,136,255,0.28)',
+              boxShadow: '0 2px 8px rgba(63,155,47,0.28)',
               transition: 'opacity 0.15s',
             }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.88')}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
           >
-            Get Started
+            Join Waitlist
           </a>
         </div>
 
@@ -150,8 +171,18 @@ function NavBar() {
           padding: '16px 24px 20px',
           display: 'flex', flexDirection: 'column', gap: 14,
         }}>
-          {[['#features', 'Features'], ['#how-it-works', 'How It Works'], ['#security', 'Security']].map(([href, label]) => (
-            <a key={label} href={href} onClick={() => setMenuOpen(false)}
+          {[
+            [sectionHref('#features'), 'Features', false],
+            [sectionHref('#how-it-works'), 'How It Works', false],
+            [sectionHref('#security'), 'Security', false],
+            ['/documents', 'Documentation', true],
+          ].map(([href, label, isRoute]) => isRoute ? (
+            <Link key={label as string} to={href as string} onClick={() => setMenuOpen(false)}
+              style={{ fontSize: 15, fontWeight: 500, color: '#1E3347', padding: '6px 0', textDecoration: 'none' }}>
+              {label}
+            </Link>
+          ) : (
+            <a key={label as string} href={href as string} onClick={() => setMenuOpen(false)}
               style={{ fontSize: 15, fontWeight: 500, color: '#1E3347', padding: '6px 0' }}>
               {label}
             </a>
@@ -159,14 +190,14 @@ function NavBar() {
           <div style={{ height: 1, background: '#E4EEF3' }} />
           <a href={APP_URL} style={{ fontSize: 15, fontWeight: 600, color: '#1E88FF' }}>Sign In</a>
           <a
-            href={`${APP_URL}/onboard`}
+            href="mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest"
             style={{
               textAlign: 'center', padding: '11px 0', fontSize: 15, fontWeight: 700,
-              color: 'white', background: 'linear-gradient(135deg, #1E88FF, #1565C0)',
-              borderRadius: 8, boxShadow: '0 2px 8px rgba(30,136,255,0.28)',
+              color: 'white', background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
+              borderRadius: 8, boxShadow: '0 2px 8px rgba(63,155,47,0.28)',
             }}
           >
-            Get Started Free
+            Join Waitlist
           </a>
         </div>
       )}
@@ -221,13 +252,13 @@ function Hero() {
         {/* Badge */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: 'rgba(30,136,255,0.15)',
-          border: '1px solid rgba(30,136,255,0.3)',
+          background: 'rgba(63,155,47,0.15)',
+          border: '1px solid rgba(63,155,47,0.35)',
           borderRadius: 20, padding: '6px 14px', marginBottom: 28,
         }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#1E88FF', boxShadow: '0 0 6px #1E88FF' }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#60A5FA', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            HIPAA-Compliant Clinical AI
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ADE80', boxShadow: '0 0 6px #4ADE80' }} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#4ADE80', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Pathfinder Early Access — Now Live
           </span>
         </div>
 
@@ -265,20 +296,20 @@ function Hero() {
         {/* CTAs */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 56 }}>
           <a
-            href={`${APP_URL}/onboard`}
+            href="mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               padding: '14px 28px', fontSize: 15, fontWeight: 700,
               color: 'white',
-              background: 'linear-gradient(135deg, #1E88FF, #1565C0)',
+              background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
               borderRadius: 10,
-              boxShadow: '0 4px 20px rgba(30,136,255,0.45)',
+              boxShadow: '0 4px 20px rgba(63,155,47,0.45)',
               transition: 'transform 0.15s, box-shadow 0.15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(30,136,255,0.55)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(30,136,255,0.45)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(63,155,47,0.55)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(63,155,47,0.45)'; }}
           >
-            Get Started Free <IconArrow />
+            Request Early Access <IconArrow />
           </a>
           <a
             href={APP_URL}
@@ -293,7 +324,7 @@ function Hero() {
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.5)'; e.currentTarget.style.color = 'white'; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }}
           >
-            Sign In
+            Partner Sign In
           </a>
         </div>
 
@@ -304,7 +335,8 @@ function Hero() {
         }}>
           {[
             'HIPAA Compliant',
-            'AI Content Governance',
+            'DLP + ACLX Governance',
+            'EHR Connected',
             'SOC 2 Ready',
           ].map((label, i) => (
             <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -335,32 +367,32 @@ const FEATURES: Feature[] = [
   {
     icon: <IconChat />, color: '#1E88FF',
     title: 'AI Clinical Chat',
-    desc: 'Generate clinical documentation and session summaries in seconds. Context-aware AI understands ABA terminology and formats output for clinical use.',
+    desc: 'Generate session notes, treatment summaries, and clinical documentation in seconds. Context-aware AI understands ABA terminology and keeps client details on file so you never re-enter what it already knows.',
   },
   {
     icon: <IconShield />, color: '#3F9B2F',
-    title: 'ACLX Content Governance',
-    desc: 'Every AI output runs through our policy engine before it reaches your team. PHI detection, clinical sensitivity scoring, and human review workflows built in.',
+    title: 'DLP + ACLX Governance',
+    desc: 'Two-layer protection on every request. DLP scanning blocks non-clinical identifiers — SSNs, payment card numbers — before they reach the AI. ACLX scores every response and enforces hard-block rules for substance use, psychotherapy, HIV, and genetic data before output is delivered.',
   },
   {
     icon: <IconClipboard />, color: '#F5A623',
     title: 'Audit Trails',
-    desc: 'Full audit logging on every document generated, reviewed, and approved. Exportable records for compliance reviews and billing audits.',
+    desc: 'Full audit logging on every AI call, document generated, and review decision. Exportable records for compliance reviews, billing audits, and HIPAA breach investigations.',
   },
   {
     icon: <IconUsers />, color: '#7C3AED',
     title: 'Team Collaboration',
-    desc: 'Assign supervisors to direct staff, share caseloads across supervisors, and manage organization-wide templates and insurance settings from one place.',
+    desc: 'Assign supervisors to direct staff, share caseloads, and manage organization-wide templates and policy libraries. Role-based access ensures every team member sees only what their role permits.',
   },
   {
     icon: <IconSearch />, color: '#0891B2',
-    title: 'Smart Search',
-    desc: 'Find any client record, session note, or document in milliseconds. Full-text search across your entire organization\'s clinical history.',
+    title: 'EHR & Practice Integration',
+    desc: 'Connect directly to CentralReach and Rethink to pull client records automatically. Importing from OfficePuzzle? Upload your Excel or CSV export and clients are created in seconds.',
   },
   {
     icon: <IconLock />, color: '#DC2626',
     title: 'Secure by Design',
-    desc: 'Firebase-backed authentication, data isolated per organization, all documents encrypted at rest and in transit. HIPAA BAA available.',
+    desc: 'Firebase-backed authentication with mandatory MFA, data isolated per organization, all documents encrypted at rest (AES-256) and in transit (TLS 1.3). A HIPAA Business Associate Agreement is executed with every customer as a condition of access.',
   },
 ];
 
@@ -445,15 +477,15 @@ const STEPS = [
     num: '02',
     color: '#3F9B2F',
     title: 'Add your clients',
-    desc: 'Import or create structured client profiles with treatment goals, authorization details, diagnosis codes, and assigned clinicians.',
-    bullets: ['Client profiles with diagnosis and treatment history', 'Assign clinicians and supervisors to each client', 'Client information is used to ground and personalize AI chat responses'],
+    desc: 'Build structured client profiles with diagnosis codes, treatment goals, authorization details, and assigned clinicians — or import them directly from your existing systems.',
+    bullets: ['Connect to CentralReach or Rethink to sync client records automatically', 'Import from OfficePuzzle by uploading your Excel or CSV export', 'Client information grounds AI responses so clinicians never re-enter what the system already knows'],
   },
   {
     num: '03',
     color: '#F5A623',
     title: 'Generate & govern documentation',
-    desc: 'Chat with the AI to draft clinical documentation and session summaries. Every output can be reviewed and is always labeled.',
-    bullets: ['Natural language clinical chat', 'Automatic PHI governance', 'Human review queue for escalations'],
+    desc: 'Chat with the AI to draft session notes, treatment plans, and progress summaries. Every request passes through DLP input scanning and ACLX output governance before anything reaches your team.',
+    bullets: ['DLP blocks non-clinical identifiers before they reach the AI', 'ACLX scores and classifies every response before delivery', 'Human review queue holds escalated content until an admin approves it'],
   },
 ];
 
@@ -552,20 +584,23 @@ function Security() {
       color: '#1E88FF',
       title: 'HIPAA-Compliant Infrastructure',
       items: [
-        'Firebase-backed authentication with MFA support',
+        'Mandatory MFA enforced for every user — cannot be disabled',
         'Data isolated per organization — no cross-tenant access',
-        'All documents encrypted at rest (AES-256) and in transit (TLS 1.3)',
-        'HIPAA Business Associate Agreement (BAA) available',
+        'All data encrypted at rest (AES-256) and in transit (TLS 1.3)',
+        'Comprehensive audit trail on every AI call and document event',
+        'HIPAA Business Associate Agreement (BAA) required before access',
+        'Architecture aligned with the 2025 proposed HIPAA Security Rule updates — no gaps to close when finalized',
       ],
     },
     {
       icon: <IconShield />,
       color: '#3F9B2F',
-      title: 'ACLX Content Governance Engine',
+      title: 'AI Input & Output Governance',
       items: [
-        'Every AI output is scored before delivery to end users',
-        'PHI detection and clinical sensitivity classification',
-        'Configurable hard-block rules for SUD, psychotherapy, HIV, genetic data',
+        'DLP scanning blocks non-clinical identifiers (SSNs, payment data) before they reach the AI',
+        'Clinical context — names, diagnoses, session details — passes through so responses stay coherent',
+        'Every AI output scored and classified before delivery to end users',
+        'Configurable hard-block rules for SUD, psychotherapy, HIV, and genetic data',
         'Human review queue for escalated content — nothing auto-releases',
       ],
     },
@@ -599,6 +634,27 @@ function Security() {
           <p style={{ fontSize: 16, color: '#94A8B8', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>
             Clinical documentation contains the most sensitive data in healthcare. We engineered myABA.ai from the ground up to protect it.
           </p>
+        </div>
+
+        {/* SOC 2 + HIPAA compliance badges */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 48 }}>
+          {[
+            { label: 'HIPAA Compliant', sub: 'BAA required before access', color: '#1E88FF' },
+            { label: 'SOC 2 Type II', sub: 'Audit in progress', color: '#3F9B2F' },
+            { label: '2025 HIPAA Rule Ready', sub: 'Controls aligned with proposed updates', color: '#F5A623' },
+          ].map(badge => (
+            <div key={badge.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'rgba(255,255,255,0.06)', border: `1px solid ${badge.color}40`,
+              borderRadius: 10, padding: '10px 18px',
+            }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: badge.color, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'white', lineHeight: 1.2 }}>{badge.label}</div>
+                <div style={{ fontSize: 11, color: '#94A8B8', marginTop: 2 }}>{badge.sub}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
@@ -641,28 +697,33 @@ function Security() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Pricing
 // ─────────────────────────────────────────────────────────────────────────────
+
 const PLANS = [
-  {
-    name: 'Solo',
-    price: 'Contact us',
-    desc: 'For independent clinicians and solo practitioners.',
-    highlight: false,
-    features: ['1 clinician', 'Up to 25 active clients', 'AI clinical chat', 'HIPAA-compliant storage', 'Email support'],
-  },
-  {
-    name: 'Team',
-    price: 'Contact us',
-    desc: 'For small-to-mid-sized ABA clinics and group practices.',
-    highlight: true,
-    features: ['Up to 15 clinicians', 'Unlimited clients', 'Full team collaboration', 'Review queue & governance', 'Custom templates', 'Priority support'],
-  },
-  {
-    name: 'Enterprise',
-    price: 'Contact us',
-    desc: 'For large organizations and multi-site providers.',
-    highlight: false,
-    features: ['Unlimited clinicians', 'Multi-location support', 'Custom policy rules (ACLX)', 'HIPAA BAA included', 'SSO / SAML', 'Dedicated support'],
-  },
+  { name: 'Solo',       planKey: 'solo'       as const, price: 'Contact us', freeTrial: true,  highlight: false, desc: 'For independent clinicians and solo practitioners.'       },
+  { name: 'Team',       planKey: 'team'       as const, price: 'Contact us', freeTrial: false, highlight: true,  desc: 'For small-to-mid-sized ABA clinics and group practices.'  },
+  { name: 'Enterprise', planKey: 'enterprise' as const, price: 'Contact us', freeTrial: false, highlight: false, desc: 'For large organizations and multi-site providers.'          },
+];
+
+/**
+ * One row per feature, listed in the same order for every card.
+ * A string value = included (shown with that label + checkmark).
+ * false = not on this plan (shown dimmed with a dash).
+ */
+const FEATURE_ROWS: { key: string; solo: string | false; team: string | false; enterprise: string | false }[] = [
+  { key: 'users',     solo: '1 user',                  team: 'Up to 15 users',             enterprise: 'Unlimited users'                              },
+  { key: 'clients',   solo: 'Up to 25 active clients', team: 'Unlimited clients',           enterprise: 'Unlimited clients'                            },
+  { key: 'requests',  solo: '200 AI requests / month', team: '2,000 AI requests / month',  enterprise: 'Unlimited AI requests'                        },
+  { key: 'chat',      solo: 'AI clinical chat',        team: 'AI clinical chat',            enterprise: 'AI clinical chat'                             },
+  { key: 'storage',   solo: 'HIPAA-compliant storage', team: 'HIPAA-compliant storage',     enterprise: 'HIPAA-compliant storage'                      },
+  { key: 'collab',    solo: false,                     team: 'Team collaboration',          enterprise: 'Team collaboration'                           },
+  { key: 'review',    solo: false,                     team: 'Review queue & governance',   enterprise: 'Review queue & governance'                    },
+  { key: 'templates', solo: false,                     team: 'Custom templates',            enterprise: 'Custom templates'                             },
+  { key: 'import',    solo: 'OfficePuzzle import',       team: 'OfficePuzzle import',         enterprise: 'OfficePuzzle import'                          },
+  { key: 'ehr',       solo: false,                     team: 'EHR integration (CentralReach, Rethink)', enterprise: 'EHR integration (CentralReach, Rethink)'  },
+  { key: 'locations', solo: false,                     team: false,                         enterprise: 'Multi-location support'                       },
+  { key: 'aclx',      solo: false,                     team: false,                         enterprise: 'Custom AI content governance rules'            },
+  { key: 'sso',       solo: false,                     team: false,                         enterprise: 'Work identity sign-on (SAML 2.0 · OIDC)'      },
+  { key: 'support',   solo: 'Email support',           team: 'Priority support',            enterprise: 'Dedicated support'                            },
 ];
 
 function Pricing() {
@@ -677,23 +738,27 @@ function Pricing() {
           <h2 style={{ fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 800, color: '#1E3347', letterSpacing: '-0.02em', marginBottom: 14 }}>
             Simple, transparent plans
           </h2>
-          <p style={{ fontSize: 16, color: '#5A7184', maxWidth: 440, margin: '0 auto', lineHeight: 1.6 }}>
-            Start with a 14-day free trial. No credit card required.
+          <p style={{ fontSize: 16, color: '#5A7184', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>
+            We're currently onboarding pathfinder agencies at no cost while we measure real-world usage and refine the platform.
+            Reach out to discuss access.
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, alignItems: 'stretch' }}>
           {PLANS.map((plan) => (
             <div
               key={plan.name}
               style={{
                 borderRadius: 18,
-                border: plan.highlight ? '2px solid #1E88FF' : '1.5px solid #E4EEF3',
+                border: plan.highlight ? '2px solid #1E88FF' : plan.freeTrial ? '2px solid #3F9B2F' : '1.5px solid #E4EEF3',
                 background: plan.highlight ? 'linear-gradient(160deg, #EFF6FF, #F8FBFF)' : '#FAFCFF',
                 padding: '32px 28px',
                 position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
+              {/* Most Popular badge — Team */}
               {plan.highlight && (
                 <div style={{
                   position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
@@ -702,48 +767,183 @@ function Pricing() {
                   padding: '4px 14px', borderRadius: 20,
                   letterSpacing: '0.05em', textTransform: 'uppercase',
                   boxShadow: '0 2px 8px rgba(30,136,255,0.4)',
+                  whiteSpace: 'nowrap',
                 }}>
                   Most Popular
                 </div>
               )}
 
+              {/* Free Trial badge — Solo */}
+              {plan.freeTrial && (
+                <div style={{
+                  position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
+                  background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
+                  color: 'white', fontSize: 11, fontWeight: 700,
+                  padding: '4px 14px', borderRadius: 20,
+                  letterSpacing: '0.05em', textTransform: 'uppercase',
+                  boxShadow: '0 2px 8px rgba(63,155,47,0.4)',
+                  whiteSpace: 'nowrap',
+                }}>
+                  14-Day Free Trial
+                </div>
+              )}
+
               <div style={{ fontSize: 18, fontWeight: 800, color: '#1E3347', marginBottom: 6 }}>{plan.name}</div>
-              <div style={{ fontSize: 13, color: '#5A7184', marginBottom: 20, lineHeight: 1.4 }}>{plan.desc}</div>
+              <div style={{ fontSize: 13, color: '#5A7184', marginBottom: 20, lineHeight: 1.4, minHeight: 38 }}>{plan.desc}</div>
 
-              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid #E4EEF3' }}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: '#1E88FF' }}>{plan.price}</span>
-                <div style={{ fontSize: 12, color: '#A0ADB8', marginTop: 2 }}>reach out to discuss your needs</div>
+              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid #E4EEF3', minHeight: 52 }}>
+                {plan.freeTrial ? (
+                  <>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#3F9B2F' }}>14-day free trial</span>
+                    <div style={{ fontSize: 12, color: '#A0ADB8', marginTop: 2 }}>No credit card required</div>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#1E88FF' }}>{plan.price}</span>
+                    <div style={{ fontSize: 12, color: '#A0ADB8', marginTop: 2 }}>reach out to discuss your needs</div>
+                  </>
+                )}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-                {plan.features.map((f) => (
-                  <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ color: plan.highlight ? '#1E88FF' : '#3F9B2F', flexShrink: 0 }}><IconCheck /></div>
-                    <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>{f}</span>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28, flex: 1 }}>
+                {FEATURE_ROWS.map((row) => {
+                  const label = row[plan.planKey];
+                  const included = label !== false;
+                  return (
+                    <div key={row.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ color: included ? (plan.highlight ? '#1E88FF' : '#3F9B2F') : '#D1D5DB', flexShrink: 0 }}>
+                        {included ? <IconCheck /> : <IconDash />}
+                      </div>
+                      <span style={{ fontSize: 13, color: included ? '#374151' : '#C4CDD6', fontWeight: included ? 500 : 400 }}>
+                        {included ? label : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
-              <a
-                href={plan.highlight ? `${APP_URL}/onboard` : 'mailto:hello@myaba.ai'}
-                style={{
-                  display: 'block', textAlign: 'center',
-                  padding: '11px 0', fontSize: 14, fontWeight: 700,
-                  color: plan.highlight ? 'white' : '#1E88FF',
-                  background: plan.highlight ? 'linear-gradient(135deg, #1E88FF, #1565C0)' : 'transparent',
-                  border: plan.highlight ? 'none' : '1.5px solid #1E88FF',
-                  borderRadius: 10,
-                  boxShadow: plan.highlight ? '0 2px 10px rgba(30,136,255,0.3)' : 'none',
-                  transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-              >
-                {plan.highlight ? 'Start Free Trial' : 'Contact Sales'}
-              </a>
+              {plan.planKey !== 'enterprise' && (
+                <a
+                  href="mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest"
+                  style={{
+                    display: 'block', textAlign: 'center',
+                    padding: '11px 0', fontSize: 14, fontWeight: 700,
+                    color: 'white',
+                    background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
+                    border: 'none',
+                    borderRadius: 10,
+                    boxShadow: '0 2px 10px rgba(63,155,47,0.3)',
+                    transition: 'opacity 0.15s',
+                  } as React.CSSProperties}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  Join Waitlist
+                </a>
+              )}
             </div>
           ))}
         </div>
+
+        <p style={{ textAlign: 'center', fontSize: 12, color: '#A0ADB8', marginTop: 32 }}>
+          A HIPAA Business Associate Agreement (BAA) is executed with all customers as a condition of access.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FAQ
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FAQS = [
+  {
+    q: 'Is my client data used to train AI?',
+    a: 'No. Client data entered into myABA.ai is never used to train AI models. Claude is accessed through Google Cloud\'s enterprise infrastructure, where Google\'s data processing terms explicitly prohibit using customer data for model training. Your clients\' information stays yours.',
+  },
+  {
+    q: 'Is this actually HIPAA compliant — not just "compliant-ish"?',
+    a: 'Yes. A signed Business Associate Agreement (BAA) is required before any organization gets access. All data is encrypted in transit and at rest. Every request passes through two layers of AI governance: DLP scanning runs on every input and blocks non-clinical identifiers — Social Security numbers, payment card data, and similar — that have no place in a clinical AI prompt. Clinical context (names, diagnoses, session details) passes through so responses remain coherent and useful. On the output side, our ACLX content governance engine scores every AI response before it reaches users, with hard-block rules for specially protected categories like substance use records and HIV status. These protections go well beyond baseline HIPAA.',
+  },
+  {
+    q: 'What AI model powers myABA.ai?',
+    a: 'We use Claude, built by Anthropic — one of the leading clinical-grade language models, chosen for its accuracy and safety characteristics. Claude runs on Google Cloud\'s infrastructure, which means the AI layer is covered under Google\'s enterprise HIPAA compliance program. We evaluate model updates carefully before rolling them to production.',
+  },
+  {
+    q: 'What happens when the 14-day Solo trial ends?',
+    a: 'We\'ll reach out before your trial expires to discuss next steps. During the pathfinder period, nothing cuts off automatically — we work with each organization individually to figure out the right fit.',
+  },
+  {
+    q: 'What EHR systems does myABA.ai connect to?',
+    a: 'We currently offer live integrations with CentralReach and Rethink — two of the most widely used practice management platforms in ABA. Admins connect by entering API credentials once; from there, client records can be searched and synced directly into myABA.ai. For organizations using OfficePuzzle, we support file-based import: export your client roster as an Excel or CSV file and upload it to create client records in bulk. We\'re actively evaluating additional EHR connections based on what our pathfinder agencies use.',
+  },
+  {
+    q: 'What does ACLX mean and why does it matter?',
+    a: 'ACLX is our AI content governance engine. Every response the AI generates is scored and classified before it reaches your team — not just for general PHI, but for specially protected categories like substance use disorder records, psychotherapy notes, and HIV status, which carry stricter legal protections than standard HIPAA PHI. If a response triggers a hard-block rule, it is withheld entirely. If it triggers a review threshold, it is held in a queue until an admin approves it. ACLX runs on every chat response and every generated document, with a full audit trail.',
+  },
+  {
+    q: 'Is myABA.ai ready for the upcoming HIPAA Security Rule changes?',
+    a: 'Yes — and by design. HHS proposed significant updates to the HIPAA Security Rule in 2025, including eliminating the distinction between "required" and "addressable" implementation specifications, making multi-factor authentication mandatory, requiring encryption of ePHI at rest and in transit, and mandating comprehensive audit logging and access controls. myABA.ai already enforces all of these: MFA is mandatory and cannot be disabled, all data is encrypted at rest (AES-256) and in transit (TLS 1.3), every AI call is audit-logged with a full decision trail, and access is governed by role-based controls with session timeouts. We built to where the rules are heading, not just where they are today.',
+  },
+  {
+    q: 'Do I need IT involvement to get started?',
+    a: 'Not for Solo or Team. You sign in with Google or email, invite your team, and you\'re up and running. Enterprise deployments that require identity federation (SAML / OIDC) will involve your IT team for the initial setup, but day-to-day use requires no technical administration.',
+  },
+];
+
+function FAQ() {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <section style={{ background: '#F8FBFF', padding: '96px 24px' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 56 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#1E88FF', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+            FAQ
+          </div>
+          <h2 style={{ fontSize: 'clamp(26px, 4vw, 36px)', fontWeight: 800, color: '#1E3347', letterSpacing: '-0.02em' }}>
+            Common questions
+          </h2>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {FAQS.map((faq, i) => (
+            <div
+              key={i}
+              style={{
+                borderTop: '1px solid #E4EEF3',
+                ...(i === FAQS.length - 1 ? { borderBottom: '1px solid #E4EEF3' } : {}),
+              }}
+            >
+              <button
+                onClick={() => setOpen(open === i ? null : i)}
+                style={{
+                  width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                  padding: '20px 0', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+                }}
+              >
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#1E3347', lineHeight: 1.4 }}>{faq.q}</span>
+                <span style={{
+                  fontSize: 20, color: '#1E88FF', flexShrink: 0, lineHeight: 1,
+                  transform: open === i ? 'rotate(45deg)' : 'none',
+                  transition: 'transform 0.2s',
+                  display: 'inline-block',
+                }}>+</span>
+              </button>
+              {open === i && (
+                <div style={{ paddingBottom: 20 }}>
+                  <p style={{ fontSize: 14, color: '#5A7184', lineHeight: 1.7, margin: 0 }}>{faq.a}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <p style={{ textAlign: 'center', fontSize: 13, color: '#A0ADB8', marginTop: 40 }}>
+          Have a question not covered here?{' '}
+          <a href="mailto:hello@myaba.ai" style={{ color: '#1E88FF' }}>hello@myaba.ai</a>
+        </p>
       </div>
     </section>
   );
@@ -755,47 +955,67 @@ function Pricing() {
 function CTABanner() {
   return (
     <section style={{
-      background: 'linear-gradient(135deg, #1E88FF 0%, #1565C0 100%)',
+      background: 'linear-gradient(135deg, #0C2318 0%, #0F2A3D 100%)',
       padding: '72px 24px',
       textAlign: 'center',
     }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
+
+        {/* Badge */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          background: 'rgba(63,155,47,0.15)',
+          border: '1px solid rgba(63,155,47,0.35)',
+          borderRadius: 20, padding: '5px 14px', marginBottom: 22,
+        }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80', boxShadow: '0 0 5px #4ADE80' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#4ADE80', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Now accepting pathfinder agencies
+          </span>
+        </div>
+
         <h2 style={{ fontSize: 'clamp(26px, 4vw, 38px)', fontWeight: 900, color: 'white', letterSpacing: '-0.02em', marginBottom: 14 }}>
-          Ready to reclaim your clinical time?
+          Shape the platform from the start
         </h2>
-        <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.8)', marginBottom: 36, lineHeight: 1.6 }}>
-          Join ABA clinics saving hours per clinician per week on documentation.
-          Start your free 14-day trial today.
+        <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.7)', marginBottom: 14, lineHeight: 1.65 }}>
+          We're working closely with a select group of ABA agencies to measure real-world impact,
+          refine the product, and get clinical documentation right before we open broadly.
         </p>
+        <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 36, lineHeight: 1.6 }}>
+          Pathfinder partners get early access, direct input on the roadmap, and preferred pricing
+          when we launch publicly.
+        </p>
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap' }}>
           <a
-            href={`${APP_URL}/onboard`}
+            href="mailto:hello@myaba.ai?subject=Pathfinder%20Agency%20Interest"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               padding: '14px 32px', fontSize: 15, fontWeight: 700,
-              color: '#1565C0', background: 'white',
+              color: 'white',
+              background: 'linear-gradient(135deg, #3F9B2F, #2E7D22)',
               borderRadius: 10,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+              boxShadow: '0 4px 20px rgba(63,155,47,0.4)',
               transition: 'transform 0.15s, box-shadow 0.15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.2)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(63,155,47,0.5)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(63,155,47,0.4)'; }}
           >
-            Get Started Free <IconArrow />
+            Express Interest <IconArrow />
           </a>
           <a
-            href="mailto:hello@myaba.ai"
+            href={APP_URL}
             style={{
               padding: '14px 28px', fontSize: 15, fontWeight: 600,
-              color: 'rgba(255,255,255,0.9)',
-              border: '1.5px solid rgba(255,255,255,0.4)',
+              color: 'rgba(255,255,255,0.8)',
+              border: '1.5px solid rgba(255,255,255,0.25)',
               borderRadius: 10,
-              transition: 'border-color 0.15s',
+              transition: 'border-color 0.15s, color 0.15s',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.8)')}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.4)')}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.6)'; e.currentTarget.style.color = 'white'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = 'rgba(255,255,255,0.8)'; }}
           >
-            Talk to Sales
+            Partner Sign In
           </a>
         </div>
       </div>
@@ -806,7 +1026,7 @@ function CTABanner() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Footer
 // ─────────────────────────────────────────────────────────────────────────────
-function Footer() {
+export function Footer() {
   const col = (title: string, links: { label: string; href: string }[]) => (
     <div key={title}>
       <div style={{ fontSize: 12, fontWeight: 700, color: '#1E3347', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>
@@ -857,14 +1077,16 @@ function Footer() {
             ])}
             {col('Platform', [
               { label: 'Sign In', href: APP_URL },
-              { label: 'Get Started', href: `${APP_URL}/onboard` },
+              { label: 'Join Waitlist', href: 'mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest' },
               { label: 'Status', href: '#' },
+              { label: 'Documentation', href: '/documents' },
             ])}
             {col('Company', [
               { label: 'About', href: '#' },
               { label: 'Contact', href: 'mailto:hello@myaba.ai' },
-              { label: 'Privacy Policy', href: '#' },
-              { label: 'Terms of Service', href: '#' },
+              { label: 'Privacy Policy', href: '/documents?tab=legal' },
+              { label: 'Terms of Service', href: '/documents?tab=legal' },
+              { label: 'Security', href: '/documents?tab=compliance' },
             ])}
           </div>
         </div>
@@ -886,7 +1108,7 @@ function Footer() {
 // ─────────────────────────────────────────────────────────────────────────────
 // App
 // ─────────────────────────────────────────────────────────────────────────────
-export default function App() {
+function HomePage() {
   return (
     <>
       <NavBar />
@@ -896,9 +1118,19 @@ export default function App() {
         <HowItWorks />
         <Security />
         <Pricing />
+        <FAQ />
         <CTABanner />
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/documents" element={<DocumentsPage />} />
+    </Routes>
   );
 }

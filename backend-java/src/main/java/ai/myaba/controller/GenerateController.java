@@ -14,6 +14,7 @@ import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
 import ai.myaba.service.ReviewQueueService;
 import ai.myaba.service.SubjectAuthorizationService;
+import ai.myaba.service.UsageService;
 import ai.myaba.service.guard.InputGuard;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class GenerateController {
     private final PolicyService policyService;
     private final PolicyRagService policyRagService;
     private final ProjectService projectService;
+    private final UsageService usageService;
 
     // ── POST /api/generate-document ──────────────────────────────────────────
 
@@ -101,12 +103,44 @@ public class GenerateController {
             ));
         }
 
-        // Build de-identified context (DLP sanitization pending — placeholder values for now)
+        // DLP input guard — scan additionalContext for non-clinical identifiers
+        // (SSNs, payment cards, driver's license numbers) before any tokens are spent.
+        // Clinical PHI in the client record is system-supplied and already structured;
+        // only free-text user input needs to be scanned.
+        if (req.getAdditionalContext() != null && !req.getAdditionalContext().isBlank()) {
+            Optional<InputGuard.Violation> dlpViolation =
+                    inputGuardService.check(user, req.getAdditionalContext(), List.of());
+            if (dlpViolation.isPresent()) {
+                InputGuard.Violation v = dlpViolation.get();
+                auditService.log("DOCUMENT_DLP_BLOCKED", user.getUid(), req.getClientId(),
+                        null, null, "BLOCK", null);
+                log.warn("DLP blocked document generation: user={} org={} code={} detected={}",
+                        user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
+                        "error",   "Input blocked by compliance guard",
+                        "message", v.userMessage(),
+                        "code",    v.code()
+                ));
+            }
+        }
+
+        // Usage limit check — after auth/hard-block/DLP (no tokens spent yet), before Claude
+        if (!usageService.isWithinLimit(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                    "error", "Monthly AI request limit reached for your plan. " +
+                             "Upgrade your plan or contact support to increase your limit.",
+                    "code",  "USAGE_LIMIT_EXCEEDED"
+            ));
+        }
+
+        // Build client context for document generation.
+        // Structured client fields come from Firestore (already governed by role-based
+        // access control).  Free-text additionalContext has passed DLP above.
         String preferredName = (String) client.getOrDefault("preferredName", "[client]");
         String context = """
                 Preferred name: %s
-                Diagnosis context: [Retrieved from uploaded assessments — DLP sanitized]
-                Treatment history: [Retrieved from session notes — DLP sanitized]
+                Diagnosis context: [Retrieved from client record]
+                Treatment history: [Retrieved from session notes]
                 """.formatted(preferredName);
 
         // Generate with Claude
@@ -119,6 +153,9 @@ public class GenerateController {
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "AI generation failed"));
         }
+
+        // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
+        usageService.recordRequest(user.getOrgId(), "document");
 
         // Layer 3+4: ACLX output governance
         AclxResponse aclxResult = aclxService.evaluate(rawOutput, user, req.getClientId());
@@ -273,6 +310,15 @@ public class GenerateController {
             }
         }
 
+        // Usage limit check — after auth/hard-block/input-guard, before Claude
+        if (!usageService.isWithinLimit(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                    "error", "Monthly AI request limit reached for your plan. " +
+                             "Upgrade your plan or contact support to increase your limit.",
+                    "code",  "USAGE_LIMIT_EXCEEDED"
+            ));
+        }
+
         // Build message list for Claude
         List<Map<String, String>> messages = new ArrayList<>();
         if (req.getHistory() != null) {
@@ -291,6 +337,9 @@ public class GenerateController {
             log.error("Claude chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
         }
+
+        // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
+        usageService.recordRequest(user.getOrgId(), "chat");
 
         // Layer 3+4: ACLX output governance (passes all client IDs for cross-client rules)
         AclxResponse aclxResult = aclxService.evaluate(
@@ -376,6 +425,70 @@ public class GenerateController {
     @GetMapping("/health")
     public Map<String, String> health() {
         return Map.of("status", "ok", "service", "myaba-api");
+    }
+
+    /** Return the current-period usage summary for the caller's org. */
+    @GetMapping("/usage")
+    public ResponseEntity<?> getUsage(@AuthenticationPrincipal AppUser user) {
+        if (user == null || user.getOrgId() == null || user.getOrgId().isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Not authenticated"));
+        }
+        Map<String, Object> summary = usageService.getUsageSummary(user.getOrgId());
+        return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Set (or clear) a custom monthly spending cap for an enterprise org.
+     * Admin-only. Pass {@code {"limit": 500}} or {@code {"limit": null}} to clear.
+     */
+    @PutMapping("/usage/limit")
+    public ResponseEntity<?> setUsageLimit(
+            @AuthenticationPrincipal AppUser user,
+            @RequestBody Map<String, Object> body) {
+
+        if (user == null || user.getOrgId() == null || user.getOrgId().isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Not authenticated"));
+        }
+        if (!user.isAdmin()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required to configure usage limits"));
+        }
+
+        // Parse limit from body — null or missing means "clear the cap"
+        Object limitObj = body.get("limit");
+        int limit;
+        if (limitObj == null) {
+            limit = 0; // clear
+        } else if (limitObj instanceof Number n) {
+            limit = n.intValue();
+            if (limit < 0) limit = 0; // treat negatives as "clear"
+        } else {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "'limit' must be a positive integer or null"));
+        }
+
+        try {
+            usageService.setCustomLimit(user.getOrgId(), limit);
+            String message = limit > 0
+                    ? "Monthly spending cap set to " + limit + " requests"
+                    : "Spending cap cleared — your enterprise plan is now unlimited";
+            return ResponseEntity.ok(Map.of(
+                    "limit",   limit > 0 ? limit : null,
+                    "message", message
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Failed to set usage limit for org {}: {}", user.getOrgId(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to update spending cap"));
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

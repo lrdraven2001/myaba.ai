@@ -5,12 +5,15 @@ import type {
   Client,
   DriveConnection,
   DriveVerifyResult,
+  EhrClientRecord,
+  EhrConnectionStatus,
   FederationConfig,
   Org,
   OrgAclxPolicy,
   OrgPlan,
   OrgPolicyRule,
   OrgPolicyRuleType,
+  OfficePuzzleImportResult,
   PolicyDocument,
   Project,
   ProjectKnowledgeDoc,
@@ -19,6 +22,7 @@ import type {
   SearchResponse,
   SubjectAuthorization,
   Template,
+  UsageSummary,
 } from '../types';
 
 const API_BASE = '/api';
@@ -119,6 +123,59 @@ export const api = {
   /** Delete a chat and all its messages. */
   deleteChat: (chatId: string) =>
     request<void>(`/chats/${chatId}`, { method: 'DELETE' }),
+
+  // ── EHR Integrations ──────────────────────────────────────────────────────
+
+  /** List connection status for all supported EHR systems. */
+  getEhrConnections: () =>
+    request<EhrConnectionStatus[]>('/ehr/connections'),
+
+  /**
+   * Connect an EHR by supplying credentials.
+   * CentralReach: { apiToken, subdomain }
+   * Rethink:      { apiKey, accountId }
+   */
+  connectEhr: (type: string, credentials: Record<string, string>) =>
+    request<EhrConnectionStatus>(`/ehr/connections/${type}`, {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    }),
+
+  /** Remove an EHR integration and wipe stored credentials. */
+  disconnectEhr: (type: string) =>
+    request<{ message: string }>(`/ehr/connections/${type}`, { method: 'DELETE' }),
+
+  /** Search clients by name in the connected EHR. */
+  searchEhrClients: (type: string, query: string) =>
+    request<{ results: EhrClientRecord[]; count: number }>(
+      `/ehr/connections/${type}/clients?q=${encodeURIComponent(query)}`
+    ),
+
+  /**
+   * Link an EHR client to a myABA client and pull their record.
+   * Updates the myABA client document with EHR demographics.
+   */
+  syncEhrClient: (type: string, ehrClientId: string, myabaClientId: string) =>
+    request<{ record: EhrClientRecord; message: string }>(
+      `/ehr/connections/${type}/sync`,
+      { method: 'POST', body: JSON.stringify({ ehrClientId, myabaClientId }) }
+    ),
+
+  // ── Usage ─────────────────────────────────────────────────────────────────
+
+  /** Get the current-period AI usage summary for the caller's org. */
+  getUsage: () =>
+    request<UsageSummary>('/usage'),
+
+  /**
+   * Set (or clear) a custom monthly request cap for an enterprise org.
+   * Admin only. Pass null to remove the cap (revert to unlimited).
+   */
+  setUsageLimit: (limit: number | null) =>
+    request<{ limit: number | null; message: string }>('/usage/limit', {
+      method: 'PUT',
+      body: JSON.stringify({ limit }),
+    }),
 
   // ── AI chat (inference + optional persistence) ────────────────────────────
 
@@ -459,6 +516,44 @@ export const api = {
       body: formData,
     });
     return res.json();
+  },
+
+  // ── OfficePuzzle import ───────────────────────────────────────────────────
+
+  /**
+   * Upload an OfficePuzzle / BehaviorSoft client-roster export and import
+   * the clients into myABA. Accepts .xlsx, .xls, or .csv files.
+   * Caller must be an ORG_ADMIN.
+   */
+  importOfficePuzzle: async (file: File): Promise<OfficePuzzleImportResult> => {
+    const form = new FormData();
+    form.append('file', file);
+
+    // For multipart uploads we cannot use the JSON request() helper because
+    // it sets Content-Type: application/json. We must let the browser set
+    // the multipart boundary automatically.
+    let authHeaders: Record<string, string> = {};
+    if (!DEV_AUTH) {
+      const token = await auth.currentUser!.getIdToken();
+      authHeaders = { Authorization: `Bearer ${token}` };
+    }
+
+    const res = await fetch(`${API_BASE}/import/officepuzzle`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: form,
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(
+        body.error || `HTTP ${res.status}`,
+        body.code as string | undefined,
+        body as Record<string, unknown>,
+        res.status,
+      );
+    }
+    return res.json() as Promise<OfficePuzzleImportResult>;
   },
 
   // ── AI Generation ─────────────────────────────────────────────────────────

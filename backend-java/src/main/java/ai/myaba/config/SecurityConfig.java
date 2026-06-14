@@ -1,6 +1,7 @@
 package ai.myaba.config;
 
 import ai.myaba.security.FirebaseAuthFilter;
+import ai.myaba.security.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final FirebaseAuthFilter firebaseAuthFilter;
+    private final RateLimitFilter    rateLimitFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -30,7 +32,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/invite/**").authenticated()
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(firebaseAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            // 1. Authenticate via Firebase token
+            .addFilterBefore(firebaseAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            // 2. Rate-limit after auth so both IP and user identity are available
+            .addFilterAfter(rateLimitFilter, FirebaseAuthFilter.class);
 
         return http.build();
     }

@@ -439,6 +439,92 @@ export interface OrgAclxPolicy {
   updatedBy?: string;
 }
 
+// ── EHR Integration ───────────────────────────────────────────────────────────
+
+export type EhrType = 'centralreach' | 'rethink';
+
+export interface EhrConnectionStatus {
+  ehrType: EhrType;
+  displayName: string;
+  connected: boolean;
+  /** "connected" | "disconnected" | "error" | "pending" */
+  status: string;
+  errorMessage?: string;
+  connectedAt?: string;
+  lastSyncAt?: string;
+  /** CentralReach only */
+  subdomain?: string;
+}
+
+export interface EhrClientRecord {
+  ehrId: string;
+  ehrType: EhrType;
+  firstName: string;
+  lastName: string;
+  preferredName?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  diagnosisCodes?: string[];
+  diagnosisDescriptions?: string[];
+  primaryInsurance?: string;
+  memberId?: string;
+  syncedAt: string;
+}
+
+// ── Usage ─────────────────────────────────────────────────────────────────────
+
+/** Current-period AI request usage summary returned by GET /api/usage. */
+export interface UsageSummary {
+  /** Billing period, e.g. "2026-06". */
+  period: string;
+  /** Org plan: "solo" | "team" | "enterprise" | "dev". */
+  plan: string;
+  /** Plan-level monthly limit (-1 = unlimited). */
+  limit: number;
+  /** Effective limit actually enforced — may differ from `limit` when a custom cap is set. */
+  effectiveLimit: number;
+  /** True when there is no effective ceiling on this period's usage. */
+  unlimited: boolean;
+  /** Total AI requests this period. */
+  requestCount: number;
+  /** Requests made via /api/chat. */
+  chatCount: number;
+  /** Requests made via /api/generate-document. */
+  documentCount: number;
+  /** ISO-8601 timestamp of the last recorded request, if any. */
+  lastUpdated?: string;
+  /** Requests remaining before the limit (-1 if unlimited). */
+  remaining: number;
+  /**
+   * Custom spending cap set by an enterprise admin, if any.
+   * Only present when a cap has been set.
+   */
+  customLimit?: number;
+  /**
+   * Whether this org can set a custom spending cap.
+   * True for enterprise plans only.
+   */
+  canSetCustomLimit: boolean;
+}
+
+// ── OfficePuzzle Import ───────────────────────────────────────────────────────
+
+/** Result returned by POST /api/import/officepuzzle. */
+export interface OfficePuzzleImportResult {
+  /** Number of clients successfully created. */
+  imported: number;
+  /** Blank or unprocessable rows that were skipped. */
+  skipped: number;
+  /** Number of rows that failed due to errors. */
+  errorCount: number;
+  /** Human-readable error message per failed row. */
+  errors: string[];
+  /** Display names of every successfully created client. */
+  importedNames: string[];
+  /** Summary sentence, e.g. "12 clients imported, 1 error." */
+  message: string;
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 export type SearchHitType = 'client' | 'project' | 'resource' | 'template' | 'chat';

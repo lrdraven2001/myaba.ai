@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faLock, faEnvelope } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faLock, faEnvelope, faFlask } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 
 // Google "G" logo as a clean inline SVG — no extra package dependency
@@ -69,7 +69,7 @@ export default function LoginView() {
       }}>
 
         {/* ── Logo + wordmark ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
           <div style={{
             width: 72,
             height: 72,
@@ -98,6 +98,51 @@ export default function LoginView() {
           <div style={{ fontSize: 13, color: '#6B7B88', marginTop: 5 }}>
             AI-Powered ABA Clinical Documentation
           </div>
+
+          {/* Pathfinder early-access badge */}
+          <div style={{
+            marginTop: 14,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'linear-gradient(135deg, #EEF7EA, #E6F4FF)',
+            border: '1px solid #B9DEB0',
+            borderRadius: 20,
+            padding: '5px 12px',
+          }}>
+            <FontAwesomeIcon icon={faFlask} style={{ color: '#3F9B2F', fontSize: 11 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#2E6B20', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Pathfinder Early Access
+            </span>
+          </div>
+        </div>
+
+        {/* ── Early-access notice ── */}
+        <div style={{
+          background: '#F8FBFF',
+          border: '1px solid #CCDFF8',
+          borderRadius: 10,
+          padding: '11px 14px',
+          marginBottom: 20,
+          fontSize: 12.5,
+          color: '#3A5270',
+          lineHeight: 1.55,
+        }}>
+          myABA.ai is currently in a <strong>closed early-access program</strong> with a select group of
+          partner agencies. If your agency is a pathfinder partner, sign in below using the credentials
+          your administrator provided.
+          <br />
+          <span style={{ color: '#6B7B88', marginTop: 4, display: 'block' }}>
+            Interested in joining? &nbsp;
+            <a
+              href="mailto:hello@myaba.ai?subject=Pathfinder%20Interest"
+              style={{ color: '#1E88FF', textDecoration: 'none', fontWeight: 600 }}
+              onMouseEnter={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'underline')}
+              onMouseLeave={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'none')}
+            >
+              Contact us to get on the waitlist.
+            </a>
+          </span>
         </div>
 
         {/* ── Google button ── */}
@@ -278,8 +323,10 @@ export default function LoginView() {
         </form>
 
         {/* ── Footer ── */}
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#A8B4BF', marginTop: 24, lineHeight: 1.5 }}>
+        <p style={{ textAlign: 'center', fontSize: 11, color: '#A8B4BF', marginTop: 24, lineHeight: 1.6 }}>
           HIPAA-compliant platform &nbsp;·&nbsp; All data encrypted in transit
+          <br />
+          Pathfinder Beta &nbsp;·&nbsp; Access by invitation only
         </p>
       </div>
     </div>

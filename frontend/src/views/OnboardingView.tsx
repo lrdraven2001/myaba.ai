@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBrain, faBuilding, faCopy, faCheck, faArrowRight, faFileContract, faShieldAlt } from '@fortawesome/free-solid-svg-icons';
+import { faBrain, faBuilding, faCopy, faCheck, faArrowRight, faFileContract, faShieldAlt, faFlask, faEnvelope, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { BAA_TEXT } from '../lib/baaText';
 import type { OrgPlan, UserRole } from '../types';
 
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
+
+/**
+ * Set to true during the pathfinder early-access period.
+ * Flip to false when self-service sign-up is open to the public.
+ */
+const CLOSED_BETA = true;
 
 
 const PLANS: { value: OrgPlan; label: string; description: string }[] = [
@@ -116,6 +122,127 @@ export default function OnboardingView({ onComplete }: Props) {
   const handleFinish = () => {
     onComplete(orgId);
   };
+
+  // ── Closed-beta gate ──────────────────────────────────────────────────────
+  // During the pathfinder period, self-service org creation is disabled.
+  // Anyone who signs in without a pre-provisioned org sees this screen.
+
+  if (CLOSED_BETA) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #F0F7FA 0%, #E8F4FF 100%)',
+          padding: 24,
+        }}
+      >
+        <div style={{
+          width: '100%',
+          maxWidth: 480,
+          background: 'white',
+          borderRadius: 24,
+          boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
+          padding: '48px 40px 36px',
+          border: '1px solid #E4EEF3',
+          textAlign: 'center',
+        }}>
+          {/* Logo */}
+          <div style={{
+            width: 72, height: 72, borderRadius: 18,
+            background: 'white', boxShadow: '0 4px 14px rgba(0,0,0,0.10)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px', overflow: 'hidden',
+          }}>
+            <img
+              src="/app-icon.png"
+              alt="myABA.ai"
+              style={{ width: 58, height: 58, objectFit: 'contain' }}
+              onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.svg'; }}
+            />
+          </div>
+
+          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 6 }}>
+            <span style={{ color: '#1E3347' }}>my</span>
+            <span style={{ color: '#1E88FF' }}>ABA</span>
+            <span style={{ color: '#3F9B2F' }}>.ai</span>
+          </div>
+
+          {/* Badge */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'linear-gradient(135deg, #EEF7EA, #E6F4FF)',
+            border: '1px solid #B9DEB0', borderRadius: 20,
+            padding: '5px 14px', marginBottom: 28,
+          }}>
+            <FontAwesomeIcon icon={faFlask} style={{ color: '#3F9B2F', fontSize: 11 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#2E6B20', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Pathfinder Early Access
+            </span>
+          </div>
+
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1E3347', marginBottom: 12 }}>
+            We're not quite open yet
+          </h2>
+
+          <p style={{ fontSize: 14, color: '#4A5568', lineHeight: 1.65, marginBottom: 10 }}>
+            myABA.ai is currently running a <strong>closed early-access program</strong> with a
+            select group of pathfinder agencies — the real-world partners helping us shape the
+            platform before we open more broadly.
+          </p>
+
+          <p style={{ fontSize: 14, color: '#4A5568', lineHeight: 1.65, marginBottom: 28 }}>
+            If you're part of a pathfinder agency, your administrator should have sent you an
+            invitation link. If you believe this is a mistake, reach out to your org admin or
+            contact us directly.
+          </p>
+
+          {/* CTA buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <a
+              href="mailto:hello@myaba.ai?subject=Pathfinder%20Waitlist%20Interest"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '12px 0',
+                background: 'linear-gradient(135deg, #1E88FF, #1565C0)',
+                borderRadius: 10, color: 'white',
+                fontSize: 14, fontWeight: 700, textDecoration: 'none',
+                boxShadow: '0 2px 8px rgba(30,136,255,0.30)',
+              }}
+            >
+              <FontAwesomeIcon icon={faEnvelope} style={{ fontSize: 13 }} />
+              Join the Waitlist
+            </a>
+
+            <button
+              onClick={() => auth.signOut()}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '11px 0',
+                background: 'transparent', border: '1.5px solid #DCE7EE',
+                borderRadius: 10, color: '#6B7B88',
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#F4F7F9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <FontAwesomeIcon icon={faSignOutAlt} style={{ fontSize: 13 }} />
+              Sign Out
+            </button>
+          </div>
+
+          <p style={{ fontSize: 11, color: '#A8B4BF', marginTop: 24, lineHeight: 1.6 }}>
+            HIPAA-compliant platform &nbsp;·&nbsp; All data encrypted in transit
+            <br />
+            &copy; {new Date().getFullYear()} myABA.ai &nbsp;·&nbsp; All rights reserved
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -246,7 +373,7 @@ export default function OnboardingView({ onComplete }: Props) {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Business Associate Agreement</h2>
-                <p className="text-sm text-gray-500">Required under HIPAA before your org may process PHI.</p>
+                <p className="text-sm text-gray-500">Required under HIPAA before your organization may process PHI.</p>
               </div>
             </div>
 

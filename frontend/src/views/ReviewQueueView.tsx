@@ -561,7 +561,7 @@ function AuditLogTab({ items }: { items: ReviewQueueItem[] }) {
         <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
         <p className="text-xs leading-relaxed">
           These items were flagged by ACLX but delivered to users without blocking — because
-          <strong> Human Review Required</strong> is currently <strong>off</strong> for this org.
+          <strong> Human Review Required</strong> is currently <strong>off</strong> for this organization.
           ACLX labeling ran on every response. Review these entries to validate that your HIPAA
           authorizations cover the content being generated, and adjust Org Policy rules as needed.
         </p>

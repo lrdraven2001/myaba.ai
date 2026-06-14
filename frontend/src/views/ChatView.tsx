@@ -472,6 +472,18 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
           ...prev,
           [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
         }));
+      } else if (err instanceof ApiError && err.code === 'USAGE_LIMIT_EXCEEDED') {
+        // ── Monthly request limit reached ──────────────────────────────────
+        const errMsg: ChatMessage = {
+          id:        (Date.now() + 1).toString(),
+          role:      'assistant',
+          content:   'Your organization has reached its monthly AI request limit. Clinical AI features are unavailable until the next billing period.\n\nContact **support@myaba.ai** to upgrade your plan or adjust your spending cap.',
+          timestamp: new Date().toISOString(),
+        };
+        setMessagesByChat((prev) => ({
+          ...prev,
+          [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
+        }));
       } else {
         // ── Generic backend / network error ────────────────────────────────
         const errMsg: ChatMessage = {

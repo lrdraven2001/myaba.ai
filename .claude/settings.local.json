@@ -57,7 +57,13 @@
       "Bash(New-Item -ItemType Directory -Force \"D:\\\\myaba.ai\\\\myaba.ai\\\\backend-java\\\\src\\\\main\\\\java\\\\ai\\\\myaba\\\\service\\\\guard\")",
       "Bash(Out-Null)",
       "Bash(Write-Output \"created\")",
-      "Bash(xargs grep -l \"Security\\\\|security\")"
+      "Bash(xargs grep -l \"Security\\\\|security\")",
+      "WebFetch(domain:help.officepuzzle.com)",
+      "Bash(grep -v \"//.*\\\\bOrg\\\\b\\\\|//.*\\\\borg\\\\b\")",
+      "Bash(Get-ChildItem -Path \"D:\\\\myaba.ai\\\\myaba.ai\" -Directory)",
+      "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\docs\")",
+      "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\compliance\")",
+      "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\security\")"
     ]
   }
 }

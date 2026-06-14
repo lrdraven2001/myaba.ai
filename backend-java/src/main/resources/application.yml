@@ -6,6 +6,12 @@ spring:
     name: myaba-api
   jackson:
     default-property-inclusion: non_null
+  # Allow Excel/CSV uploads up to 25 MB (OfficePuzzle exports are typically <2 MB)
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 25MB
+      max-request-size: 26MB
 
 # ── Anthropic ──────────────────────────────────────────────────────────────
 anthropic:
@@ -60,6 +66,53 @@ firebase:
 # ── CORS ──────────────────────────────────────────────────────────────────
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+# ── Usage limits ──────────────────────────────────────────────────────────
+# Monthly AI request limits by plan. -1 means unlimited.
+# Override per environment via USAGE_LIMIT_SOLO / TEAM / ENTERPRISE env vars.
+usage:
+  limits:
+    solo:       ${USAGE_LIMIT_SOLO:200}
+    team:       ${USAGE_LIMIT_TEAM:2000}
+    enterprise: ${USAGE_LIMIT_ENTERPRISE:-1}
+
+# ── EHR Integrations ──────────────────────────────────────────────────────
+# AES-256 key for encrypting EHR credentials at rest in Firestore.
+# Generate with: openssl rand -base64 32
+# Set EHR_CREDENTIAL_KEY in production — never commit a real key.
+ehr:
+  credential-key: ${EHR_CREDENTIAL_KEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+  centralreach:
+    base-url: ${EHR_CENTRALREACH_BASE_URL:https://{subdomain}.centralreach.com/api/v2}
+  rethink:
+    base-url: ${EHR_RETHINK_BASE_URL:https://api.rethinkfirst.com/v1}
+
+# ── DLP (Data Loss Prevention) ────────────────────────────────────────────
+# Controls which non-clinical identifier patterns are blocked before input
+# reaches the AI.  Clinical PHI (names, DOBs, diagnoses) is allowed through
+# so responses remain coherent.  Each toggle can be set via env var.
+dlp:
+  enabled:          ${DLP_ENABLED:true}
+  ssn:              ${DLP_BLOCK_SSN:true}
+  payment-cards:    ${DLP_BLOCK_PAYMENT_CARDS:true}
+  drivers-license:  ${DLP_BLOCK_DRIVERS_LICENSE:true}
+
+# ── Rate limiting ─────────────────────────────────────────────────────────
+# Token-bucket rate limiting applied after Firebase authentication.
+# Requests over the per-minute limits receive HTTP 429 with Retry-After: 60.
+# Set RATE_LIMIT_ENABLED=false to disable entirely (e.g. performance testing).
+rate-limit:
+  enabled:                   ${RATE_LIMIT_ENABLED:true}
+  ip.requests-per-minute:    ${RATE_LIMIT_IP_RPM:300}
+  user.requests-per-minute:  ${RATE_LIMIT_USER_RPM:60}
+
+# ── Data retention ────────────────────────────────────────────────────────
+# Audit log records older than retention.audit-log-days are purged nightly
+# at 02:15 UTC by DataRetentionService.
+# Default: 2555 days (7 years) — exceeds HIPAA's 6-year minimum and aligns
+# with the proposed 2025 HIPAA Security Rule documentation requirements.
+retention:
+  audit-log-days: ${RETENTION_AUDIT_LOG_DAYS:2555}
 
 # ── Dev mode ──────────────────────────────────────────────────────────────
 # Set DEV_AUTH=true to skip Firebase token verification and use a stub user.
