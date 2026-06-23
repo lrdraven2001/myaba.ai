@@ -29,6 +29,13 @@ public class AclxService {
     private final ClientService clientService;
     private final String gatewayUrl;
     private final boolean enabled;
+    /**
+     * ACLX enforcement domain.  Governs which Rego policy bundle is applied.
+     * Supported values: {@code hipaa} (default), {@code cui}, {@code ip},
+     * {@code enterprise}, {@code mixed}.
+     * Override via {@code ACLX_DOMAIN} env var or {@code aclx.domain} in YAML.
+     */
+    private final String domain;
 
     public AclxService(
             ObjectMapper mapper,
@@ -36,18 +43,26 @@ public class AclxService {
             SubjectAuthorizationService subjectAuthService,
             ClientService clientService,
             @Value("${aclx.gateway-url:http://localhost:8080}") String gatewayUrl,
-            @Value("${aclx.enabled:true}") boolean enabled) {
+            @Value("${aclx.enabled:true}") boolean enabled,
+            @Value("${aclx.domain:hipaa}") String domain) {
         this.mapper             = mapper;
         this.orgPolicyService   = orgPolicyService;
         this.subjectAuthService = subjectAuthService;
         this.clientService      = clientService;
         this.gatewayUrl         = gatewayUrl;
         this.enabled            = enabled;
+        this.domain             = domain;
     }
 
-    /** Single-client evaluation (document generation, single-client chats). */
+    /** Backward-compatible overload — no grounding sources, ACLX groundedness check skipped. */
     public AclxResponse evaluate(String aiResponse, AppUser user, String clientId) {
-        return evaluate(aiResponse, user, clientId, null);
+        return evaluate(aiResponse, user, clientId, null, List.of());
+    }
+
+    /** Evaluate with grounding sources for hallucination detection. */
+    public AclxResponse evaluate(String aiResponse, AppUser user, String clientId,
+                                 List<ai.myaba.model.dto.AclxRequest.Source> groundingSources) {
+        return evaluate(aiResponse, user, clientId, null, groundingSources);
     }
 
     /**
@@ -58,7 +73,9 @@ public class AclxService {
      * loaded from {@link OrgAclxPolicyService} and included in every request so
      * ACLX can factor learned decisions into evaluation without a separate DB call.
      */
-    public AclxResponse evaluate(String aiResponse, AppUser user, String clientId, List<String> clientIds) {
+    public AclxResponse evaluate(String aiResponse, AppUser user, String clientId,
+                                 List<String> clientIds,
+                                 List<ai.myaba.model.dto.AclxRequest.Source> groundingSources) {
         if (!enabled) {
             log.debug("ACLX disabled - pass-through ALLOW");
             return buildPassThrough(aiResponse);
@@ -78,7 +95,7 @@ public class AclxService {
                 buildAuthorizedSubjects(user.getOrgId(), allClientIds);
 
         AclxRequest request = AclxRequest.builder()
-                .domain("hipaa")
+                .domain(domain)
                 .identity(AclxRequest.Identity.builder()
                         .subject(user.getUid())
                         .actorType("human")
@@ -90,7 +107,7 @@ public class AclxService {
                         .build())
                 .aiResponse(AclxRequest.AiResponse.builder()
                         .text(aiResponse)
-                        .sources(List.of())
+                        .sources(groundingSources != null ? groundingSources : List.of())
                         .build())
                 .requestContext(AclxRequest.RequestContext.builder()
                         .timestamp(Instant.now().toString())
@@ -129,6 +146,12 @@ public class AclxService {
             log.error("ACLX Gateway unreachable: {}", e.getMessage());
             return buildBlocked("ACLX Gateway unavailable - response blocked for safety");
         }
+    }
+
+    /** Multi-client evaluation without grounding sources - backward compatible. */
+    public AclxResponse evaluateMultiClient(String aiResponse, AppUser user,
+                                            String clientId, List<String> clientIds) {
+        return evaluate(aiResponse, user, clientId, clientIds, List.of());
     }
 
     /**
@@ -313,7 +336,7 @@ public class AclxService {
         d.setPolicyVersion("dev-bypass"); // prevents the null-policyVersion fail-safe from blocking
         r.setDecision(d);
         AclxResponse.AclxLabel label = new AclxResponse.AclxLabel();
-        label.setDomain("HIPAA");
+        label.setDomain(domain.toUpperCase());
         label.setCategory("PHI");
         label.setSubcategory("NONE");
         label.setSensitivity("LOW");

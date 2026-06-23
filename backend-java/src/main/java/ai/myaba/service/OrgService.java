@@ -91,10 +91,10 @@ public class OrgService {
 
         // Seed dev members — only the 4 roles that exist in ROLES_CONFIG
         List<Map<String, Object>> members = new ArrayList<>();
-        members.add(devMember("dev-user-001", "Chris Hunt",    "chris@myaba.dev",  UserRole.ORG_SUPER_ADMIN,  "oversight",  true,  null));
-        members.add(devMember("dev-user-002", "Sarah Johnson", "sarah@myaba.dev",  UserRole.SUPERVISING_BCBA, "treatment",  true,  null));
-        members.add(devMember("dev-user-003", "Mike Torres",   "mike@myaba.dev",   UserRole.RBT,              "treatment",  true,  "dev-user-002"));
-        members.add(devMember("dev-user-004", "Lisa Chen",     "lisa@myaba.dev",   UserRole.SUPERVISING_BCBA, "treatment",  false, null));
+        members.add(devMember("dev-user-001", "Chris Hunt",    "chris@myaba.ai",  UserRole.ORG_SUPER_ADMIN,  "oversight",  true,  null));
+        members.add(devMember("dev-user-002", "Sarah Johnson", "sarah@myaba.ai",  UserRole.SUPERVISING_BCBA, "treatment",  true,  null));
+        members.add(devMember("dev-user-003", "Mike Torres",   "mike@myaba.ai",   UserRole.RBT,              "treatment",  true,  "dev-user-002"));
+        members.add(devMember("dev-user-004", "Lisa Chen",     "lisa@myaba.ai",   UserRole.SUPERVISING_BCBA, "treatment",  false, null));
         devOrgMembers.put("dev-org-001", members);
 
         log.info("Dev mode: seeded org dev-org-001 with {} members", members.size());
@@ -359,7 +359,7 @@ public class OrgService {
         baaRecord.put("acceptedBy",  uid);
         baaRecord.put("signerName",  signerName);
         baaRecord.put("signerTitle", signerTitle);
-        baaRecord.put("version",     "1.0");
+        baaRecord.put("version",     "1.1");
 
         if (devMode) {
             Map<String, Object> org = devOrgs.get(orgId);
@@ -374,7 +374,7 @@ public class OrgService {
                   "updatedAt",     now
               )).get();
         }
-        log.info("BAA v1.0 accepted for org {} by {} (uid={})", orgId, signerName, uid);
+        log.info("BAA v1.1 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return baaRecord;
     }
 

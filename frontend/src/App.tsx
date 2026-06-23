@@ -6,7 +6,7 @@ import ProfileModal from './components/ProfileModal';
 import Sidebar from './components/Sidebar';
 import ChatView from './views/ChatView';
 import SearchView from './views/SearchView';
-import DocumentsView from './views/DocumentsView';
+import ResourcesView from './views/ResourcesView';
 import ClientsView from './views/ClientsView';
 import ProjectsView from './views/ProjectsView';
 import SettingsView from './views/SettingsView';
@@ -190,7 +190,7 @@ function AppShell() {
             />
           )}
           {activeView === 'search'    && <SearchView onNavigate={handleNavigateFromSearch} />}
-          {activeView === 'documents' && <DocumentsView />}
+          {activeView === 'documents' && <ResourcesView />}
           {activeView === 'clients'   && (
             <ClientsView onStartChat={(clientId) => {
               setPendingChatId(null);

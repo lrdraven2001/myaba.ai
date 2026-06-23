@@ -12,7 +12,7 @@ interface AdminUser {
 
 const DEV_USER: AdminUser = {
   uid:         'dev-user-001',
-  email:       'chris@myaba.dev',
+  email:       'chris@myaba.ai',
   displayName: 'Chris Hunt',
   role:        'ORG_SUPER_ADMIN',
 };

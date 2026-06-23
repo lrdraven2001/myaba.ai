@@ -60,36 +60,68 @@ public class PolicyService {
         if (!devMode) return;
 
         put("pol-001", Map.ofEntries(
-            Map.entry("title",       "HIPAA Privacy Policy"),
-            Map.entry("category",    "hipaa"),
-            Map.entry("textContent", "This policy establishes the privacy practices for protected health information (PHI) in accordance with the Health Insurance Portability and Accountability Act (HIPAA).\n\n1. Minimum Necessary Standard\nAll staff must access only the PHI necessary to perform their job functions.\n\n2. Safeguards\nAll PHI must be protected through administrative, physical, and technical safeguards.\n\n3. Breach Notification\nAny potential breach of PHI must be reported immediately to the Privacy Officer."),
-            Map.entry("isActive",    true),
-            Map.entry("orgId",       "dev-org-001"),
-            Map.entry("createdBy",   "dev-user-001"),
-            Map.entry("createdAt",   "2026-01-01T00:00:00Z"),
-            Map.entry("updatedAt",   "2026-01-01T00:00:00Z")
+            Map.entry("title",        "HIPAA Privacy Policy"),
+            Map.entry("category",     "hipaa"),
+            Map.entry("textContent",  "This policy establishes the privacy practices for protected health information (PHI) in accordance with the Health Insurance Portability and Accountability Act (HIPAA).\n\n1. Minimum Necessary Standard\nAll staff must access only the PHI necessary to perform their job functions.\n\n2. Safeguards\nAll PHI must be protected through administrative, physical, and technical safeguards.\n\n3. Breach Notification\nAny potential breach of PHI must be reported immediately to the Privacy Officer."),
+            Map.entry("isActive",     true),
+            Map.entry("purposes",     List.of()),
+            Map.entry("resourceType", "POLICY"),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("createdBy",    "dev-user-001"),
+            Map.entry("createdAt",    "2026-01-01T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-01-01T00:00:00Z")
         ));
 
         put("pol-002", Map.ofEntries(
-            Map.entry("title",       "Clinical Documentation SOP"),
-            Map.entry("category",    "clinical_sop"),
-            Map.entry("textContent", "Standard Operating Procedure for Clinical Documentation\n\n1. Session Notes\nAll session notes must be completed within 24 hours of service delivery.\n\n2. Required Elements\nEach note must include: date, start/end times, service code, client initials, present behaviors, interventions used, and progress toward goals.\n\n3. Supervisor Review\nRBT notes require BCBA review and co-signature within 7 days."),
-            Map.entry("isActive",    true),
-            Map.entry("orgId",       "dev-org-001"),
-            Map.entry("createdBy",   "dev-user-001"),
-            Map.entry("createdAt",   "2026-01-15T00:00:00Z"),
-            Map.entry("updatedAt",   "2026-01-15T00:00:00Z")
+            Map.entry("title",        "Clinical Documentation SOP"),
+            Map.entry("category",     "clinical_sop"),
+            Map.entry("textContent",  "Standard Operating Procedure for Clinical Documentation\n\n1. Session Notes\nAll session notes must be completed within 24 hours of service delivery.\n\n2. Required Elements\nEach note must include: date, start/end times, service code, client initials, present behaviors, interventions used, and progress toward goals.\n\n3. Supervisor Review\nRBT notes require BCBA review and co-signature within 7 days."),
+            Map.entry("isActive",     true),
+            Map.entry("purposes",     List.of()),
+            Map.entry("resourceType", "POLICY"),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("createdBy",    "dev-user-001"),
+            Map.entry("createdAt",    "2026-01-15T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-01-15T00:00:00Z")
         ));
 
         put("pol-003", Map.ofEntries(
-            Map.entry("title",       "Employee Handbook"),
-            Map.entry("category",    "handbook"),
-            Map.entry("textContent", "Welcome to our organization. This handbook outlines our policies, procedures, and expectations for all employees.\n\n1. Code of Conduct\nAll staff are expected to maintain professional behavior at all times.\n\n2. Confidentiality\nAll client information is strictly confidential.\n\n3. Professional Development\nAll BCBAs must maintain CEU requirements for BACB certification."),
-            Map.entry("isActive",    true),
-            Map.entry("orgId",       "dev-org-001"),
-            Map.entry("createdBy",   "dev-user-001"),
-            Map.entry("createdAt",   "2026-02-01T00:00:00Z"),
-            Map.entry("updatedAt",   "2026-02-01T00:00:00Z")
+            Map.entry("title",        "Employee Handbook"),
+            Map.entry("category",     "handbook"),
+            Map.entry("textContent",  "Welcome to our organization. This handbook outlines our policies, procedures, and expectations for all employees.\n\n1. Code of Conduct\nAll staff are expected to maintain professional behavior at all times.\n\n2. Confidentiality\nAll client information is strictly confidential.\n\n3. Professional Development\nAll BCBAs must maintain CEU requirements for BACB certification."),
+            Map.entry("isActive",     true),
+            Map.entry("purposes",     List.of()),
+            Map.entry("resourceType", "POLICY"),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("createdBy",    "dev-user-001"),
+            Map.entry("createdAt",    "2026-02-01T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-02-01T00:00:00Z")
+        ));
+
+        put("pol-004", Map.ofEntries(
+            Map.entry("title",        "ABA Documentation Standards"),
+            Map.entry("category",     "clinical_sop"),
+            Map.entry("textContent",  "ABA Documentation Standards\n\nThis document defines the required format and content for all ABA therapy documentation within this organization.\n\n1. Session Note Format\nAll session notes must follow the ABC (Antecedent-Behavior-Consequence) framework. Notes must include:\n- Client identifier and date of service\n- Service code and duration\n- Environmental conditions and session context\n- Antecedent conditions for targeted behaviors\n- Specific behaviors observed with frequency/duration/intensity\n- Consequences applied and clinician responses\n- Skill acquisition trial data (correct/incorrect/prompted)\n- Progress toward individualized goals\n\n2. Behavioral Data Recording\nData must be recorded using the approved method for each target (frequency, duration, partial-interval, whole-interval, momentary time sampling, or trial-by-trial).\n\n3. Required Signatures\nRBT notes require supervising BCBA co-signature within 7 days. BCBA notes must be signed same day.\n\n4. Session Structure\nSession documentation must reflect the planned session structure: warm-up, skill acquisition blocks, maintenance probes, behavior reduction procedures, and caregiver training if applicable."),
+            Map.entry("isActive",     true),
+            Map.entry("purposes",     List.of("GENERATION", "GROUNDING", "CLASSIFICATION")),
+            Map.entry("resourceType", "STANDARD"),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("createdBy",    "dev-user-001"),
+            Map.entry("createdAt",    "2026-03-01T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-03-01T00:00:00Z")
+        ));
+
+        put("pol-005", Map.ofEntries(
+            Map.entry("title",        "Session Note Template"),
+            Map.entry("category",     "clinical_sop"),
+            Map.entry("textContent",  "Session Note Template\n\nDate: [DATE] | Client: [CLIENT_INITIALS] | Clinician: [CLINICIAN_NAME] | Service Code: [CODE]\nSession Time: [START] - [END] | Location: [LOCATION]\n\nAntecedent:\n[Describe the environmental conditions, instructions given, and events preceding the targeted behaviors]\n\nBehavior:\n[Describe the specific behaviors observed. Include frequency counts, duration, or interval data as specified in the behavior plan]\n\nConsequence:\n[Describe the consequences delivered and clinician responses to behaviors]\n\nSkill Acquisition Data:\nTarget: [SKILL_TARGET_1] | Trials: [X] correct / [Y] total | Prompt level: [LEVEL]\nTarget: [SKILL_TARGET_2] | Trials: [X] correct / [Y] total | Prompt level: [LEVEL]\n\nBehavior Reduction:\nTarget: [BEHAVIOR_1] | Occurrences: [N] | Procedure: [PROCEDURE_NAME]\n\nProgress Notes:\n[Brief narrative of overall session progress, motivation levels, and clinician observations]\n\nCaregiver Training:\n[If applicable, describe training provided and caregiver demonstration]"),
+            Map.entry("isActive",     true),
+            Map.entry("purposes",     List.of("GENERATION")),
+            Map.entry("resourceType", "TEMPLATE"),
+            Map.entry("orgId",        "dev-org-001"),
+            Map.entry("createdBy",    "dev-user-001"),
+            Map.entry("createdAt",    "2026-03-15T00:00:00Z"),
+            Map.entry("updatedAt",    "2026-03-15T00:00:00Z")
         ));
 
         log.info("Dev mode: seeded {} policies", devPolicies.size());
@@ -152,6 +184,46 @@ public class PolicyService {
         return result;
     }
 
+    /**
+     * Get all active resources for an org that carry the given purpose tag.
+     * Used by PolicyRagService to build ACLX grounding sources and by the
+     * Resources Tab UI to display the library.
+     *
+     * @param orgId    organisation whose library to search
+     * @param purpose  GENERATION | GROUNDING | CLASSIFICATION, or null for all resources
+     * @param clientId if non-null, includes both client-scoped and org-wide resources
+     * @return active resources whose purposes array contains the given purpose
+     */
+    public List<Map<String, Object>> getResourcesByPurpose(String orgId, String purpose, String clientId) throws Exception {
+        if (devMode) {
+            return devPolicies.values().stream()
+                .filter(p -> Boolean.TRUE.equals(p.get("isActive")))
+                .filter(p -> {
+                    if (purpose == null) return true;
+                    Object raw = p.get("purposes");
+                    if (!(raw instanceof List)) return false;
+                    return ((List<?>) raw).contains(purpose);
+                })
+                .filter(p -> {
+                    if (clientId == null || clientId.isBlank()) return true;
+                    Object cid = p.get("clientId");
+                    return cid == null || clientId.equals(cid);
+                })
+                .collect(Collectors.toList());
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var base = db.collection("organizations").document(orgId).collection("policies")
+                .whereEqualTo("isActive", true);
+        var query = (purpose != null)
+                ? base.whereArrayContains("purposes", purpose)
+                : base;
+        List<Map<String, Object>> all = toList(query.get().get().getDocuments());
+        if (clientId == null || clientId.isBlank()) return all;
+        return all.stream()
+            .filter(p -> p.get("clientId") == null || clientId.equals(p.get("clientId")))
+            .collect(Collectors.toList());
+    }
+
     /** Fetch a single policy by ID. All org members can read active policies. */
     public Map<String, Object> getPolicy(AppUser user, String policyId) throws Exception {
         Map<String, Object> policy = fetchPolicy(user.getOrgId(), policyId);
@@ -170,6 +242,9 @@ public class PolicyService {
         data.put("category",    req.getCategory());
         data.put("textContent", req.getTextContent() != null ? req.getTextContent() : "");
         data.put("isActive",    req.getIsActive() != null ? req.getIsActive() : true);
+        data.put("purposes",      req.getPurposes() != null ? req.getPurposes() : List.of());
+        data.put("resourceType",  req.getResourceType() != null ? req.getResourceType() : "POLICY");
+        if (req.getClientId() != null) data.put("clientId", req.getClientId());
         data.put("orgId",       user.getOrgId());
         data.put("createdBy",   user.getUid());
         data.put("createdAt",   now);
@@ -200,6 +275,9 @@ public class PolicyService {
         if (req.getCategory() != null)    updates.put("category", req.getCategory());
         if (req.getTextContent() != null) updates.put("textContent", req.getTextContent());
         if (req.getIsActive() != null)    updates.put("isActive", req.getIsActive());
+        if (req.getPurposes() != null)     updates.put("purposes", req.getPurposes());
+        if (req.getResourceType() != null) updates.put("resourceType", req.getResourceType());
+        if (req.getClientId() != null)     updates.put("clientId", req.getClientId());
         updates.put("updatedAt", Instant.now().toString());
 
         if (devMode) {

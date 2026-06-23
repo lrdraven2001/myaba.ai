@@ -92,6 +92,10 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
+                            <!-- Explicit version required in annotationProcessorPaths —
+                                 Spring Boot's BOM manages this in <dependencies> but the
+                                 processor path resolution in BuildKit doesn't inherit it. -->
+                            <version>1.18.34</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

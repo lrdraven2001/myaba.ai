@@ -31,6 +31,7 @@ public class SearchService {
     private final ClientService   clientService;
     private final ProjectService  projectService;
     private final PolicyService   policyService;
+    private final PolicyRagService policyRagService;
     private final TemplateService templateService;
     private final ChatService     chatService;
     private final ClaudeService       claudeService;
@@ -153,14 +154,19 @@ public class SearchService {
             }
 
             // Pass the raw AI output through ACLX before surfacing it
-            AclxResponse aclx = aclxService.evaluate(
-                    rawSummary, user, primaryClientId,
-                    clientIdsInHits.size() > 1 ? clientIdsInHits : null);
+            List<ai.myaba.model.dto.AclxRequest.Source> searchGroundingSources =
+                    policyRagService.buildGroundingSources(
+                            query, user.getOrgId(), primaryClientId, policyService);
+            AclxResponse aclx = aclxService.evaluate(rawSummary, user, primaryClientId,
+                    clientIdsInHits.size() > 1 ? clientIdsInHits : null,
+                    searchGroundingSources);
 
             summaryDecision = aclx.getDecision().getDecision();
 
-            auditService.log("SEARCH_SUMMARY", user.getUid(), primaryClientId,
-                    null, aclx.getContentId(), summaryDecision, aclx.getAclx());
+            // Use enriched audit log — stores synthesis flag, detector findings,
+            // content label, decision ID, and authorization detail.
+            auditService.logAclx("SEARCH_SUMMARY", user.getUid(), primaryClientId,
+                    null, aclx, null, null);
 
             if ("ESCALATE".equals(summaryDecision)) {
                 // Extract authorization deny reason for reviewer context (null when no auth check)
@@ -183,7 +189,8 @@ public class SearchService {
                         aclx.getAclx() != null ? aclx.getAclx().getSensitivity() : null,
                         aclx.getAclx() != null ? aclx.getAclx().getCategory()    : null,
                         searchAuthDenyReason,
-                        true /* search summary escalations always block */);
+                        true /* search summary escalations always block */,
+                        aclx);
             }
 
             summary = switch (summaryDecision) {

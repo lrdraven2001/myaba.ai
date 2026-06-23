@@ -57,7 +57,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
 
     private static final AppUser DEV_USER = AppUser.builder()
             .uid("dev-user-001")
-            .email("admin@myaba.dev")
+            .email("admin@myaba.ai")
             .displayName("Chris Hunt")
             .role(UserRole.ORG_SUPER_ADMIN)
             .purpose("treatment")

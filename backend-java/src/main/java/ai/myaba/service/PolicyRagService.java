@@ -36,6 +36,7 @@ public class PolicyRagService {
     private static final int CHUNK_SIZE          = 600;  // chars per chunk (approx 150 tokens)
     private static final int CHUNK_OVERLAP        = 100;  // overlap between adjacent chunks
     private static final int MAX_CHUNKS_RETURNED  = 5;
+    private static final int MAX_GROUNDING_SOURCES = 8;
 
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -146,6 +147,66 @@ public class PolicyRagService {
         } catch (Exception e) {
             log.warn("Failed to build policy system context: {}", e.getMessage());
             return "";
+        }
+    }
+
+    /**
+     * Build a list of grounding sources from the org's GROUNDING-tagged resource library.
+     * These sources are passed to ACLX's /evaluate endpoint so the groundedness
+     * detector can compare AI output against the org's actual documents.
+     *
+     * Returns the top-N most query-relevant chunks from all active GROUNDING resources.
+     * When no GROUNDING resources exist, returns an empty list so ACLX skips groundedness checking.
+     *
+     * @param query         the AI prompt or output used for relevance ranking
+     * @param orgId         organisation whose library to search
+     * @param clientId      optional client ID for client-scoped resources
+     * @param policyService injected to fetch documents (avoids circular dependency)
+     * @return up to MAX_GROUNDING_SOURCES ranked source chunks
+     */
+    public List<ai.myaba.model.dto.AclxRequest.Source> buildGroundingSources(
+            String query,
+            String orgId,
+            String clientId,
+            PolicyService policyService) {
+
+        try {
+            List<Map<String, Object>> groundingDocs =
+                    policyService.getResourcesByPurpose(orgId, "GROUNDING", clientId);
+            if (groundingDocs.isEmpty()) return List.of();
+
+            String effectiveQuery = (query != null ? query : "");
+            Set<String> queryTerms = extractKeywords(effectiveQuery.toLowerCase());
+
+            List<ScoredChunk> candidates = new ArrayList<>();
+            for (Map<String, Object> doc : groundingDocs) {
+                String pid   = (String) doc.get("id");
+                String title = (String) doc.getOrDefault("title", "Resource");
+                String text  = (String) doc.getOrDefault("textContent", "");
+                if (text == null || text.isBlank()) continue;
+                ensureIndexed(orgId, pid, title, text);
+                for (PolicyChunk chunk : getChunks(orgId, pid)) {
+                    double score = scoreChunks(queryTerms, chunk.keywords());
+                    candidates.add(new ScoredChunk(chunk, score));
+                }
+            }
+
+            candidates.sort(Comparator.comparingDouble(ScoredChunk::score).reversed());
+
+            return candidates.stream()
+                    .limit(MAX_GROUNDING_SOURCES)
+                    .map(sc -> ai.myaba.model.dto.AclxRequest.Source.builder()
+                            .id(orgId + "/" + sc.chunk().policyId() + "/" + sc.chunk().index())
+                            .label(sc.chunk().policyTitle() + " (chunk " + (sc.chunk().index() + 1) + ")")
+                            .distribution("INTERNAL")
+                            .owner(orgId)
+                            .build())
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.warn("buildGroundingSources failed for org {} (non-fatal, grounding skipped): {}",
+                    orgId, e.getMessage());
+            return List.of();
         }
     }
 

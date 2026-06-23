@@ -23,6 +23,51 @@ public class AclxResponse {
     private Decision decision;
     private AclxLabel aclx;
 
+    // ── Root-level enrichment fields (ACLX Gateway v0.5+) ────────────────────
+
+    /**
+     * Findings emitted by each content detector (PHI scanner, synthesis detector,
+     * PII classifier, etc.).  Each entry contains at minimum:
+     * {@code detector}, {@code matched}, {@code confidence}.
+     * Store in the review queue so admins see exactly what triggered the decision.
+     */
+    @JsonProperty("detector_findings")
+    private List<Map<String, Object>> detectorFindings;
+
+    /**
+     * {@code true} when the synthesis detector identified cross-client or
+     * cross-document data aggregation that creates a de-anonymisation risk
+     * (HIPAA Minimum Necessary, 45 CFR §164.514(d)).
+     * Surface to reviewers whenever the decision is ESCALATE or BLOCK.
+     */
+    @JsonProperty("synthesis_detected")
+    private boolean synthesisDetected;
+
+    /**
+     * Per-token metadata for every redaction applied when {@code decision == REDACT}.
+     * Each entry contains: {@code token}, {@code category}, {@code detector}, {@code position}.
+     * Null / empty when decision is ALLOW, BLOCK, or ESCALATE.
+     */
+    @JsonProperty("redaction_metadata")
+    private List<Map<String, Object>> redactionMetadata;
+
+    /**
+     * The signed content passport (JWS compact serialisation) that travels with
+     * the AI output as a chain-of-custody artefact.  Attach to documents stored
+     * downstream so the label can be verified independently of ACLX.
+     * Null when {@code LABEL_SIGNING_ENABLED=false} on the gateway.
+     */
+    @JsonProperty("content_label")
+    private Object contentLabel;
+
+    /**
+     * {@code true} when the ACLX gateway wrote the audit record to its own store.
+     * When {@code false}, myABA is the sole audit writer for this event and MUST
+     * persist the full audit entry — never skip the {@link AuditService} call.
+     */
+    @JsonProperty("audit_written")
+    private boolean auditWritten;
+
     // ── Decision ──────────────────────────────────────────────────────────────
 
     @Data

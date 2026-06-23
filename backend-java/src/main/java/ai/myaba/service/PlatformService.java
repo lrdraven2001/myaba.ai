@@ -59,7 +59,7 @@ public class PlatformService {
         addOrg("org-pacific-003",   "Pacific Coast ABA",           "enterprise", "active",    "2025-08-03T00:00:00Z", 28, "it@pacificaba.com");
         addOrg("org-midwest-004",   "Midwest Behavioral Health",   "team",       "trial",     "2026-05-28T00:00:00Z",  7, "hello@midwestbh.com");
         addOrg("org-suspended-005", "Summit Behavior Group",       "solo",       "suspended", "2026-03-01T00:00:00Z",  2, "admin@summitbg.com");
-        addOrg("dev-org-001",       "MyABA Dev Organization",      "team",       "active",    "2026-01-01T00:00:00Z",  4, "chris@myaba.dev");
+        addOrg("dev-org-001",       "MyABA Dev Organization",      "team",       "active",    "2026-01-01T00:00:00Z",  4, "chris@myaba.ai");
 
         // ── Usage (current month) ─────────────────────────────────────────────
         addUsage("org-sunshine-001",  1_240, 2_180_000, 3_400_000L,  12);

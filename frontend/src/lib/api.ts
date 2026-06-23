@@ -382,6 +382,14 @@ export const api = {
   deletePolicy: (policyId: string) =>
     request<void>(`/policies/${policyId}`, { method: 'DELETE' }),
 
+  getResources: (purpose?: string, clientId?: string) => {
+    const params = new URLSearchParams();
+    if (purpose) params.append('purpose', purpose);
+    if (clientId) params.append('clientId', clientId);
+    const qs = params.toString();
+    return request<unknown>('/policies/resources' + (qs ? '?' + qs : ''));
+  },
+
   // ── Organizations ─────────────────────────────────────────────────────────
 
   /** Create a new organization (called during onboarding). Returns { orgId }. */

@@ -13,18 +13,50 @@ spring:
       max-file-size: 25MB
       max-request-size: 26MB
 
-# ── Anthropic ──────────────────────────────────────────────────────────────
+# ── AI Provider ────────────────────────────────────────────────────────────
+# ai.provider=vertex    → Vertex AI (production; uses Google ADC, no API key)
+# ai.provider=anthropic → Anthropic direct (local dev; requires ANTHROPIC_API_KEY)
+#
+# In production on Cloud Run, set AI_PROVIDER=vertex in env vars.
+# Vertex AI is covered by the Google Cloud BAA — no separate Anthropic BAA needed.
+ai:
+  provider: ${AI_PROVIDER:anthropic}   # default to anthropic for local dev convenience
+
+# ── Anthropic direct (local dev only) ─────────────────────────────────────
+# Only used when ai.provider=anthropic.
+# Set ANTHROPIC_API_KEY in .env (gitignored). Never commit a real key.
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
   base-url: https://api.anthropic.com
-  model: claude-sonnet-4-6
   max-tokens: 4000
+
+# ── Vertex AI (production / HIPAA BAA path) ───────────────────────────────
+# Only used when ai.provider=vertex.
+# Authentication is via Application Default Credentials (ADC):
+#   - Cloud Run: service account attached to the revision (no env vars needed)
+#   - Local dev: run `gcloud auth application-default login` once
+#
+# Required IAM role on the service account: roles/aiplatform.user
+#
+# Find current model names at:
+#   GCP Console → Vertex AI → Model Garden → Anthropic Claude → View details
+vertex:
+  project-id: ${VERTEX_PROJECT_ID:}
+  location:   ${VERTEX_LOCATION:us-east5}
+  # Model name in Vertex "publisher/model@version" format.
+  # Update this when Anthropic releases new model versions in Model Garden.
+  model:      ${VERTEX_MODEL:claude-opus-4-5@20250514}
 
 # ── ACLX Gateway ──────────────────────────────────────────────────────────
 aclx:
-  gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8081}
+  gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8080}
   enabled: ${ACLX_ENABLED:true}
   timeout-ms: 5000
+  # Enforcement domain — governs which Rego policy bundle ACLX applies.
+  # Supported: hipaa (default for ABA), cui, ip, enterprise, mixed.
+  # Override with ACLX_DOMAIN env var for multi-tenant deployments that
+  # need a different domain per deployment unit.
+  domain: ${ACLX_DOMAIN:hipaa}
   # Per-domain hard-block rules.
   # hard-block-scopes:             data scope strings that require explicit authorization
   # hard-block-auth-types:         authorization types that satisfy the requirement

@@ -63,7 +63,11 @@
       "Bash(Get-ChildItem -Path \"D:\\\\myaba.ai\\\\myaba.ai\" -Directory)",
       "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\docs\")",
       "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\compliance\")",
-      "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\security\")"
+      "Bash(Test-Path \"D:\\\\myaba.ai\\\\myaba.ai\\\\security\")",
+      "Bash(docker compose *)",
+      "Bash(docker build *)",
+      "Bash(Select-String -NotMatch \"^$\")",
+      "WebFetch(domain:www.forrester.com)"
     ]
   }
 }

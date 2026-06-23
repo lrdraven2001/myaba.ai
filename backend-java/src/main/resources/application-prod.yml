@@ -28,6 +28,14 @@ dlp:
   payment-cards:    true
   drivers-license:  true
 
+# ── AI Provider — Vertex AI in production (Google Cloud BAA covers this) ─────
+# No ANTHROPIC_API_KEY needed in production.
+# Service account on Cloud Run must have roles/aiplatform.user.
+# Set VERTEX_PROJECT_ID, and optionally VERTEX_LOCATION / VERTEX_MODEL, in
+# Cloud Run env vars (Secret Manager for project ID is overkill — it's not secret).
+ai:
+  provider: vertex
+
 # ── ACLX — always on in production ───────────────────────────────────────────
 aclx:
   enabled: true

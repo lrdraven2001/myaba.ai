@@ -10,7 +10,7 @@ const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
 const DEV_USER: AppUser = {
   uid: 'dev-user-001',
-  email: 'admin@myaba.dev',
+  email: 'admin@myaba.ai',
   displayName: 'Chris Hunt',
   role: 'ORG_SUPER_ADMIN',
   purpose: 'treatment',
@@ -23,6 +23,7 @@ interface AuthContextValue {
   firebaseUser: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, displayName: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -75,6 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
+  const register = async (email: string, password: string, displayName: string) => {
+    if (DEV_AUTH) {
+      setCurrentUser({ ...DEV_USER, email, displayName });
+      return;
+    }
+    const { auth } = await import('../lib/firebase');
+    const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    // Set display name immediately so the UI shows it without a second login
+    await updateProfile(credential.user, { displayName });
+    // onAuthStateChanged fires automatically after this; force claims refresh
+    await credential.user.getIdToken(true);
+  };
+
   const loginWithGoogle = async () => {
     if (DEV_AUTH) {
       setCurrentUser({ ...DEV_USER, email: 'dev@google.com' });
@@ -97,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, register, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

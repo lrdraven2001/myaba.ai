@@ -412,6 +412,39 @@ function RetentionContent() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Compliance doc content — ACLX AI Output Governance
+// ─────────────────────────────────────────────────────────────────────────────
+function AclxGovernanceContent() {
+  const capabilities = [
+    ['Governance & Policy',      'Rego policy-as-code evaluated per-request by OPA. Every AI response evaluated at /evaluate before delivery. Sensitivity thresholds and escalation rules configurable per organization.'],
+    ['Identity-Aware Controls',  'Every evaluation is scoped to the requesting user\'s role, purpose, and organization. Role-gated content rules differ between clinician, admin, and RBT access levels.'],
+    ['Data Security & PHI',      'HIPAA 18-identifier taxonomy, ABA-specific PHI categories, minimum necessary enforcement, and hard-blocks for SUD (42 CFR Part 2), psychotherapy notes, HIV status, and genetic information.'],
+    ['Threat Detection',         'Groundedness scoring compares AI output against authoritative source documents. Semantic detector flags prompt injection and behavioral anomalies. Sensitivity scoring detects policy drift.'],
+    ['Least Agency Enforcement', 'ALLOW / REDACT / BLOCK / ESCALATE decision ladder. Controls not just what the AI can access, but what it is permitted to output autonomously. ESCALATE routes to human reviewer before delivery.'],
+    ['Audit Trail',              'Every evaluation logged with content_id, identity snapshot, detector findings, sensitivity label, and decision. Retention configurable; 7-year default for HIPAA compliance.'],
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <p style={{ fontSize: 14, color: '#5A7184', lineHeight: 1.6 }}>
+        myABA.ai uses <strong>ACLX</strong> (AI Content Lifecycle eXchange) as its AI output governance layer.
+        ACLX sits between the AI model and the end user, evaluating every response before delivery.
+        It is developed by ACLX, Inc. — the parent company of myABA.ai.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {capabilities.map(([cap, desc], i) => (
+          <div key={i} style={{ padding: '10px 0', borderBottom: i < capabilities.length - 1 ? '1px solid #EEF2F5' : 'none' }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1E3347', marginBottom: 3 }}>{cap}</p>
+            <p style={{ fontSize: 13, color: '#5A7184', lineHeight: 1.55 }}>{desc}</p>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: 12, color: '#8A9BAB', lineHeight: 1.5 }}>
+        For technical inquiries: <a href="mailto:compliance@myaba.ai" style={{ color: '#1E88FF' }}>compliance@myaba.ai</a>
+      </p>
+    </div>
+  );
+}
+
 // Compliance doc content — Vulnerability Disclosure
 // ─────────────────────────────────────────────────────────────────────────────
 function VulnDisclosureContent() {
@@ -585,6 +618,15 @@ export default function DocumentsPage() {
   ];
 
   const COMPLIANCE: DocCard[] = [
+    {
+      id: 'aclx-governance',
+      title: 'AI Output Governance — ACLX',
+      description: 'myABA.ai uses ACLX as its AI output governance layer. ACLX independently implements governance, identity-aware access control, data security, threat management, and Least Agency enforcement — constraining what AI is permitted to output autonomously, not just what it can access.',
+      badge: 'AI Governance',
+      badgeColor: '#2E6B20',
+      cta: 'view',
+      content: <AclxGovernanceContent />,
+    },
     {
       id: 'isp',
       title: 'Information Security Policy',

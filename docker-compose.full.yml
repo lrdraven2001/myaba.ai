@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.full.yml  — myABA + ACLX unified dev stack
+#
+# Config-file-based deployment: no admin console, no Keycloak, no standards-admin.
+# All ACLX configuration is driven by environment variables and mounted files:
+#   • OPA Rego policies:   D:/aegislayer/ACL/policies/opa  (mounted read-only)
+#   • Standards corpus:    D:/aegislayer/ACL/standards/hipaa-aba/corpus.json
+#
+# Required services only (gateway-api + opa):
+#   docker compose -f docker-compose.full.yml up --build
+#
+# With document extraction (if processing uploaded clinical docs):
+#   docker compose -f docker-compose.full.yml --profile extraction up --build
+#
+# Port map:
+#   5173  myABA frontend
+#   5174  myABA homepage (marketing site)
+#   9090  myABA API          (container :8080)
+#   8080  ACLX gateway-api
+#   8181  ACLX OPA
+#   8095  ACLX extraction-adapter  (--profile extraction only)
+#   4000  Firebase Emulator UI
+#   9099  Firebase Auth emulator
+#   9150  Firebase Firestore emulator
+# ─────────────────────────────────────────────────────────────────────────────
+
+include:
+  # myABA base stack (firebase, api, frontend, homepage)
+  - path: ./docker-compose.yml
+
+  # ACLX stack — env_file forwards .env so ANTHROPIC_API_KEY reaches gateway-api
+  - path: ${ACLX_DIR:-D:/aegislayer/ACL/deploy/docker-compose}/docker-compose.yml
+    project_directory: ${ACLX_DIR:-D:/aegislayer/ACL/deploy/docker-compose}
+    env_file:
+      - .env
+
+services:
+
+  # ── myABA API — override to wire into ACLX via shared network ──────────────
+  api:
+    environment:
+      ACLX_ENABLED: "true"
+      ACLX_GATEWAY_URL: "http://gateway-api:8080"
+      ACLX_DOMAIN: "${ACLX_DOMAIN:-hipaa}"
+    depends_on:
+      firebase:
+        condition: service_healthy
+      gateway-api:
+        condition: service_started
+
+  # ── ACLX gateway-api — config-file-based, no admin console needed ──────────
+  # All policy configuration is file-driven:
+  #   • Rego bundles:       mounted from ACLX_DIR/policies/opa (via base compose)
+  #   • Standards corpus:   STANDARDS_CORPUS_PATH → hipaa-aba/corpus.json
+  #   • No Keycloak:        AUTH_REQUIRED=false (myABA API handles auth via Firebase)
+  #   • No label signing:   disabled in dev (enable in prod with a Secret Manager key)
+  gateway-api:
+    platform: linux/amd64
+    environment:
+      # Corpus — point to myABA HIPAA corpus instead of the sample CUI corpus
+      STANDARDS_ENABLED: "true"
+      STANDARDS_CORPUS_PATH: "standards/hipaa-aba/corpus.json"
+
+      # Auth — gateway does not need to authenticate myABA's backend calls.
+      # myABA's Spring Boot API validates user auth via Firebase before calling gateway.
+      # Internal service-to-service calls on the shared Docker network don't need auth.
+      AUTH_REQUIRED: "false"
+
+      # Detectors
+      GROUNDEDNESS_ENABLED: "true"
+      SEMANTIC_DETECTOR_ENABLED: "true"
+
+      # Audit — stdout in dev so `docker compose logs gateway-api` captures it
+      AUDIT_MODE: "stdout"
+
+      # Label signing — disabled in dev (no key); enable in prod via SIGNING_PRIVATE_KEY_B64
+      LABEL_SIGNING_ENABLED: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    volumes:
+      # Mount myABA HIPAA corpus into the gateway so STANDARDS_CORPUS_PATH resolves.
+      # The base compose already mounts opa/ policies; this adds the hipaa-aba corpus.
+      - ${ACLX_DIR:-D:/aegislayer/ACL}/standards/hipaa-aba:/app/standards/hipaa-aba:ro
+
+  # ── ACLX platform overrides — amd64 for Windows host ─────────────────────
+  # ACLX images are built for linux/arm64 (Mac dev).
+  # Override platform for all services so they run on Windows x86_64.
+  extraction-adapter:
+    platform: linux/amd64
+
+  standards-admin:
+    platform: linux/amd64
+
+  identity-adapter:
+    platform: linux/amd64
+
+  # NOTE: standards-admin and identity-adapter are NOT started by default.
+  # They only run when their profile is explicitly requested:
+  #   docker compose -f docker-compose.full.yml --profile standards-admin up
+  # This is intentional — config-file-based deployment means the admin console
+  # is a dev-only tool, not a production dependency.

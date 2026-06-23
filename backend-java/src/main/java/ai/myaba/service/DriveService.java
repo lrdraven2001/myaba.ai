@@ -67,12 +67,35 @@ public class DriveService {
     // ── Queries ───────────────────────────────────────────────────────────
 
     /**
-     * Returns all drive connections for the user's organization.
+     * Returns drive connections for the user's organization that the caller is
+     * permitted to see.
+     *
+     * <p>Permission is determined by the connection's {@code permissionType} field:
+     * <ul>
+     *   <li>{@code org_roles} — visible only to users whose role appears in
+     *       {@code allowedRoles}, plus org admins (who always see everything).</li>
+     *   <li>{@code individual} — visible only to the users in {@code allowedUserIds},
+     *       plus org admins.</li>
+     *   <li>{@code client_inherited} — visible only to users assigned to the
+     *       linked client (checked via the {@code assignedClinicians} list on the
+     *       client record), plus org admins.  Simple check here: any clinical user
+     *       sees client-scoped connections — the full client-assignment check is done
+     *       at the point of AI context injection by PolicyRagService / DriveRagService.</li>
+     *   <li>No permissionType or unrecognised value — visible to all org members
+     *       (open / legacy records).</li>
+     * </ul>
+     *
+     * <p>Note: visibility here controls whether the connection appears in the
+     * Resource Library UI and whether it is used as an AI grounding source.
+     * Actual file access is always controlled by the Drive provider's own sharing
+     * settings (Google Drive permissions / OneDrive ACLs) — myABA never proxies
+     * file content, it stores only the reference URL.
      */
     public List<Map<String, Object>> getConnections(AppUser user) throws Exception {
         if (devMode) {
             return devConnections.values().stream()
                     .filter(c -> user.getOrgId().equals(c.get("orgId")))
+                    .filter(c -> canSeeConnection(user, c))
                     .collect(Collectors.toList());
         }
 
@@ -83,7 +106,50 @@ public class DriveService {
             Map<String, Object> m = new HashMap<>(d.getData());
             m.put("id", d.getId());
             return m;
-        }).collect(Collectors.toList());
+        })
+        .filter(c -> canSeeConnection(user, c))
+        .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns true when the given user is permitted to see this drive connection.
+     *
+     * Admins always see all connections in their org.
+     * The linking user always sees their own connection.
+     * Everyone else is subject to the permissionType rules.
+     */
+    private boolean canSeeConnection(AppUser user, Map<String, Object> conn) {
+        // Admins see everything in their org
+        if (user.isAdmin()) return true;
+
+        // The person who linked it always sees it
+        if (user.getUid().equals(conn.get("linkedBy"))) return true;
+
+        String permType = (String) conn.getOrDefault("permissionType", "open");
+
+        return switch (permType) {
+            case "org_roles" -> {
+                Object raw = conn.get("allowedRoles");
+                if (!(raw instanceof List)) yield true; // malformed — show it
+                @SuppressWarnings("unchecked")
+                List<String> allowed = (List<String>) raw;
+                yield allowed.isEmpty() || allowed.contains(user.getRole());
+            }
+            case "individual" -> {
+                Object raw = conn.get("allowedUserIds");
+                if (!(raw instanceof List)) yield false;
+                @SuppressWarnings("unchecked")
+                List<String> allowed = (List<String>) raw;
+                yield allowed.contains(user.getUid());
+            }
+            case "client_inherited" ->
+                // Clinical users see client-scoped connections.
+                // The actual client-assignment check happens at AI context injection.
+                user.isClinical();
+            default ->
+                // "open" or unrecognised — visible to all org members
+                true;
+        };
     }
 
     /**

@@ -95,6 +95,23 @@ public class PolicyController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * GET /api/policies/resources?purpose=GROUNDING&clientId=c-001
+     *
+     * Returns active resources for this org filtered by purpose tag.
+     * Purpose values: GENERATION | GROUNDING | CLASSIFICATION (or omit for all resources).
+     * Used by the Resource Library UI and to find grounding sources for ACLX hallucination detection.
+     */
+    @GetMapping("/resources")
+    public ResponseEntity<List<Map<String, Object>>> getResources(
+            @AuthenticationPrincipal AppUser user,
+            @RequestParam(required = false) String purpose,
+            @RequestParam(required = false) String clientId) throws Exception {
+        List<Map<String, Object>> resources =
+                policyService.getResourcesByPurpose(user.getOrgId(), purpose, clientId);
+        return ResponseEntity.ok(resources);
+    }
+
     // ── Exception handling ────────────────────────────────────────────────
 
     @ExceptionHandler(SecurityException.class)

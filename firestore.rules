@@ -114,7 +114,7 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // ── policies (org-level ABA policy docs) ──────────────────────────────
+      // ── policies (org-level ABA policy docs and resource library) ───────────
 
       match /policies/{policyId} {
         allow read:  if isOrgMember(orgId);
@@ -124,6 +124,30 @@ service cloud.firestore {
           allow read:  if isOrgMember(orgId);
           allow write: if false;
         }
+      }
+
+      // ── driveConnections ──────────────────────────────────────────────────
+      // Firestore-level rule: org membership required.
+      // Fine-grained permissionType enforcement (org_roles / individual /
+      // client_inherited) is applied in DriveService.canSeeConnection() on the
+      // backend — it cannot be cleanly expressed in Firestore rules without
+      // reading other documents in the same request.
+
+      match /driveConnections/{connectionId} {
+        allow read:  if isOrgMember(orgId);
+        allow write: if false;  // backend-only
+      }
+
+      // ── invites ──────────────────────────────────────────────────────────
+      // Admins can read pending invites (for Team management UI).
+      // Any org member can read an invite addressed to them (for accept flow).
+      // Write is backend-only (invite creation, status updates).
+
+      match /invites/{inviteId} {
+        allow read:  if isOrgMember(orgId) &&
+                        (isAdmin() ||
+                         resource.data.email == request.auth.token.email);
+        allow write: if false;
       }
     }
 

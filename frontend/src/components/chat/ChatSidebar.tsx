@@ -60,7 +60,7 @@ export default function ChatSidebar({
   onDeleteChat,
 }: Props) {
   const [activeTab, setActiveTab]   = useState<Tab>('recents');
-  const [collapsed, setCollapsed]   = useState(false); // expanded by default
+  const [collapsed, setCollapsed]   = useState(true); // minimized on first load
   const [searching, setSearching]   = useState(false);
   const [query, setQuery]           = useState('');
   const searchRef                   = useRef<HTMLInputElement>(null);

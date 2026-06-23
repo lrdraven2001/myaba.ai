@@ -452,13 +452,36 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
           <h4 className="font-semibold text-gray-800">Compliance & AI Governance</h4>
         </div>
 
+        {/* ACLX governance capability note */}
+        <div className="py-3">
+          <div style={{
+            display: 'inline-flex', alignItems: 'flex-start', gap: 8,
+            background: 'linear-gradient(135deg, #EEF7EA, #E6F4FF)',
+            border: '1px solid #B9DEB0', borderRadius: 10,
+            padding: '8px 12px',
+          }}>
+            <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#2E6B20', fontSize: 12, marginTop: 2 }} />
+            <div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#2E6B20', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                AI Output Governance — ACLX
+              </span>
+              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                All AI responses are evaluated by the ACLX governance layer before delivery —
+                enforcing identity-aware content controls, PHI safeguards, and{' '}
+                <strong style={{ color: '#1E3347' }}>Least Agency</strong>: constraining
+                not just what the AI can access, but what it is permitted to output autonomously.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Enable ACLX — master switch */}
         <div className="flex items-center justify-between gap-4 py-3">
           <div>
             <p className="text-sm font-semibold text-gray-800">Enable ACLX</p>
             <p className="text-xs text-gray-400 mt-0.5">
               Labels and governs all AI-generated output for HIPAA compliance.
-              Disabling removes all output guardrails.
+              Disabling removes all output guardrails — not recommended for production.
             </p>
           </div>
           <button

@@ -1,5 +1,6 @@
 package ai.myaba.service;
 
+import ai.myaba.model.dto.AclxResponse;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
 import com.google.cloud.firestore.Firestore;
@@ -28,23 +29,29 @@ import java.util.stream.Collectors;
  *
  * <p>Item shape:
  * <pre>
- *   id                String
- *   orgId             String
- *   contentId         String   ACLX content_id
- *   eventType         String   CHAT_RESPONSE | DOCUMENT_GENERATED | SEARCH_SUMMARY
- *   requestingUserId  String   who triggered the AI call
- *   clientId          String?  client context (may be null)
- *   rawContent        String   the AI output text that was escalated
- *   aclxReason        String?  reason phrase from ACLX decision
- *   aclxSensitivity   String?  HIGH | MEDIUM | LOW
- *   aclxCategory      String?  PHI | etc.
- *   authDenyReason    String?  authorization_audit.deny_reason from ACLX label
- *                              (NOT_PROVIDED | REVOKED | EXPIRED) — surface to reviewers
- *   status            String   PENDING | APPROVED | DENIED
- *   reviewedBy        String?  uid of reviewer
- *   reviewedAt        String?  ISO-8601
- *   reviewerNotes     String?
- *   createdAt         String   ISO-8601
+ *   id                    String
+ *   orgId                 String
+ *   contentId             String   ACLX content_id
+ *   eventType             String   CHAT_RESPONSE | DOCUMENT_GENERATED | SEARCH_SUMMARY
+ *   requestingUserId      String   who triggered the AI call
+ *   clientId              String?  client context (may be null)
+ *   rawContent            String   the AI output text that was escalated
+ *   aclxReason            String?  reason phrase from ACLX decision
+ *   aclxSensitivity       String?  HIGH | MEDIUM | LOW
+ *   aclxCategory          String?  PHI | etc.
+ *   authDenyReason        String?  authorization_audit.deny_reason (NOT_PROVIDED | REVOKED | EXPIRED)
+ *   aclxDecisionId        String?  ACLX audit.decision_id for cross-referencing the ACLX audit log
+ *   aclxPolicyVersion     String?  OPA bundle version used
+ *   aclxSynthesisDetected boolean  whether cross-client synthesis risk was detected
+ *   aclxDetectorSummary   List?    abbreviated detector findings (detector + matched flag)
+ *   aclxHandlingRationale String?  human-readable rationale from the label
+ *   aclxAuthId            String?  authorization record that was evaluated
+ *   aclxAuthType          String?  type of authorization checked
+ *   status                String   PENDING | LOGGED | APPROVED | DENIED
+ *   reviewedBy            String?  uid of reviewer
+ *   reviewedAt            String?  ISO-8601
+ *   reviewerNotes         String?
+ *   createdAt             String   ISO-8601
  * </pre>
  */
 @Service
@@ -88,6 +95,8 @@ public class ReviewQueueService {
             Map.entry("aclxReason",       "Response contains direct PHI identifiers combined with sensitive behavioural data"),
             Map.entry("aclxSensitivity",  "HIGH"),
             Map.entry("aclxCategory",     "PHI"),
+            Map.entry("aclxGroundednessScore", 0.62),
+            Map.entry("aclxGroundednessWarning", true),
             Map.entry("status",           "PENDING"),
             Map.entry("createdAt",        yday)
         ));
@@ -197,12 +206,16 @@ public class ReviewQueueService {
      *                        approval before content is released).  When {@code false} the item
      *                        is created as LOGGED — recorded for audit purposes only; the
      *                        content was already released to the end-user.
+     * @param aclxResponse    the full ACLX response object for enriched fields (decision ID,
+     *                        synthesis detection, detector findings, handling rationale, auth
+     *                        record detail).  Null-safe — extra fields are simply omitted.
      */
     public String enqueue(String orgId, String contentId, String eventType,
                           String requestingUserId, String clientId,
                           String rawContent, String aclxReason,
                           String aclxSensitivity, String aclxCategory,
-                          String authDenyReason, boolean blocking) {
+                          String authDenyReason, boolean blocking,
+                          AclxResponse aclxResponse) {
         String id  = "rq-" + UUID.randomUUID().toString().substring(0, 8);
         String now = Instant.now().toString();
 
@@ -224,6 +237,61 @@ public class ReviewQueueService {
         // LOGGED  = non-blocking (content already delivered; entry is audit-only)
         item.put("status",           blocking ? "PENDING" : "LOGGED");
         item.put("createdAt",        now);
+
+        // ── Enriched ACLX fields for reviewer context ──────────────────────────
+        if (aclxResponse != null) {
+            // Synthesis detection flag — critical for reviewers assessing cross-client risk
+            item.put("aclxSynthesisDetected", aclxResponse.isSynthesisDetected());
+
+            // Handling rationale from the label (human-readable, safe to display)
+            AclxResponse.AclxLabel label = aclxResponse.getAclx();
+            if (label != null) {
+                if (label.getHandling() != null && label.getHandling().getRationale() != null) {
+                    item.put("aclxHandlingRationale", label.getHandling().getRationale());
+                }
+                AclxResponse.AclxAudit audit = label.getAudit();
+                if (audit != null) {
+                    if (audit.getDecisionId() != null) {
+                        item.put("aclxDecisionId", audit.getDecisionId());
+                    }
+                    if (audit.getPolicyVersion() != null) {
+                        item.put("aclxPolicyVersion", audit.getPolicyVersion());
+                    }
+                    // Authorization record detail — helps reviewers understand auth failures
+                    AclxResponse.AuthorizationAudit authAudit = audit.getAuthorizationAudit();
+                    if (authAudit != null && authAudit.isAuthCheckPerformed()) {
+                        if (authAudit.getAuthId()   != null) item.put("aclxAuthId",   authAudit.getAuthId());
+                        if (authAudit.getAuthType() != null) item.put("aclxAuthType", authAudit.getAuthType());
+                    }
+                }
+            }
+
+            // Detector findings summary (detector name + matched, not raw content)
+            List<Map<String, Object>> findings = aclxResponse.getDetectorFindings();
+            if (findings != null && !findings.isEmpty()) {
+                item.put("aclxDetectorFindingCount", findings.size());
+                item.put("aclxDetectorSummary", findings.stream()
+                        .map(f -> Map.of(
+                                "detector", f.getOrDefault("detector", "unknown"),
+                                "matched",  f.getOrDefault("matched", false)))
+                        .toList());
+            }
+
+            // Groundedness score — reviewers need to know if the content may be hallucinated
+            if (aclxResponse.getDetectorFindings() != null) {
+                aclxResponse.getDetectorFindings().stream()
+                    .filter(f -> "groundedness".equalsIgnoreCase(
+                            String.valueOf(f.getOrDefault("detector", ""))))
+                    .map(f -> f.get("score"))
+                    .filter(s -> s instanceof Number)
+                    .map(s -> ((Number) s).doubleValue())
+                    .findFirst()
+                    .ifPresent(score -> {
+                        item.put("aclxGroundednessScore", score);
+                        if (score < 0.70) item.put("aclxGroundednessWarning", true);
+                    });
+            }
+        }
 
         if (devMode) {
             devQueue.put(id, item);

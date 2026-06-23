@@ -11,8 +11,9 @@ const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 /**
  * Set to true during the pathfinder early-access period.
  * Flip to false when self-service sign-up is open to the public.
+ * Currently false for local dev / onboarding testing.
  */
-const CLOSED_BETA = true;
+const CLOSED_BETA = false;
 
 
 const PLANS: { value: OrgPlan; label: string; description: string }[] = [

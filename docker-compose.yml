@@ -1,15 +1,89 @@
-version: "3.9"
-
 # ── Local standalone stack ───────────────────────────────────────────────────
-# Run everything without GCP:  docker compose up
-# The Java API runs with DEV_AUTH=true (no Firebase token required)
-# and ACLX_ENABLED=false (pass-through mode).
+# Run everything:  docker compose up
+# The Java API runs with DEV_AUTH=true (no Firebase token required).
 #
-# To test with real credentials, copy .env.example → .env and set values.
+# ── Port map (no conflicts with the ACLX stack) ──────────────────────────────
+#   5173  frontend dev server
+#   9090  Spring Boot API          (ACLX uses 8080 — never use 8080 here)
+#   4000  Firebase Emulator UI
+#   9099  Firebase Auth emulator
+#   9150  Firebase Firestore emulator
+#
+# ── ACLX integration ─────────────────────────────────────────────────────────
+# ACLX runs from its own repo (D:\aegislayer\ACL):
+#   cd D:\aegislayer\ACL\deploy\docker-compose && docker compose up
+# Ports ACLX occupies:  8080 (gateway), 8181 (OPA), 8081/8090/8095/8099 (profiles)
+#
+# To enable ACLX enforcement, set in a .env file at the project root:
+#   ACLX_ENABLED=true
+#   ACLX_GATEWAY_URL=http://host.docker.internal:8080
+#
+# host.docker.internal resolves to the host machine from inside a container,
+# so the API container can reach ACLX running in its own compose stack.
+#
+# To test with real Firebase credentials, copy .env.example → .env and set values.
 
 services:
 
-  # ── React frontend (dev server) ─────────────────────────────────────────
+  # ── Firebase Emulator (Auth + Firestore) ────────────────────────────────
+  # Emulator UI: http://localhost:4000
+  # Firestore:   localhost:9150  (avoids 8080 which belongs to ACLX gateway)
+  # Auth:        localhost:9099
+  firebase:
+    image: andreysenov/firebase-tools:latest
+    command: >
+      firebase emulators:start
+        --project demo-myaba
+        --only auth,firestore
+    ports:
+      - "4000:4000"   # Emulator UI
+      - "9099:9099"   # Auth
+      - "9150:9150"   # Firestore
+    volumes:
+      - ./firebase.json:/home/node/firebase.json:ro
+      - ./firestore.rules:/home/node/firestore.rules:ro
+      - firebase-emulator-data:/home/node/.cache
+    healthcheck:
+      # Use node (guaranteed in firebase-tools image) to TCP-connect to the
+      # Auth emulator port. Port 9099 binds 0.0.0.0 and is available as soon
+      # as the emulator is ready — more reliable than the UI on :4000.
+      test: ["CMD-SHELL", "node -e \"var n=require('net'),s=n.connect(9099,'localhost',function(){process.exit(0)});s.on('error',function(){process.exit(1)})\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  # ── Spring Boot API ──────────────────────────────────────────────────────
+  # Host port 9090 → container port 8080.
+  # ACLX gateway-api owns host 8080, so we never use it here.
+  api:
+    build:
+      context: ./backend-java
+      dockerfile: Dockerfile
+    ports:
+      - "9090:8080"
+    environment:
+      - PORT=8080
+      - DEV_AUTH=${DEV_AUTH:-false}
+      - ACLX_ENABLED=${ACLX_ENABLED:-false}
+      - ACLX_GATEWAY_URL=${ACLX_GATEWAY_URL:-http://host.docker.internal:8080}
+      - ACLX_DOMAIN=${ACLX_DOMAIN:-hipaa}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - FIREBASE_PROJECT_ID=demo-myaba
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173
+      # Point Firebase Admin SDK at the local emulators
+      - FIRESTORE_EMULATOR_HOST=firebase:9150
+      - FIREBASE_AUTH_EMULATOR_HOST=firebase:9099
+    depends_on:
+      firebase:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── React frontend app (dev server) ─────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -20,38 +94,34 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
     environment:
-      - VITE_DEV_AUTH=true
-      - VITE_API_BASE_URL=http://localhost:8080
+      - VITE_DEV_AUTH=${VITE_DEV_AUTH:-false}
+      - VITE_API_BASE_URL=http://localhost:9090
+      # Firebase config — emulator-safe values (no real project needed locally)
+      - VITE_FIREBASE_API_KEY=demo-key
+      - VITE_FIREBASE_AUTH_DOMAIN=demo-myaba.firebaseapp.com
+      - VITE_FIREBASE_PROJECT_ID=demo-myaba
+      - VITE_FIREBASE_STORAGE_BUCKET=demo-myaba.appspot.com
+      - VITE_FIREBASE_MESSAGING_SENDER_ID=000000000000
+      - VITE_FIREBASE_APP_ID=1:000000000000:web:demo
+      # Tells firebase.ts to connect to the local emulator instead of production
+      - VITE_FIREBASE_AUTH_EMULATOR_URL=http://localhost:9099
     depends_on:
       - api
 
-  # ── Spring Boot API ──────────────────────────────────────────────────────
-  api:
+  # ── Marketing homepage (dev server) ─────────────────────────────────────
+  # The public-facing marketing site (myaba.ai homepage, /documents, etc.)
+  # Runs on :5174 to avoid conflict with the app on :5173.
+  homepage:
     build:
-      context: ./backend-java
-      dockerfile: Dockerfile
+      context: ./homepage
+      dockerfile: Dockerfile.dev
     ports:
-      - "8080:8080"
-    environment:
-      - PORT=8080
-      - DEV_AUTH=true
-      - ACLX_ENABLED=false
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-dev-project}
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      - "5174:5174"
+    volumes:
+      - ./homepage/src:/app/src
+      - ./homepage/public:/app/public
 
-  # ── ACLX Gateway (optional — comment out if not available) ──────────────
-  # aclx:
-  #   image: identiverse/aclx-gateway:1.1.0-alpha
-  #   ports:
-  #     - "8081:8080"
-  #   environment:
-  #     - DOMAIN=hipaa
-  #     - GCP_PROJECT_ID=${FIREBASE_PROJECT_ID:-dev-project}
-  #   volumes:
-  #     - ./policies:/policies:ro
+volumes:
+  # Persists emulator data (Firestore documents, Auth users) across restarts.
+  # Run `docker compose down -v` for a clean slate.
+  firebase-emulator-data:

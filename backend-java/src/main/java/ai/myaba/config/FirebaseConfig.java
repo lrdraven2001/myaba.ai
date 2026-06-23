@@ -1,5 +1,6 @@
 package ai.myaba.config;
 
+import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.firebase.FirebaseApp;
@@ -70,9 +71,18 @@ public class FirebaseConfig {
                 credentials = ServiceAccountCredentials.fromStream(is);
             }
         } else {
-            // Fall back to Application Default Credentials (Workload Identity on Cloud Run)
-            log.info("Using Application Default Credentials for Firebase");
-            credentials = GoogleCredentials.getApplicationDefault();
+            // When the Firebase Auth emulator is configured, the Admin SDK redirects all
+            // calls to the local emulator — ADC is not used.  We still need *some*
+            // credential object so we supply a fixed dummy token that the emulator accepts.
+            String emulatorHost = System.getenv("FIREBASE_AUTH_EMULATOR_HOST");
+            if (emulatorHost != null && !emulatorHost.isBlank()) {
+                log.info("Firebase Auth emulator detected at {} — using dummy credential", emulatorHost);
+                credentials = GoogleCredentials.create(new AccessToken("owner", null));
+            } else {
+                // Production: fall back to Application Default Credentials (Workload Identity on Cloud Run)
+                log.info("Using Application Default Credentials for Firebase");
+                credentials = GoogleCredentials.getApplicationDefault();
+            }
         }
 
         FirebaseOptions options = FirebaseOptions.builder()

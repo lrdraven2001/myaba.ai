@@ -158,7 +158,14 @@ public class GenerateController {
         usageService.recordRequest(user.getOrgId(), "document");
 
         // Layer 3+4: ACLX output governance
-        AclxResponse aclxResult = aclxService.evaluate(rawOutput, user, req.getClientId());
+        List<ai.myaba.model.dto.AclxRequest.Source> docGroundingSources =
+                policyRagService.buildGroundingSources(
+                        req.getAdditionalContext() != null
+                                ? req.getAdditionalContext() : req.getDocumentType(),
+                        user.getOrgId(),
+                        req.getClientId(),
+                        policyService);
+        AclxResponse aclxResult = aclxService.evaluate(rawOutput, user, req.getClientId(), docGroundingSources);
         String decision = aclxResult.getDecision().getDecision();
 
         // §3: Fail-safe — alert ops when the OPA policy bundle is unavailable.
@@ -173,8 +180,10 @@ public class GenerateController {
             }
         }
 
-        auditService.log("DOCUMENT_GENERATED", user.getUid(), req.getClientId(),
-                null, aclxResult.getContentId(), decision, aclxResult.getAclx());
+        // Use enriched ACLX audit log — stores detector findings, synthesis flag,
+        // content label, decision ID, authorization detail, redaction count.
+        auditService.logAclx("DOCUMENT_GENERATED", user.getUid(), req.getClientId(),
+                null, aclxResult, null, null);
 
         // §4: Extract authorization deny reason from the label (for review queue)
         String authDenyReason = extractAuthDenyReason(aclxResult);
@@ -198,9 +207,28 @@ public class GenerateController {
                     "contentId", aclxResult.getContentId()
                 ));
             }
+            case "REDACT" -> {
+                // ACLX redacted sensitive tokens — deliver the scrubbed text and
+                // inform the clinician that content was modified for compliance.
+                List<String> redactedTokens = aclxResult.getDecision().getRedactedTokens();
+                int redactCount = redactedTokens != null ? redactedTokens.size() : 0;
+                log.info("ACLX REDACT: {} token(s) redacted for client={} user={}",
+                        redactCount, req.getClientId(), user.getUid());
+                Double redactGroundedness = extractGroundednessScore(aclxResult);
+                yield ResponseEntity.ok(GenerateDocumentResponse.builder()
+                        .success(true)
+                        .documentType(req.getDocumentType())
+                        .content(aclxResult.getDecision().getFinalText())
+                        .decision(decision)
+                        .contentId(aclxResult.getContentId())
+                        .redactedTokenCount(redactCount)
+                        .groundednessScore(redactGroundedness)
+                        .groundednessWarning(redactGroundedness != null && redactGroundedness < 0.70)
+                        .build());
+            }
             case "ESCALATE" -> {
-                auditService.log("DOCUMENT_ESCALATED", user.getUid(), req.getClientId(),
-                        null, aclxResult.getContentId(), "ESCALATE", aclxResult.getAclx());
+                auditService.logAclx("DOCUMENT_ESCALATED", user.getUid(), req.getClientId(),
+                        null, aclxResult, null, null);
                 String rqItemId = reviewQueueService.enqueue(
                         user.getOrgId(),
                         aclxResult.getContentId(),
@@ -212,20 +240,26 @@ public class GenerateController {
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
                         authDenyReason,
-                        true /* document escalations always block */);
+                        true /* document escalations always block */,
+                        aclxResult);
                 yield ResponseEntity.accepted().body(GenerateDocumentResponse.builder()
                         .status("PENDING_REVIEW")
                         .message("Document flagged for human review before release")
                         .reviewId(rqItemId)
                         .build());
             }
-            default -> ResponseEntity.ok(GenerateDocumentResponse.builder()
-                    .success(true)
-                    .documentType(req.getDocumentType())
-                    .content(aclxResult.getDecision().getFinalText())
-                    .decision(decision)
-                    .contentId(aclxResult.getContentId())
-                    .build());
+            default -> {
+                Double docGroundedness = extractGroundednessScore(aclxResult);
+                yield ResponseEntity.ok(GenerateDocumentResponse.builder()
+                        .success(true)
+                        .documentType(req.getDocumentType())
+                        .content(aclxResult.getDecision().getFinalText())
+                        .decision(decision)
+                        .contentId(aclxResult.getContentId())
+                        .groundednessScore(docGroundedness)
+                        .groundednessWarning(docGroundedness != null && docGroundedness < 0.70)
+                        .build());
+            }
         };
     }
 
@@ -342,9 +376,12 @@ public class GenerateController {
         usageService.recordRequest(user.getOrgId(), "chat");
 
         // Layer 3+4: ACLX output governance (passes all client IDs for cross-client rules)
+        List<ai.myaba.model.dto.AclxRequest.Source> chatGroundingSources =
+                policyRagService.buildGroundingSources(
+                        req.getMessage(), user.getOrgId(), req.getClientId(), policyService);
         AclxResponse aclxResult = aclxService.evaluate(
                 rawReply, user, req.getClientId(),
-                allClientIds.size() > 1 ? allClientIds : null);
+                allClientIds.size() > 1 ? allClientIds : null, chatGroundingSources);
         String decision = aclxResult.getDecision().getDecision();
 
         // §3: Fail-safe — alert ops when the OPA policy bundle is unavailable
@@ -357,8 +394,10 @@ public class GenerateController {
             }
         }
 
-        auditService.log("CHAT_RESPONSE", user.getUid(), req.getClientId(),
-                null, aclxResult.getContentId(), decision, aclxResult.getAclx());
+        // Use enriched ACLX audit log — stores detector findings, synthesis flag,
+        // content label, decision ID, authorization detail, redaction count.
+        auditService.logAclx("CHAT_RESPONSE", user.getUid(), req.getClientId(),
+                null, aclxResult, null, null);
 
         // §4: QUARANTINE_SUSPECTED in BLOCK — don't surface raw reason to end user
         String chatBlockReason = aclxResult.getDecision().getReason();
@@ -373,7 +412,7 @@ public class GenerateController {
         boolean reviewRequired = orgService.isReviewRequired(user.getOrgId());
 
         if ("ESCALATE".equals(decision)) {
-            // §4: Pass authorization deny reason into review queue for reviewers
+            // §4: Pass authorization deny reason + full aclxResult into review queue
             String chatAuthDenyReason = extractAuthDenyReason(aclxResult);
             // blocking=true → PENDING (holds content); blocking=false → LOGGED (audit-only)
             reviewQueueService.enqueue(
@@ -387,7 +426,8 @@ public class GenerateController {
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
                     chatAuthDenyReason,
-                    reviewRequired);
+                    reviewRequired,
+                    aclxResult);
         }
 
         // Build reply — BLOCK always withholds, ESCALATE withholds only when reviewRequired
@@ -399,6 +439,17 @@ public class GenerateController {
         } else {
             // ALLOW, REDACT, or non-blocking ESCALATE
             reply = aclxResult.getDecision().getFinalText();
+        }
+
+        // Redaction count — surface to client when ACLX partially redacted the reply
+        int chatRedactCount = 0;
+        if ("REDACT".equals(decision)) {
+            List<String> chatRedacted = aclxResult.getDecision().getRedactedTokens();
+            chatRedactCount = chatRedacted != null ? chatRedacted.size() : 0;
+            if (chatRedactCount > 0) {
+                log.info("ACLX REDACT: {} token(s) redacted in chat response for client={} user={}",
+                        chatRedactCount, req.getClientId(), user.getUid());
+            }
         }
 
         // Build flattened ACLX label map — stored on the assistant message for API consumers
@@ -419,6 +470,8 @@ public class GenerateController {
                 .reply(reply)
                 .decision(decision)
                 .chatId(req.getChatId())
+                .redactedTokenCount(chatRedactCount)
+                .groundednessScore(extractGroundednessScore(aclxResult))
                 .build());
     }
 
@@ -666,18 +719,74 @@ public class GenerateController {
     }
 
     /**
-     * Build a flat label map from the ACLX response for storage on the assistant message.
-     * Every AI response gets this label so API consumers can enforce their own governance.
+     * Build an enriched label map from the ACLX response for storage on the assistant message.
+     * Every AI response gets this label so API consumers and the review UI can enforce
+     * their own governance without re-querying ACLX.
+     *
+     * <p>Includes: classification fields, handling action + rationale, decision ID,
+     * policy version, synthesis detection flag, and redaction count.
      */
     private Map<String, Object> buildAclxLabelMap(AclxResponse aclxResult) {
-        if (aclxResult == null || aclxResult.getAclx() == null) return Map.of();
-        AclxResponse.AclxLabel label = aclxResult.getAclx();
+        if (aclxResult == null) return Map.of();
         Map<String, Object> m = new LinkedHashMap<>();
-        if (label.getDomain() != null)      m.put("domain",      label.getDomain());
-        if (label.getCategory() != null)    m.put("category",    label.getCategory());
-        if (label.getSubcategory() != null) m.put("subcategory", label.getSubcategory());
-        if (label.getSensitivity() != null) m.put("sensitivity", label.getSensitivity());
+
+        // ── Classification ────────────────────────────────────────────────────
+        AclxResponse.AclxLabel label = aclxResult.getAclx();
+        if (label != null) {
+            if (label.getDomain() != null)      m.put("domain",      label.getDomain());
+            if (label.getCategory() != null)    m.put("category",    label.getCategory());
+            if (label.getSubcategory() != null) m.put("subcategory", label.getSubcategory());
+            if (label.getSensitivity() != null) m.put("sensitivity", label.getSensitivity());
+
+            // ── Handling action + rationale (from the immutable label trail) ──
+            AclxResponse.AclxHandling handling = label.getHandling();
+            if (handling != null) {
+                if (handling.getAction()    != null) m.put("handlingAction",    handling.getAction());
+                if (handling.getRationale() != null) m.put("handlingRationale", handling.getRationale());
+            }
+
+            // ── Audit trail references ────────────────────────────────────────
+            AclxResponse.AclxAudit audit = label.getAudit();
+            if (audit != null) {
+                if (audit.getDecisionId()    != null) m.put("decisionId",    audit.getDecisionId());
+                if (audit.getPolicyVersion() != null) m.put("policyVersion", audit.getPolicyVersion());
+            }
+        }
+
+        // ── Synthesis detection (cross-client privacy risk) ───────────────────
+        if (aclxResult.isSynthesisDetected()) {
+            m.put("synthesisDetected", true);
+        }
+
+        // ── Redaction count ───────────────────────────────────────────────────
+        if (aclxResult.getDecision() != null) {
+            List<String> redacted = aclxResult.getDecision().getRedactedTokens();
+            if (redacted != null && !redacted.isEmpty()) {
+                m.put("redactedTokenCount", redacted.size());
+            }
+        }
+
         return m;
+    }
+
+    /**
+     * Extract the groundedness score from ACLX detector findings.
+     * ACLX emits a finding with detector="groundedness" and a numeric "score" field.
+     * Returns null when the detector did not run (no grounding sources provided).
+     */
+    private Double extractGroundednessScore(AclxResponse aclxResult) {
+        if (aclxResult == null || aclxResult.getDetectorFindings() == null) return null;
+        return aclxResult.getDetectorFindings().stream()
+                .filter(f -> "groundedness".equalsIgnoreCase(
+                        String.valueOf(f.getOrDefault("detector", ""))))
+                .map(f -> {
+                    Object score = f.get("score");
+                    if (score instanceof Number) return ((Number) score).doubleValue();
+                    return null;
+                })
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 
     /** Merges clientId + clientIds into a deduplicated list. */

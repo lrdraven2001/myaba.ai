@@ -1,0 +1,8 @@
+{
+  "name": "myaba-scripts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
