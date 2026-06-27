@@ -5,23 +5,31 @@ import {
   faSortAlphaDown, faSortAlphaUp, faFilter, faCommentDots,
   faFileAlt, faFolderOpen, faLink, faSpinner, faTimes,
   faRobot, faComments, faExternalLinkAlt,
-  faUserNurse, faUsers, faCheck,
+  faUserNurse, faUsers, faCheck, faShieldAlt, faTrashAlt,
 } from '@fortawesome/free-solid-svg-icons';
-import type { Client, PolicyDocument, Chat } from '../types';
+import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
+import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
 import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
 import GenerateDocumentModal from '../components/GenerateDocumentModal';
+import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
+/** Best-effort display name for a client. */
+function clientDisplayName(c: { preferredName?: string; firstName?: string; lastName?: string; legalName?: string }): string {
+  return c.preferredName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.legalName || 'this client';
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ClientTab   = 'info' | 'ai_data' | 'treatment_team' | 'ehr' | 'authorizations' | 'resources';
+type ClientTab   = 'info' | 'documents' | 'chats' | 'treatment_team' | 'ehr' | 'authorizations' | 'resources';
 type SortField   = 'lastName' | 'firstName' | 'dateOfBirth' | 'diagnosis';
 type SortDir     = 'asc' | 'desc';
 
 const TABS: { key: ClientTab; label: string }[] = [
   { key: 'info',           label: 'Client Information'   },
-  { key: 'ai_data',        label: 'Connected AI Data'    },
+  { key: 'documents',      label: 'Documents'            },
+  { key: 'chats',          label: 'Chats'                },
   { key: 'treatment_team', label: 'Treatment Team'       },
   { key: 'ehr',            label: 'EHR Connect'          },
   { key: 'authorizations', label: 'Authorizations'       },
@@ -261,10 +269,15 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
               </>
             )}
 
-            {activeTab === 'ai_data' && (
-              <ConnectedAIDataTab
+            {activeTab === 'documents' && (
+              <ClientDocumentsTab
                 clientId={selectedClient.id}
                 clientName={selectedClient.preferredName || selectedClient.firstName || 'Client'}
+              />
+            )}
+            {activeTab === 'chats' && (
+              <ClientChatsTab
+                clientId={selectedClient.id}
                 onStartChat={onStartChat ? () => onStartChat!(selectedClient.id) : undefined}
               />
             )}
@@ -279,7 +292,9 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
               />
             )}
             {activeTab === 'ehr' && <EmptyTab message="No EHR connected" sub="Connect an EHR provider to sync client data automatically" />}
-            {activeTab === 'resources' && <ConnectedResourcesTab clientId={selectedClient.id} />}
+            {activeTab === 'resources' && (
+              <ConnectedResourcesTab clientId={selectedClient.id} clientName={clientDisplayName(selectedClient)} />
+            )}
 
             {activeTab === 'authorizations' && (
               <div>
@@ -802,184 +817,159 @@ function NewClientModal({
   );
 }
 
-// ── Connected AI Data tab ─────────────────────────────────────────────────────
+// ── Documents tab ─────────────────────────────────────────────────────────────
 
-function ConnectedAIDataTab({
-  clientId,
-  clientName,
-  onStartChat,
-}: {
-  clientId: string;
-  clientName?: string;
-  onStartChat?: () => void;
-}) {
-  const [chats, setChats]               = useState<Chat[]>([]);
-  const [docs, setDocs]                 = useState<unknown[]>([]);
-  const [loading, setLoading]           = useState(true);
+function ClientDocumentsTab({ clientId, clientName }: { clientId: string; clientName?: string }) {
+  const [docs, setDocs]       = useState<Array<Record<string, string>>>([]);
+  const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
 
-  useEffect(() => {
+  const loadDocs = () => {
     setLoading(true);
-    Promise.all([
-      api.getChats().catch(() => [] as Chat[]),
-      api.getClientDocuments(clientId).then((r) => r.documents).catch(() => []),
-    ]).then(([allChats, clientDocs]) => {
-      setChats(allChats.filter((c) => c.clientId === clientId));
-      setDocs(clientDocs);
-    }).finally(() => setLoading(false));
-  }, [clientId]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-gray-400">
-        <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
-      </div>
-    );
-  }
-
-  const hasData = chats.length > 0 || docs.length > 0;
-
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
-        <FontAwesomeIcon icon={faRobot} className="text-4xl text-gray-300" />
-        <p className="text-base font-medium">No AI data yet</p>
-        <p className="text-sm">Start a chat for this client to begin generating AI-assisted documentation.</p>
-        {onStartChat && (
-          <button
-            onClick={onStartChat}
-            className="mt-2 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors"
-            style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#EEF7EA')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
-          >
-            <FontAwesomeIcon icon={faCommentDots} className="text-xs" />
-            Start Chat
-          </button>
-        )}
-      </div>
-    );
-  }
+    api.getClientDocuments(clientId)
+      .then((r) => setDocs(r.documents as Array<Record<string, string>>))
+      .catch(() => setDocs([]))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { loadDocs(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="space-y-6">
-
-      {/* Chats section */}
-      {chats.length > 0 && (
+    <div>
+      {/* Header + plain-language explanation of what this does */}
+      <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <FontAwesomeIcon icon={faComments} style={{ color: '#3F9B2F', fontSize: 14 }} />
-            <h3 className="text-sm font-semibold text-gray-700">Chat Sessions</h3>
-            <span className="text-xs text-gray-400">({chats.length})</span>
-          </div>
-          <div className="space-y-2">
-            {chats.map((chat) => (
-              <div
-                key={chat.id}
-                className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
-                style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
-              >
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: '#EEF7EA' }}
-                >
-                  <FontAwesomeIcon icon={faCommentDots} style={{ color: '#3F9B2F', fontSize: 13 }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{chat.title || 'Untitled Chat'}</p>
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Documents</h2>
+          <p className="text-sm text-gray-500 max-w-xl">
+            Generate a complete clinical document for this client — a Behavior Intervention Plan, Functional
+            Behavior Assessment, session note, progress report, and more. The AI drafts it from this client's
+            data, runs it through compliance checks, and saves it here. A signed authorization must be on file
+            (see the <strong>Authorizations</strong> tab).
+          </p>
+        </div>
+        <button
+          onClick={() => setShowGenerate(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0"
+          style={{ background: '#1E88FF' }}
+        >
+          <FontAwesomeIcon icon={faRobot} className="text-xs" />
+          Generate Document
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-gray-400">
+          <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
+        </div>
+      ) : docs.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <FontAwesomeIcon icon={faFileAlt} className="text-4xl mb-3 text-gray-300" />
+          <p className="text-base font-medium">No documents yet</p>
+          <p className="text-sm mt-1">Click <strong>Generate Document</strong> to create the first one for this client.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((d, i) => (
+            <div key={d.id ?? i} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
+              style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF4FF' }}>
+                <FontAwesomeIcon icon={faFileAlt} style={{ color: '#1E88FF', fontSize: 13 }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{d.documentType ?? d.title ?? 'AI Document'}</p>
+                {d.createdAt && (
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {chat.projectLabel ? `📁 ${chat.projectLabel} · ` : ''}
-                    {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    Generated {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
-                </div>
-                {onStartChat && (
-                  <button
-                    onClick={onStartChat}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0"
-                    style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#EEF7EA')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
-                  >
-                    <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />
-                    Open
-                  </button>
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Generate document modal */}
       {showGenerate && (
         <GenerateDocumentModal
           clientId={clientId}
           clientName={clientName ?? 'Client'}
           onClose={() => setShowGenerate(false)}
-          onDocumentGenerated={() => {
-            // Refresh docs list
-            api.getClientDocuments(clientId)
-              .then((r) => setDocs(r.documents))
-              .catch(() => {});
-          }}
+          onDocumentGenerated={loadDocs}
         />
       )}
+    </div>
+  );
+}
 
-      {/* AI-generated documents section */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <FontAwesomeIcon icon={faRobot} style={{ color: '#1E88FF', fontSize: 14 }} />
-            <h3 className="text-sm font-semibold text-gray-700">AI-Generated Documents</h3>
-            {docs.length > 0 && <span className="text-xs text-gray-400">({docs.length})</span>}
-          </div>
-          <button
-            onClick={() => setShowGenerate(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-            style={{ background: '#1E88FF' }}
-          >
-            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 11 }} />
-            Generate
-          </button>
-        </div>
-        {docs.length > 0 && (
-          <div className="space-y-2">
-            {docs.map((doc, i) => {
-              const d = doc as Record<string, string>;
-              return (
-                <div
-                  key={d.id ?? i}
-                  className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
-                  style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
-                >
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: '#EEF4FF' }}
-                  >
-                    <FontAwesomeIcon icon={faFileAlt} style={{ color: '#1E88FF', fontSize: 13 }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
-                      {d.documentType ?? d.title ?? 'AI Document'}
-                    </p>
-                    {d.createdAt && (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Generated {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+// ── Chats tab ─────────────────────────────────────────────────────────────────
 
-        {docs.length === 0 && (
-          <p className="text-sm text-gray-400 py-4 text-center">
-            No documents generated yet. Click <strong>Generate</strong> to create one.
+function ClientChatsTab({ clientId, onStartChat }: { clientId: string; onStartChat?: () => void }) {
+  const [chats, setChats]     = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api.getChats()
+      .then((all) => setChats(all.filter((c) => c.clientId === clientId)))
+      .catch(() => setChats([]))
+      .finally(() => setLoading(false));
+  }, [clientId]);
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Chats</h2>
+          <p className="text-sm text-gray-500 max-w-xl">
+            Conversations scoped to this client. Use chat to ask questions and think things through;
+            use the <strong>Documents</strong> tab when you want a finished clinical document.
           </p>
+        </div>
+        {onStartChat && (
+          <button onClick={onStartChat}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border shrink-0"
+            style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}>
+            <FontAwesomeIcon icon={faCommentDots} className="text-xs" />
+            Start Chat
+          </button>
         )}
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-gray-400">
+          <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
+        </div>
+      ) : chats.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <FontAwesomeIcon icon={faComments} className="text-4xl mb-3 text-gray-300" />
+          <p className="text-base font-medium">No chats yet</p>
+          <p className="text-sm mt-1">Start a conversation scoped to this client.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {chats.map((chat) => (
+            <div key={chat.id} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
+              style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF7EA' }}>
+                <FontAwesomeIcon icon={faCommentDots} style={{ color: '#3F9B2F', fontSize: 13 }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{chat.title || 'Untitled Chat'}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {chat.projectLabel ? `📁 ${chat.projectLabel} · ` : ''}
+                  {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+              {onStartChat && (
+                <button onClick={onStartChat}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0"
+                  style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}>
+                  <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />
+                  Open
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1002,28 +992,31 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   template:      { bg: '#EEF4FF', text: '#1E88FF' },
 };
 
-function ConnectedResourcesTab({ clientId }: { clientId: string }) {
-  const [resources, setResources] = useState<PolicyDocument[]>([]);
-  const [all, setAll]             = useState<PolicyDocument[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState('');
+function ConnectedResourcesTab({ clientId, clientName }: { clientId: string; clientName: string }) {
+  const [connections, setConnections] = useState<DriveConnection[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showDrive, setShowDrive]   = useState<'google' | 'microsoft' | null>(null);
+  const [removing, setRemoving]     = useState<string | null>(null);
 
+  // Resources linked to THIS client. The system is link-only — files live in the
+  // customer's Drive/OneDrive under their own sharing controls; we store the link.
   useEffect(() => {
     setLoading(true);
-    api.getPolicies()
-      .then((docs) => {
-        setAll(docs);
-        // For now show all active resources; future: filter by clientId linkage
-        setResources(docs.filter((d) => d.isActive));
-      })
-      .catch(() => setResources([]))
+    api.getDriveConnections()
+      .then((all) => setConnections(all.filter((c) => c.clientId === clientId)))
+      .catch(() => setConnections([]))
       .finally(() => setLoading(false));
-    void clientId; // will be used for server-side filtering once wired
   }, [clientId]);
 
-  const filtered = search
-    ? resources.filter((r) => r.title.toLowerCase().includes(search.toLowerCase()))
-    : resources;
+  const handleRemove = async (id: string) => {
+    setRemoving(id);
+    try {
+      await api.deleteDriveConnection(id);
+      setConnections((prev) => prev.filter((c) => c.id !== id));
+    } catch { /* surfaced by the row staying */ }
+    finally { setRemoving(null); }
+  };
 
   if (loading) {
     return (
@@ -1035,74 +1028,125 @@ function ConnectedResourcesTab({ clientId }: { clientId: string }) {
 
   return (
     <div>
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="flex items-center gap-2 rounded-lg px-3 py-2 border border-gray-300 bg-white" style={{ minWidth: 220 }}>
-          <FontAwesomeIcon icon={faSearch} className="text-gray-400 text-xs shrink-0" />
-          <input
-            type="text"
-            placeholder="Search resources…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="text-sm outline-none bg-transparent text-gray-700 placeholder-gray-400 w-full"
-          />
+      {/* Header */}
+      <div className="mb-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800 mb-1">Resources for this client</h2>
+            <p className="text-sm text-gray-500 max-w-xl">
+              Link reference documents from Google Drive or OneDrive. Files stay in your cloud
+              under your existing sharing controls — myABA stores only the link, scoped to this client.
+            </p>
+          </div>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white"
+              style={{ background: '#2a5f6f' }}
+            >
+              <FontAwesomeIcon icon={faPlus} className="text-xs" />
+              Add Resource
+            </button>
+            {showPicker && (
+              <div
+                className="absolute right-0 mt-1 w-52 bg-white rounded-xl border border-gray-200 shadow-lg z-20 overflow-hidden"
+              >
+                <button
+                  onClick={() => { setShowPicker(false); setShowDrive('google'); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <FontAwesomeIcon icon={faGoogle} style={{ color: '#ea4335' }} />
+                  Link from Google Drive
+                </button>
+                <button
+                  onClick={() => { setShowPicker(false); setShowDrive('microsoft'); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 border-t border-gray-100"
+                >
+                  <FontAwesomeIcon icon={faMicrosoft} style={{ color: '#0078d4' }} />
+                  Link from OneDrive
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-        <span className="text-sm text-gray-400">{filtered.length} resource{filtered.length !== 1 ? 's' : ''}</span>
-        <div className="flex-1" />
-        <button
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors"
-          style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#EEF7EA')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
-        >
-          <FontAwesomeIcon icon={faLink} className="text-xs" />
-          Link Resource
-        </button>
       </div>
 
-      {filtered.length === 0 ? (
+      {connections.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <FontAwesomeIcon icon={faFolderOpen} className="text-4xl mb-3 text-gray-300" />
-          <p className="text-base font-medium">No resources connected</p>
-          <p className="text-sm mt-1">Use "Link Resource" to attach policies, SOPs, or templates to this client.</p>
+          <p className="text-base font-medium">No resources linked</p>
+          <p className="text-sm mt-1">Use "Add Resource" to link a document or folder from Google Drive or OneDrive.</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((r) => {
-            const colors = CATEGORY_COLORS[r.category] ?? { bg: '#f3f4f6', text: '#374151' };
+          {connections.map((c) => {
+            const isGoogle = c.driveSource === 'google';
             return (
               <div
-                key={r.id}
+                key={c.id}
                 className="bg-white rounded-xl px-5 py-4 flex items-center gap-4"
                 style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}
               >
                 <div
                   className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: colors.bg }}
+                  style={{ background: isGoogle ? '#fdeceb' : '#e8f1fb' }}
                 >
-                  <FontAwesomeIcon icon={faFileAlt} style={{ color: colors.text, fontSize: 15 }} />
+                  <FontAwesomeIcon icon={isGoogle ? faGoogle : faMicrosoft} style={{ color: isGoogle ? '#ea4335' : '#0078d4', fontSize: 15 }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-gray-900 text-sm truncate">{r.title}</span>
-                    <span
-                      className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
-                      style={{ background: colors.bg, color: colors.text }}
-                    >
-                      {CATEGORY_LABELS[r.category] ?? r.category}
+                    <span className="font-semibold text-gray-900 text-sm truncate">{c.driveItemName}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0 bg-gray-100 text-gray-500 capitalize">
+                      {c.driveItemType}
                     </span>
+                    {c.hipaaVerified ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0 inline-flex items-center gap-1"
+                            style={{ background: '#EEF7EA', color: '#2E7D22' }}>
+                        <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 9 }} /> HIPAA labeled
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
+                            style={{ background: '#fef3c7', color: '#92400e' }}>
+                        Label unverified
+                      </span>
+                    )}
                   </div>
-                  {r.textContent && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{r.textContent.slice(0, 100)}</p>
-                  )}
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">{isGoogle ? 'Google Drive' : 'OneDrive'}</p>
                 </div>
-                <span className="text-xs text-gray-400 shrink-0">
-                  Updated {new Date(r.updatedAt).toLocaleDateString()}
-                </span>
+                <a
+                  href={c.driveItemUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-gray-400 hover:text-gray-600 px-2"
+                  title="Open in provider"
+                >
+                  <FontAwesomeIcon icon={faExternalLinkAlt} className="text-sm" />
+                </a>
+                <button
+                  onClick={() => handleRemove(c.id)}
+                  disabled={removing === c.id}
+                  className="shrink-0 text-gray-400 hover:text-red-500 px-2 disabled:opacity-50"
+                  title="Remove link"
+                >
+                  <FontAwesomeIcon icon={removing === c.id ? faSpinner : faTrashAlt} className={`text-sm ${removing === c.id ? 'animate-spin' : ''}`} />
+                </button>
               </div>
             );
           })}
         </div>
+      )}
+
+      {showDrive && (
+        <DriveConnectWizard
+          provider={showDrive}
+          clientId={clientId}
+          clientName={clientName}
+          onClose={() => setShowDrive(null)}
+          onLinked={(c) => {
+            setConnections((prev) => [c, ...prev]);
+            setShowDrive(null);
+          }}
+        />
       )}
     </div>
   );

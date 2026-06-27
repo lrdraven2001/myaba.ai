@@ -480,6 +480,22 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
 
+  /** List pending (unclaimed, unexpired) invite links. Admin only. */
+  listInvites: (orgId: string) =>
+    request<Array<{ id: string; token: string; role: string; createdBy: string; expiresAt: string; inviteUrl: string }>>(
+      `/orgs/${orgId}/invites`,
+    ),
+
+  /** Revoke a pending invite. Admin only. */
+  revokeInvite: (orgId: string, token: string) =>
+    request<void>(`/orgs/${orgId}/invites/${token}`, { method: 'DELETE' }),
+
+  /** Recent AI activity for a member (from the audit log). Admin only. */
+  getMemberActivity: (orgId: string, uid: string) =>
+    request<Array<{ eventType: string; clientId?: string; documentId?: string; decision?: string; timestamp: string }>>(
+      `/orgs/${orgId}/members/${uid}/activity`,
+    ),
+
   /** Preview an invite link (doesn't consume it). Returns { orgId, orgName, role }. */
   resolveInvite: (token: string) =>
     request<{ orgId: string; orgName: string; role: string }>(`/invite/${token}`),

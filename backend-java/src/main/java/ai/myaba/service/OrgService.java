@@ -472,6 +472,78 @@ public class OrgService {
     }
 
     /**
+     * List pending (unclaimed, unexpired) invites for an org. Admin-gated at the controller.
+     * The token is returned so an admin can re-copy the invite link.
+     */
+    public List<Map<String, Object>> listPendingInvites(String orgId) throws Exception {
+        String nowIso = Instant.now().toString();
+        java.util.stream.Stream<Map<String, Object>> tokens;
+        if (devMode) {
+            tokens = devTokens.values().stream().filter(t -> orgId.equals(t.get("orgId")));
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            tokens = db.collection("organizations").document(orgId)
+                    .collection("inviteTokens").get().get().getDocuments()
+                    .stream().map(d -> (Map<String, Object>) new HashMap<String, Object>(d.getData()));
+        }
+        return tokens
+                .filter(t -> t.get("usedBy") == null)
+                .filter(t -> nowIso.compareTo(String.valueOf(t.get("expiresAt"))) < 0)
+                .map(t -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id",        t.get("token"));   // token doubles as the id
+                    m.put("token",     t.get("token"));
+                    m.put("role",      t.get("role"));
+                    m.put("createdBy", t.get("createdBy"));
+                    m.put("expiresAt", t.get("expiresAt"));
+                    m.put("inviteUrl", appBaseUrl + "/invite/" + t.get("token"));
+                    return m;
+                })
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** Revoke (delete) a pending invite token. Admin-gated at the controller. */
+    public void revokeInvite(String orgId, String token) throws Exception {
+        if (devMode) { devTokens.remove(token); return; }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(orgId)
+          .collection("inviteTokens").document(token).delete().get();
+    }
+
+    /**
+     * Recent activity for a member, derived from the audit log (userId is globally unique,
+     * so this is implicitly org-scoped). Sorted newest-first in memory to avoid a composite
+     * index. Returns [] in dev mode (audit entries are logged, not persisted).
+     */
+    public List<Map<String, Object>> getMemberActivity(String orgId, String uid) throws Exception {
+        if (devMode) return List.of();
+        Firestore db = FirestoreClient.getFirestore();
+        List<QueryDocumentSnapshot> docs = db.collection("auditLog")
+                .whereEqualTo("userId", uid)
+                .limit(200)
+                .get().get().getDocuments();
+        return docs.stream()
+                .map(d -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("eventType",  d.get("eventType"));
+                    m.put("clientId",   d.get("clientId"));
+                    m.put("documentId", d.get("documentId"));
+                    m.put("decision",   d.get("decision"));
+                    m.put("timestamp",  d.get("timestamp"));
+                    m.put("timestampMs", d.get("timestampMs"));
+                    return m;
+                })
+                .sorted((a, b) -> Long.compare(asLong(b.get("timestampMs")), asLong(a.get("timestampMs"))))
+                .limit(50)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static long asLong(Object v) {
+        if (v instanceof Number n) return n.longValue();
+        try { return Long.parseLong(String.valueOf(v)); } catch (Exception e) { return 0L; }
+    }
+
+    /**
      * Look up an invite token without consuming it.
      * Returns token metadata so the frontend can show the org name.
      *

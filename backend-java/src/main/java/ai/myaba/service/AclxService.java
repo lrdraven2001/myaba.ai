@@ -125,7 +125,9 @@ public class AclxService {
             HttpURLConnection conn = (HttpURLConnection) new URL(gatewayUrl + "/evaluate").openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(5_000);
-            conn.setReadTimeout(5_000);
+            // 30s read: ACLX evaluation runs LLM-backed detectors (semantic, groundedness)
+            // which can take several seconds. Too short a timeout fail-safe BLOCKs valid output.
+            conn.setReadTimeout(30_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
 
@@ -381,8 +383,11 @@ public class AclxService {
             HttpURLConnection conn =
                     (HttpURLConnection) new URL(gatewayUrl + "/evaluate").openConnection();
             conn.setRequestMethod("POST");
-            conn.setConnectTimeout(3_000); // shorter timeout — this is pre-flight
-            conn.setReadTimeout(3_000);
+            conn.setConnectTimeout(3_000);
+            // 20s read: the input-guard /evaluate also runs the LLM-backed semantic
+            // detector. Input-guard failure is non-fatal (passes through), but too short
+            // a timeout makes every message wait then degrade — give the detector room.
+            conn.setReadTimeout(20_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
 

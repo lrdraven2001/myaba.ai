@@ -34,7 +34,7 @@ public class SearchService {
     private final PolicyRagService policyRagService;
     private final TemplateService templateService;
     private final ChatService     chatService;
-    private final ClaudeService       claudeService;
+    private final AiService           aiService;
     private final AclxService         aclxService;
     private final AuditService        auditService;
     private final ReviewQueueService  reviewQueueService;
@@ -242,7 +242,7 @@ public class SearchService {
                 + "Provide a 1-2 sentence summary of the most relevant findings.",
                 query, context.toString());
 
-        return claudeService.chat(systemPrompt, List.of(
+        return aiService.chat(systemPrompt, List.of(
                 Map.of("role", "user", "content", userMessage)
         ));
     }

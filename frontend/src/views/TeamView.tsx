@@ -48,55 +48,6 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   BILLING_ADMIN:     { bg: '#fff7ed', text: '#92400e' },
 };
 
-// Stub members — replace with api.getOrgMembers()
-const STUB_MEMBERS: TeamMember[] = [
-  { id: 'u-001', name: 'Chris Hunt',    email: 'chris@myaba.ai',  role: 'ORG_SUPER_ADMIN',  active: true  },
-  { id: 'u-002', name: 'Sarah Johnson', email: 'sarah@myaba.ai',  role: 'SUPERVISING_BCBA', active: true  },
-  { id: 'u-003', name: 'Mike Torres',   email: 'mike@myaba.ai',   role: 'RBT',              active: true,  supervisorId: 'u-002' },
-  { id: 'u-004', name: 'Lisa Chen',     email: 'lisa@myaba.ai',   role: 'SUPERVISING_BCBA', active: false },
-];
-
-const STUB_ASSIGNED_CLIENTS: Record<string, Array<{ id: string; name: string; diagnosis: string }>> = {
-  'u-002': [
-    { id: 'c-001', name: 'Alex Johnson', diagnosis: 'ASD Level 2' },
-    { id: 'c-003', name: 'Sam Rivera',   diagnosis: 'ADHD'        },
-  ],
-  'u-003': [
-    { id: 'c-001', name: 'Alex Johnson', diagnosis: 'ASD Level 2' },
-  ],
-  'u-004': [
-    { id: 'c-002', name: 'Jordan Lee',   diagnosis: 'ASD Level 1' },
-    { id: 'c-003', name: 'Sam Rivera',   diagnosis: 'ADHD'        },
-    { id: 'c-004', name: 'Casey Morgan', diagnosis: 'ASD Level 3' },
-  ],
-};
-
-const STUB_USAGE: Record<string, Array<{ date: string; type: 'Chat' | 'Document' | 'Search'; detail: string; tokens: number }>> = {
-  'u-001': [
-    { date: '2026-05-25', type: 'Chat',     detail: 'Session: Behavior plan for Alex Johnson',   tokens: 1240 },
-    { date: '2026-05-24', type: 'Document', detail: 'Generated: Monthly Progress Report',         tokens: 2100 },
-    { date: '2026-05-23', type: 'Chat',     detail: 'Session: Insurance authorization question',  tokens: 680  },
-    { date: '2026-05-21', type: 'Search',   detail: 'Resource search: reinforcement schedules',   tokens: 320  },
-  ],
-  'u-002': [
-    { date: '2026-05-25', type: 'Chat',     detail: 'Session: DTT strategies for Sam Rivera',    tokens: 890  },
-    { date: '2026-05-24', type: 'Document', detail: 'Generated: Session Note — Alex Johnson',     tokens: 1560 },
-    { date: '2026-05-22', type: 'Chat',     detail: 'Session: ABA data collection methods',       tokens: 1120 },
-    { date: '2026-05-20', type: 'Search',   detail: 'Resource search: reinforcement schedules',   tokens: 320  },
-  ],
-  'u-003': [
-    { date: '2026-05-24', type: 'Chat',     detail: 'Session: RBT supervision question',          tokens: 445  },
-    { date: '2026-05-21', type: 'Document', detail: 'Generated: Data sheet — Alex Johnson',        tokens: 780  },
-  ],
-  'u-004': [],
-};
-
-// Stub pending invites — replace with api.getOrgInvites()
-const STUB_INVITES = [
-  { id: 'inv-001', email: 'newbcba@agency.com',  role: 'SUPERVISING_BCBA', sentAt: '2026-05-24', expiresAt: '2026-05-31' },
-  { id: 'inv-002', email: 'rbt.hire@agency.com', role: 'RBT',              sentAt: '2026-05-23', expiresAt: '2026-05-30' },
-];
-
 const AVATAR_COLORS = ['#3F9B2F', '#1E88FF', '#F5A623', '#9c27b0', '#e91e63'];
 
 function toInitials(name: string) {
@@ -110,7 +61,7 @@ export default function TeamView() {
   const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
   const orgId   = currentUser?.orgId ?? '';
 
-  const [members, setMembers]             = useState<TeamMember[]>(STUB_MEMBERS);
+  const [members, setMembers]             = useState<TeamMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [showInvite, setShowInvite]       = useState(false);
@@ -133,9 +84,9 @@ export default function TeamView() {
           role:        m.role,
           active:      m.active,
         }));
-        if (mapped.length > 0) setMembers(mapped);
+        setMembers(mapped);
       })
-      .catch(() => { /* keep stubs on error */ })
+      .catch(() => setMembers([]))
       .finally(() => setLoadingMembers(false));
   }, [orgId]);
 
@@ -214,14 +165,6 @@ export default function TeamView() {
             >
               <FontAwesomeIcon icon={faMailBulk} className="text-xs" />
               Manage Invites
-              {STUB_INVITES.length > 0 && (
-                <span
-                  className="w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
-                  style={{ background: '#2a5f6f', fontSize: 9 }}
-                >
-                  {STUB_INVITES.length}
-                </span>
-              )}
             </button>
             <button
               onClick={handleOpenInvite}
@@ -239,6 +182,20 @@ export default function TeamView() {
 
       {/* Member list */}
       <div className="flex-1 overflow-y-auto bg-gray-50 px-6 py-5">
+        {loadingMembers ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+            <FontAwesomeIcon icon={faSpinner} className="text-2xl animate-spin text-gray-300" />
+            <p className="text-sm font-medium">Loading team…</p>
+          </div>
+        ) : members.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-2">
+            <FontAwesomeIcon icon={faUsers} className="text-4xl text-gray-300" />
+            <p className="text-base font-medium">No team members yet</p>
+            <p className="text-sm text-center max-w-sm">
+              Use <strong>Invite Member</strong> to generate an invite link and add your first staff member.
+            </p>
+          </div>
+        ) : (
         <div className="space-y-2">
           {members.map((m, i) => {
             const colors   = ROLE_COLORS[m.role] ?? { bg: '#f3f4f6', text: '#374151' };
@@ -314,6 +271,7 @@ export default function TeamView() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* ── Invite modal ── */}
@@ -418,7 +376,7 @@ export default function TeamView() {
 
       {/* ── Manage Invites modal ── */}
       {showManageInvites && (
-        <ManageInvitesModal onClose={() => setShowManageInvites(false)} />
+        <ManageInvitesModal orgId={orgId} onClose={() => setShowManageInvites(false)} />
       )}
     </div>
   );
@@ -435,6 +393,8 @@ function UserDetailView({
   onBack: () => void;
   onUpdate: (m: TeamMember) => void;
 }) {
+  const { currentUser } = useAuth();
+  const orgId = currentUser?.orgId ?? '';
   const [activeTab, setActiveTab] = useState<UserDetailTab>('profile');
   const memberIndex = allMembers.findIndex((m) => m.id === member.id);
   const avatarBg    = AVATAR_COLORS[memberIndex % AVATAR_COLORS.length];
@@ -443,7 +403,7 @@ function UserDetailView({
   const tabs: { key: UserDetailTab; label: string; icon: typeof faUserCog }[] = [
     { key: 'profile', label: 'Profile',          icon: faUserCog    },
     { key: 'clients', label: 'Assigned Clients',  icon: faUsers      },
-    { key: 'usage',   label: 'Service Usage',     icon: faHistory    },
+    { key: 'usage',   label: 'Activity',          icon: faHistory    },
   ];
 
   return (
@@ -507,7 +467,7 @@ function UserDetailView({
           <UserClientsTab memberId={member.id} memberName={member.name} />
         )}
         {activeTab === 'usage' && (
-          <UserUsageTab memberId={member.id} memberName={member.name} />
+          <UserUsageTab memberId={member.id} memberName={member.name} orgId={orgId} />
         )}
       </div>
     </div>
@@ -746,7 +706,40 @@ function UserProfileTab({
 // ── Assigned Clients tab ──────────────────────────────────────────────────────
 
 function UserClientsTab({ memberId, memberName }: { memberId: string; memberName: string }) {
-  const clients = STUB_ASSIGNED_CLIENTS[memberId] ?? [];
+  const [clients, setClients] = useState<Array<{ id: string; name: string; diagnosis: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Real assignments: a client is assigned to this member if they're anywhere on its care team.
+  useEffect(() => {
+    setLoading(true);
+    api.getClients()
+      .then((all) => {
+        const mine = all
+          .filter((c) =>
+            c.treatingBcbaId === memberId ||
+            c.supervisingBcbaId === memberId ||
+            (c.supervisorIds ?? []).includes(memberId) ||
+            (c.rbtIds ?? []).includes(memberId) ||
+            (c.viewerIds ?? []).includes(memberId) ||
+            (c.memberIds ?? []).includes(memberId))
+          .map((c) => ({
+            id: c.id,
+            name: c.preferredName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.legalName || 'Client',
+            diagnosis: c.diagnosis,
+          }));
+        setClients(mine);
+      })
+      .catch(() => setClients([]))
+      .finally(() => setLoading(false));
+  }, [memberId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-gray-400">
+        <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
+      </div>
+    );
+  }
 
   if (clients.length === 0) {
     return (
@@ -797,79 +790,102 @@ function UserClientsTab({ memberId, memberName }: { memberId: string; memberName
   );
 }
 
-// ── Service Usage tab ─────────────────────────────────────────────────────────
+// ── Activity tab ──────────────────────────────────────────────────────────────
 
-const USAGE_TYPE_STYLES: Record<string, { bg: string; color: string; icon: typeof faCommentDots }> = {
+interface ActivityEntry { eventType: string; clientId?: string; documentId?: string; decision?: string; timestamp: string }
+
+const ACTIVITY_STYLES: Record<string, { bg: string; color: string; icon: typeof faCommentDots }> = {
   Chat:     { bg: '#EEF7EA', color: '#3F9B2F', icon: faCommentDots },
-  Document: { bg: '#EEF4FF', color: '#1E88FF', icon: faFileAlt     },
-  Search:   { bg: '#fef3c7', color: '#92400e', icon: faHistory      },
+  Document: { bg: '#EEF4FF', color: '#1E88FF', icon: faFileAlt },
+  Other:    { bg: '#fef3c7', color: '#92400e', icon: faHistory },
 };
 
-function UserUsageTab({ memberId, memberName }: { memberId: string; memberName: string }) {
-  const usage = STUB_USAGE[memberId] ?? [];
+function eventCategory(e: string): 'Chat' | 'Document' | 'Other' {
+  if (/CHAT/i.test(e)) return 'Chat';
+  if (/DOC/i.test(e))  return 'Document';
+  return 'Other';
+}
 
-  const totalTokens = usage.reduce((acc, u) => acc + u.tokens, 0);
+function humanizeEvent(e: string): string {
+  const s = (e || 'Activity').replace(/_/g, ' ').toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
-  if (usage.length === 0) {
+function UserUsageTab({ memberId, memberName, orgId }: { memberId: string; memberName: string; orgId: string }) {
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    if (!orgId) return;
+    setLoading(true);
+    api.getMemberActivity(orgId, memberId)
+      .then(setActivity)
+      .catch(() => setActivity([]))
+      .finally(() => setLoading(false));
+  }, [orgId, memberId]);
+
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
-        <FontAwesomeIcon icon={faHistory} className="text-4xl text-gray-300" />
-        <p className="text-base font-medium">No usage recorded</p>
-        <p className="text-sm">{memberName} has not used AI services yet.</p>
+      <div className="flex items-center justify-center py-16 text-gray-400">
+        <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
       </div>
     );
   }
+
+  if (activity.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
+        <FontAwesomeIcon icon={faHistory} className="text-4xl text-gray-300" />
+        <p className="text-base font-medium">No recorded activity</p>
+        <p className="text-sm">{memberName} has no logged AI activity yet.</p>
+      </div>
+    );
+  }
+
+  const chatCount = activity.filter((a) => eventCategory(a.eventType) === 'Chat').length;
+  const docCount  = activity.filter((a) => eventCategory(a.eventType) === 'Document').length;
 
   return (
     <div className="max-w-lg space-y-4">
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div className="text-2xl font-bold text-gray-800">{usage.length}</div>
-          <div className="text-xs text-gray-400 mt-0.5">Sessions</div>
+          <div className="text-2xl font-bold text-gray-800">{activity.length}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Events</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div className="text-2xl font-bold" style={{ color: '#1E88FF' }}>
-            {usage.filter((u) => u.type === 'Document').length}
-          </div>
+          <div className="text-2xl font-bold" style={{ color: '#3F9B2F' }}>{chatCount}</div>
+          <div className="text-xs text-gray-400 mt-0.5">Chats</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+          <div className="text-2xl font-bold" style={{ color: '#1E88FF' }}>{docCount}</div>
           <div className="text-xs text-gray-400 mt-0.5">Documents</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <div className="text-2xl font-bold" style={{ color: '#3F9B2F' }}>
-            {(totalTokens / 1000).toFixed(1)}k
-          </div>
-          <div className="text-xs text-gray-400 mt-0.5">AI Tokens</div>
         </div>
       </div>
 
-      {/* Activity log */}
+      {/* Activity log (from the audit trail) */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100">
           <h4 className="text-sm font-semibold text-gray-700">Recent Activity</h4>
         </div>
         <div className="divide-y divide-gray-50">
-          {usage.map((u, i) => {
-            const style = USAGE_TYPE_STYLES[u.type] ?? USAGE_TYPE_STYLES.Chat;
+          {activity.map((a, i) => {
+            const cat = eventCategory(a.eventType);
+            const style = ACTIVITY_STYLES[cat] ?? ACTIVITY_STYLES.Other;
             return (
               <div key={i} className="px-5 py-3 flex items-start gap-3">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                  style={{ background: style.bg }}
-                >
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: style.bg }}>
                   <FontAwesomeIcon icon={style.icon} style={{ color: style.color, fontSize: 13 }} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 leading-snug">{u.detail}</p>
+                  <p className="text-sm text-gray-800 leading-snug">{humanizeEvent(a.eventType)}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(u.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    &nbsp;·&nbsp;{u.tokens.toLocaleString()} tokens
+                    {new Date(a.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {a.decision ? <> · <span className="font-medium">{a.decision}</span></> : null}
                   </p>
                 </div>
-                <span
-                  className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-1"
-                  style={{ background: style.bg, color: style.color }}
-                >
-                  {u.type}
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0 mt-1" style={{ background: style.bg, color: style.color }}>
+                  {cat}
                 </span>
               </div>
             );
@@ -882,10 +898,37 @@ function UserUsageTab({ memberId, memberName }: { memberId: string; memberName: 
 
 // ── Manage Invites modal ──────────────────────────────────────────────────────
 
-function ManageInvitesModal({ onClose }: { onClose: () => void }) {
-  const [invites, setInvites] = useState(STUB_INVITES);
+interface PendingInvite { id: string; token: string; role: string; createdBy: string; expiresAt: string; inviteUrl: string }
 
-  const revoke = (id: string) => setInvites((prev) => prev.filter((i) => i.id !== id));
+function ManageInvitesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!orgId) return;
+    setLoading(true);
+    api.listInvites(orgId)
+      .then(setInvites)
+      .catch(() => setInvites([]))
+      .finally(() => setLoading(false));
+  }, [orgId]);
+
+  const revoke = async (token: string) => {
+    setRevoking(token);
+    try {
+      await api.revokeInvite(orgId, token);
+      setInvites((prev) => prev.filter((i) => i.token !== token));
+    } catch { /* row stays */ }
+    finally { setRevoking(null); }
+  };
+
+  const copyLink = async (inv: PendingInvite) => {
+    await navigator.clipboard.writeText(inv.inviteUrl);
+    setCopiedId(inv.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
@@ -903,9 +946,13 @@ function ManageInvitesModal({ onClose }: { onClose: () => void }) {
 
         {/* Invite list */}
         <div className="px-6 py-4 space-y-3 max-h-96 overflow-y-auto">
-          {invites.length === 0 ? (
+          {loading ? (
             <div className="text-center py-8 text-gray-400 text-sm">
-              No pending invites.
+              <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" /> Loading invites…
+            </div>
+          ) : invites.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              No pending invites. Use <strong>Invite Member</strong> to create one.
             </div>
           ) : (
             invites.map((inv) => {
@@ -918,27 +965,33 @@ function ManageInvitesModal({ onClose }: { onClose: () => void }) {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-800 truncate">{inv.email}</span>
                       <span
                         className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
                         style={{ background: roleColors.bg, color: roleColors.text }}
                       >
                         {ROLE_LABELS[inv.role] ?? inv.role}
                       </span>
+                      <span className="text-xs text-gray-400">invite link</span>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Sent {new Date(inv.sentAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      &nbsp;·&nbsp;Expires {new Date(inv.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      Expires {new Date(inv.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
                   <button
-                    onClick={() => revoke(inv.id)}
+                    onClick={() => copyLink(inv)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0"
-                    style={{ borderColor: '#fca5a5', color: '#dc2626', background: 'white' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+                    style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
                   >
-                    Revoke
+                    <FontAwesomeIcon icon={copiedId === inv.id ? faCheck : faCopy} className="text-xs" />
+                    {copiedId === inv.id ? 'Copied' : 'Copy link'}
+                  </button>
+                  <button
+                    onClick={() => revoke(inv.token)}
+                    disabled={revoking === inv.token}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0 disabled:opacity-50"
+                    style={{ borderColor: '#fca5a5', color: '#dc2626', background: 'white' }}
+                  >
+                    {revoking === inv.token ? <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xs" /> : 'Revoke'}
                   </button>
                 </div>
               );

@@ -137,125 +137,6 @@ const CHAT_ROLE_LABELS: Record<string, string> = {
   RBT:               'Behavior Technician',
 };
 
-const STUB_CHAT_SESSIONS: StubChatSession[] = [
-  {
-    id: 'cs-001',
-    userId: 'dev-user-003', userName: 'Mike Torres', userRole: 'RBT', supervisorId: 'dev-user-002',
-    clientId: 'client-001', clientName: 'Alex R.',
-    topic: 'Session Notes — DTT Program',
-    lastActivity: '2026-06-10T14:32:00Z',
-    aclxLabels: ['PHI_DETECTED'],
-    messages: [
-      {
-        id: 'm1-1', role: 'user', timestamp: '2026-06-10T14:28:00Z',
-        content: "Help me write session notes for Alex after a 2-hour DTT session. Target skills: tacting and manding. Alex hit 80% accuracy on tacting with 3D objects today.",
-      },
-      {
-        id: 'm1-2', role: 'assistant', timestamp: '2026-06-10T14:29:00Z',
-        aclxLabel: 'PHI_DETECTED', aclxSensitivity: 'MEDIUM',
-        content: "Session Notes — June 10, 2026\n\nSession Duration: 2 hours\nProgram: Discrete Trial Training (DTT)\nTarget Skills: Tacting, Manding\n\nSummary:\nClient demonstrated strong progress in tacting 3D objects at 80% accuracy across trials. Manding targets were embedded throughout with prompts faded to partial physical. Recommend maintaining current prompt hierarchy for manding in the next session.",
-      },
-      {
-        id: 'm1-3', role: 'user', timestamp: '2026-06-10T14:31:00Z',
-        content: "Also add a behavior incident — 3-minute tantrum during activity transition at 2pm.",
-      },
-      {
-        id: 'm1-4', role: 'assistant', timestamp: '2026-06-10T14:32:00Z',
-        content: "Behavior Incident (2:00 PM):\nAntecedent: Transition from preferred (iPad) to non-preferred (tabletop) activity.\nBehavior: Vocal protest, dropped to floor — duration approx. 3 minutes.\nConsequence: Brief delay, then guided transition with verbal prompt.\n\nRecommendation: Review transition protocol and consider adding a visual schedule to ease activity transitions.",
-      },
-    ],
-  },
-  {
-    id: 'cs-002',
-    userId: 'dev-user-002', userName: 'Sarah Johnson', userRole: 'SUPERVISING_BCBA',
-    clientId: 'client-001', clientName: 'Alex R.',
-    topic: 'BIP Review — Escape Behaviors',
-    lastActivity: '2026-06-09T10:15:00Z',
-    aclxLabels: ['PHI_DETECTED', 'BEHAVIORAL_DATA'],
-    messages: [
-      {
-        id: 'm2-1', role: 'user', timestamp: '2026-06-09T10:10:00Z',
-        content: "Updating Alex's BIP for escape-maintained behaviors. Current intervention is extinction plus FCT. Alex is showing an increase in behavior lately — should we adjust the protocol?",
-      },
-      {
-        id: 'm2-2', role: 'assistant', timestamp: '2026-06-09T10:13:00Z',
-        aclxLabel: 'PHI_DETECTED', aclxSensitivity: 'HIGH',
-        content: "Given an increase in escape behavior during extinction, consider these adjustments:\n\n1. Schedule Thinning Review — verify demand difficulty isn't too high\n2. FCT Prompt Fading — ensure the functional communication response is robust before fading extinction\n3. Antecedent Modifications — embed preferred items within demands (high-p sequences)\n4. Data Review — plot behavior frequency against session demands to check for ratio strain\n\nWould you like a draft revision for the BIP antecedent section?",
-      },
-      {
-        id: 'm2-3', role: 'user', timestamp: '2026-06-09T10:14:00Z',
-        content: "Yes, please draft the antecedent modification section.",
-      },
-      {
-        id: 'm2-4', role: 'assistant', timestamp: '2026-06-09T10:15:00Z',
-        aclxLabel: 'BEHAVIORAL_DATA', aclxSensitivity: 'MEDIUM',
-        content: "Antecedent Modification Strategies:\n\n• High-Probability Sequence: Present 2–3 easy, preferred tasks before non-preferred demands to build behavioral momentum.\n• Demand Fading: Temporarily reduce difficulty or duration of non-preferred tasks and increase gradually.\n• Choice Provision: Offer limited choice (e.g., which task first) to increase perceived control.\n• Pre-Session Pairing: Begin each session with 5 min of non-contingent pairing with preferred items.\n\nDocument implementation fidelity in session notes alongside the existing FCT protocol.",
-      },
-    ],
-  },
-  {
-    id: 'cs-003',
-    userId: 'dev-user-003', userName: 'Mike Torres', userRole: 'RBT', supervisorId: 'dev-user-002',
-    projectId: 'proj-001', projectName: 'Q2 Program Review',
-    topic: 'Goal Progress Summary',
-    lastActivity: '2026-06-08T09:45:00Z',
-    aclxLabels: [],
-    messages: [
-      {
-        id: 'm3-1', role: 'user', timestamp: '2026-06-08T09:42:00Z',
-        content: "Help me summarize goal progress for Q2 program review. Goals: manding 10+ novel items ✓, tacting actions from video clips ✓, listener responding to 50 targets — currently at 60%.",
-      },
-      {
-        id: 'm3-2', role: 'assistant', timestamp: '2026-06-08T09:45:00Z',
-        content: "Q2 Program Review — Goal Progress Summary\n\nGoals Met:\n✅ Manding: Client independently mands for 10+ novel items across environments.\n✅ Tacting Actions: Correctly labels actions from video clips with >80% accuracy.\n\nGoal In Progress:\n⏳ Listener Responding (50 targets): Currently at 60% accuracy. Recommend continued drilling with stimulus rotation. Target mastery: 80% over 3 consecutive sessions.",
-      },
-    ],
-  },
-  {
-    id: 'cs-004',
-    userId: 'dev-user-002', userName: 'Sarah Johnson', userRole: 'SUPERVISING_BCBA',
-    topic: 'Staff Training — Data Collection Methods',
-    lastActivity: '2026-06-07T16:20:00Z',
-    aclxLabels: ['CLINICAL_NOTE'],
-    messages: [
-      {
-        id: 'm4-1', role: 'user', timestamp: '2026-06-07T16:15:00Z',
-        content: "Write training material on proper ABA data collection for RBTs — covering partial interval recording, whole interval, and momentary time sampling.",
-      },
-      {
-        id: 'm4-2', role: 'assistant', timestamp: '2026-06-07T16:19:00Z',
-        aclxLabel: 'CLINICAL_NOTE', aclxSensitivity: 'LOW',
-        content: "ABA Data Collection Methods — RBT Training Guide\n\nPartial Interval Recording\nRecord whether the behavior occurred at ANY point during the interval. Overestimates frequency. Best for: low-rate behaviors you want to increase (e.g., verbalizations).\n\nWhole Interval Recording\nRecord whether the behavior occurred for the ENTIRE interval. Underestimates frequency. Best for: sustained behaviors (e.g., on-task).\n\nMomentary Time Sampling\nRecord whether the behavior is occurring at the EXACT moment the interval ends. Good estimate of overall prevalence. Less intrusive for ongoing activities.",
-      },
-      {
-        id: 'm4-3', role: 'user', timestamp: '2026-06-07T16:20:00Z',
-        content: "Can you add a quick-reference comparison table?",
-      },
-      {
-        id: 'm4-4', role: 'assistant', timestamp: '2026-06-07T16:20:00Z',
-        content: "Quick Reference: Recording Methods\n\nMethod               | Over-estimates | Under-estimates | Best For\nPartial Interval     | ✓              |                 | Low-rate target behavior\nWhole Interval       |                | ✓               | Sustained / on-task\nMomentary Sampling   | —              | —               | Prevalence estimate",
-      },
-    ],
-  },
-  {
-    id: 'cs-005',
-    userId: 'dev-user-001', userName: 'Chris Hunt', userRole: 'ORG_SUPER_ADMIN',
-    topic: 'System Prompt Review',
-    lastActivity: '2026-06-06T11:05:00Z',
-    aclxLabels: [],
-    messages: [
-      {
-        id: 'm5-1', role: 'user', timestamp: '2026-06-06T11:00:00Z',
-        content: "Review the current system prompt and suggest improvements for HIPAA-safe clinical documentation.",
-      },
-      {
-        id: 'm5-2', role: 'assistant', timestamp: '2026-06-06T11:05:00Z',
-        content: "Recommended improvements for HIPAA-safe documentation:\n\n1. PHI handling: 'Use [Client Name] or initials only. Never include full names, SSNs, or insurance IDs in AI output.'\n\n2. Behavioral data: 'Skill acquisition percentages and behavior frequency data should not include identifying information beyond the session date.'\n\n3. Safety disclaimer: 'AI-generated content requires clinical review before inclusion in official records.'",
-      },
-    ],
-  },
-];
-
 function statusChip(status: ReviewStatus) {
   if (status === 'PENDING') return (
     <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
@@ -404,7 +285,7 @@ export default function ReviewQueueView() {
       {/* Chat Review gets its own flex layout so its two panels can scroll independently */}
       {tab === 'chats' ? (
         <div className="flex-1 overflow-hidden px-8 py-6">
-          <ChatReviewTab currentUserId={currentUid} currentUserRole={currentRole} />
+          <ChatReviewTab currentUserId={currentUid} currentUserRole={currentRole} orgId={orgId} />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-8 py-6">
@@ -1407,23 +1288,81 @@ function ReviewCard({
 function ChatReviewTab({
   currentUserId,
   currentUserRole,
+  orgId,
 }: {
   currentUserId: string;
   currentUserRole: string;
+  orgId: string;
 }) {
+  void currentUserId; void currentUserRole; // access scoping is enforced server-side by getChats
   const [selectedSession, setSelectedSession] = useState<StubChatSession | null>(null);
   const [groupBy, setGroupBy] = useState<ChatGroupBy>('all');
+  const [sessions, setSessions] = useState<StubChatSession[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
 
-  const isAdmin = currentUserRole === 'ORG_SUPER_ADMIN' || currentUserRole === 'CLINICAL_DIRECTOR' || currentUserRole === 'ORG_ADMIN';
+  // Load real chats for review. getChats() returns org-wide chats for admins/
+  // Clinical Directors and the caller's own chats otherwise (scoped server-side).
+  // Member + client lookups resolve display names that aren't denormalized on chats.
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      api.getChats(),
+      api.getOrgMembers(orgId).catch(() => []),
+      api.getClients().catch(() => []),
+    ]).then(([chats, members, clients]) => {
+      if (cancelled) return;
+      const memberById = new Map(members.map((m) => [m.id, m]));
+      const clientById = new Map(clients.map((c) => [c.id, c]));
+      const built: StubChatSession[] = chats.map((c) => {
+        const m = memberById.get(c.createdBy);
+        const cl = c.clientId ? clientById.get(c.clientId) : undefined;
+        const clientName = cl
+          ? (cl.preferredName || [cl.firstName, cl.lastName].filter(Boolean).join(' ') || cl.legalName || c.clientId)
+          : undefined;
+        return {
+          id: c.id,
+          userId: c.createdBy,
+          userName: m?.displayName || c.createdBy,
+          userRole: m?.role || '',
+          clientId: c.clientId || undefined,
+          clientName,
+          projectId: c.projectId || undefined,
+          projectName: c.projectLabel || undefined,
+          topic: c.title || 'Untitled conversation',
+          lastActivity: c.updatedAt || c.createdAt || '',
+          messages: [],
+          aclxLabels: [],
+        };
+      });
+      setSessions(built);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [orgId]);
 
-  // Access-filter: admin sees all; BCBA sees own sessions + supervisees' sessions
-  const visibleSessions = STUB_CHAT_SESSIONS.filter((s) => {
-    if (isAdmin) return true;
-    if (currentUserRole === 'SUPERVISING_BCBA') {
-      return s.userId === currentUserId || s.supervisorId === currentUserId;
-    }
-    return false;
-  });
+  // Lazy-load a conversation's messages when selected.
+  const handleSelect = (session: StubChatSession) => {
+    setSelectedSession({ ...session });
+    if (session.messages.length > 0) return;
+    setLoadingMessages(true);
+    api.getChatMessages(session.id)
+      .then((msgs) => {
+        const mapped: StubChatMessage[] = msgs.map((mm) => ({
+          id: mm.id,
+          role: mm.role,
+          content: mm.content,
+          timestamp: mm.timestamp ?? mm.createdAt ?? '',
+          aclxSensitivity: (mm.aclxLabel?.sensitivity as 'HIGH' | 'MEDIUM' | 'LOW' | undefined),
+        }));
+        setSelectedSession((prev) => prev && prev.id === session.id ? { ...prev, messages: mapped } : prev);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMessages(false));
+  };
+
+  const visibleSessions = sessions;
 
   // Group sessions by the selected dimension
   type GroupEntry = { key: string; label: string; sessions: StubChatSession[] };
@@ -1496,7 +1435,12 @@ function ChatReviewTab({
 
         {/* Session list */}
         <div className="flex-1 overflow-y-auto">
-          {visibleSessions.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-2 text-gray-400">
+              <FontAwesomeIcon icon={faSpinner} className="text-2xl animate-spin text-gray-300" />
+              <p className="text-sm font-medium">Loading conversations…</p>
+            </div>
+          ) : visibleSessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-2 text-gray-400">
               <FontAwesomeIcon icon={faComments} className="text-4xl text-gray-200" />
               <p className="text-sm font-medium">No conversations to review</p>
@@ -1518,7 +1462,7 @@ function ChatReviewTab({
                     session={session}
                     selected={selectedSession?.id === session.id}
                     groupBy={groupBy}
-                    onClick={() => setSelectedSession(session)}
+                    onClick={() => handleSelect(session)}
                   />
                 ))}
               </div>
@@ -1533,7 +1477,7 @@ function ChatReviewTab({
         style={{ height: 'calc(100vh - 230px)' }}
       >
         {selectedSession ? (
-          <ChatSessionDetail session={selectedSession} />
+          <ChatSessionDetail session={selectedSession} loadingMessages={loadingMessages} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3 px-8">
             <FontAwesomeIcon icon={faComments} className="text-5xl text-gray-200" />
@@ -1624,7 +1568,7 @@ function ChatSessionItem({
 
 // ── Chat session detail ───────────────────────────────────────────────────────
 
-function ChatSessionDetail({ session }: { session: StubChatSession }) {
+function ChatSessionDetail({ session, loadingMessages }: { session: StubChatSession; loadingMessages: boolean }) {
   const avatarColor = CHAT_USER_COLORS[session.userRole] ?? '#6b7280';
   const roleChip    = CHAT_ROLE_CHIP[session.userRole] ?? { bg: '#f3f4f6', text: '#374151' };
 
@@ -1685,9 +1629,20 @@ function ChatSessionDetail({ session }: { session: StubChatSession }) {
 
       {/* Message thread */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50">
-        {session.messages.map((msg) => (
-          <ChatBubble key={msg.id} message={msg} />
-        ))}
+        {loadingMessages && session.messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
+            <FontAwesomeIcon icon={faSpinner} className="text-2xl animate-spin text-gray-300" />
+            <p className="text-sm">Loading messages…</p>
+          </div>
+        ) : session.messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+            No messages in this conversation yet.
+          </div>
+        ) : (
+          session.messages.map((msg) => (
+            <ChatBubble key={msg.id} message={msg} />
+          ))
+        )}
       </div>
     </div>
   );

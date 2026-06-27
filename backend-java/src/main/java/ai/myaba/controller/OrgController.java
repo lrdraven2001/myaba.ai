@@ -367,6 +367,68 @@ public class OrgController {
         }
     }
 
+    // ── List / revoke pending invites ─────────────────────────────────────────
+
+    /**
+     * GET /api/orgs/{orgId}/invites
+     * Returns pending (unclaimed, unexpired) invite links. ORG_ADMIN+ only.
+     */
+    @GetMapping("/api/orgs/{orgId}/invites")
+    public ResponseEntity<?> listInvites(@PathVariable String orgId,
+                                         @AuthenticationPrincipal AppUser user) {
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.listPendingInvites(orgId));
+        } catch (Exception e) {
+            log.error("Failed to list invites for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to list invites"));
+        }
+    }
+
+    /**
+     * DELETE /api/orgs/{orgId}/invites/{token}
+     * Revokes a pending invite. ORG_ADMIN+ only.
+     */
+    @DeleteMapping("/api/orgs/{orgId}/invites/{token}")
+    public ResponseEntity<?> revokeInvite(@PathVariable String orgId,
+                                          @PathVariable String token,
+                                          @AuthenticationPrincipal AppUser user) {
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            orgService.revokeInvite(orgId, token);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            log.error("Failed to revoke invite {} for org {}: {}", token, orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to revoke invite"));
+        }
+    }
+
+    /**
+     * GET /api/orgs/{orgId}/members/{uid}/activity
+     * Recent AI activity for a member, from the audit log. ORG_ADMIN+ only.
+     */
+    @GetMapping("/api/orgs/{orgId}/members/{uid}/activity")
+    public ResponseEntity<?> memberActivity(@PathVariable String orgId,
+                                            @PathVariable String uid,
+                                            @AuthenticationPrincipal AppUser user) {
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.getMemberActivity(orgId, uid));
+        } catch (Exception e) {
+            log.error("Failed to load activity for member {} in org {}: {}", uid, orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to load activity"));
+        }
+    }
+
     // ── Resolve invite token (preview) ────────────────────────────────────────
 
     /**

@@ -5,7 +5,7 @@ import ai.myaba.service.AclxService;
 import ai.myaba.service.AuditService;
 import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
-import ai.myaba.service.ClaudeService;
+import ai.myaba.service.AiService;
 import ai.myaba.service.ClientService;
 import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.InputGuardService;
@@ -42,7 +42,7 @@ import java.util.Optional;
 @Slf4j
 public class GenerateController {
 
-    private final ClaudeService claudeService;
+    private final AiService aiService;
     private final AclxService aclxService;
     private final AuditService auditService;
     private final ReviewQueueService reviewQueueService;
@@ -154,10 +154,10 @@ public class GenerateController {
         // Generate with Claude
         String rawOutput;
         try {
-            rawOutput = claudeService.generateDocument(
+            rawOutput = aiService.generateDocument(
                     req.getDocumentType(), context, req.getAdditionalContext());
         } catch (Exception e) {
-            log.error("Claude generation failed: {}", e.getMessage());
+            log.error("AI document generation failed: {}", e.getMessage());
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "AI generation failed"));
         }
@@ -320,9 +320,12 @@ public class GenerateController {
             if (gv.isPresent()) {
                 InputGuard.Violation v = gv.get();
                 auditService.log("GENERAL_CHAT_INPUT_GUARD_BLOCKED", user.getUid(), null, null, null, "BLOCK", null);
-                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
-                        "error", "Message blocked by input compliance guard",
-                        "message", v.userMessage(), "code", v.code(), "detected", v.detectedValue()));
+                Map<String, Object> guardBody = new java.util.LinkedHashMap<>();
+                guardBody.put("error",    "Message blocked by input compliance guard");
+                guardBody.put("message",  v.userMessage());
+                guardBody.put("code",     v.code());
+                guardBody.put("detected", v.detectedValue() != null ? v.detectedValue() : "");
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(guardBody);
             }
 
             List<Map<String, String>> generalMessages = new ArrayList<>();
@@ -333,9 +336,9 @@ public class GenerateController {
 
             String generalRaw;
             try {
-                generalRaw = claudeService.chat(buildGeneralChatSystemPrompt(), generalMessages);
+                generalRaw = aiService.chat(buildGeneralChatSystemPrompt(), generalMessages);
             } catch (Exception e) {
-                log.error("Claude general chat failed: {}", e.getMessage());
+                log.error("AI general chat failed: {}", e.getMessage());
                 return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
             }
             usageService.recordRequest(user.getOrgId(), "chat");
@@ -445,12 +448,12 @@ public class GenerateController {
                         req.getClientId(), null, null, "BLOCK", null);
                 log.warn("InputGuard blocked chat: user={} org={} code={} detected={}",
                         user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
-                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
-                        "error",    "Message blocked by input compliance guard",
-                        "message",  v.userMessage(),
-                        "code",     v.code(),
-                        "detected", v.detectedValue()
-                ));
+                Map<String, Object> guardBody = new java.util.LinkedHashMap<>();
+                guardBody.put("error",    "Message blocked by input compliance guard");
+                guardBody.put("message",  v.userMessage());
+                guardBody.put("code",     v.code());
+                guardBody.put("detected", v.detectedValue() != null ? v.detectedValue() : "");
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(guardBody);
             }
         }
 
@@ -476,9 +479,9 @@ public class GenerateController {
 
         String rawReply;
         try {
-            rawReply = claudeService.chat(systemPrompt, messages);
+            rawReply = aiService.chat(systemPrompt, messages);
         } catch (Exception e) {
-            log.error("Claude chat failed: {}", e.getMessage());
+            log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
         }
 

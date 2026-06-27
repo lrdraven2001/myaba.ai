@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
+import type { CSSProperties } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faTrash, faSpinner, faTimes, faBook,
+  faExternalLinkAlt, faShieldAlt, faFolderOpen,
 } from '@fortawesome/free-solid-svg-icons';
+import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
-import type { PolicyDocument, PolicyCategory } from '../types';
+import type { PolicyDocument, PolicyCategory, DriveConnection } from '../types';
+import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { useAuth } from '../contexts/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,6 +64,20 @@ const PURPOSE_COLORS: Record<ResourcePurpose, { bg: string; text: string }> = {
   GROUNDING:      { bg: '#F0FBF0', text: '#3F9B2F' },
   CLASSIFICATION: { bg: '#F3EEFE', text: '#7C3AED' },
 };
+
+/** Inline pill style for a purpose label (used in guidance text). */
+function purposePill(c: { bg: string; text: string }): CSSProperties {
+  return {
+    display: 'inline-block',
+    background: c.bg,
+    color: c.text,
+    fontWeight: 700,
+    fontSize: 11,
+    padding: '1px 7px',
+    borderRadius: 999,
+    marginRight: 2,
+  };
+}
 
 const CATEGORY_LABELS: Record<PolicyCategory, string> = {
   policy_manual: 'Policy Manual',
@@ -230,6 +248,129 @@ export default function ResourcesView() {
   );
 }
 
+// ── Cloud-linked documents (org-wide) ──────────────────────────────────────────
+
+function OrgDriveResourcesSection({ isAdmin }: { isAdmin: boolean }) {
+  const [connections, setConnections] = useState<DriveConnection[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [showPicker, setShowPicker] = useState(false);
+  const [showDrive, setShowDrive]   = useState<'google' | 'microsoft' | null>(null);
+  const [removing, setRemoving]     = useState<string | null>(null);
+
+  // Org-wide reference docs = drive connections NOT scoped to a specific client.
+  useEffect(() => {
+    setLoading(true);
+    api.getDriveConnections()
+      .then((all) => setConnections(all.filter((c) => !c.clientId)))
+      .catch(() => setConnections([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleRemove = async (id: string) => {
+    setRemoving(id);
+    try {
+      await api.deleteDriveConnection(id);
+      setConnections((prev) => prev.filter((c) => c.id !== id));
+    } catch { /* row stays on failure */ }
+    finally { setRemoving(null); }
+  };
+
+  return (
+    <div style={{ marginBottom: 24, border: '1px solid #DCE7EE', borderRadius: 12, background: '#FFFFFF', overflow: 'visible' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '14px 16px', borderBottom: connections.length || loading ? '1px solid #EEF2F5' : 'none' }}>
+        <div>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1E3347', margin: '0 0 2px' }}>Linked cloud documents</h3>
+          <p style={{ fontSize: 12.5, color: '#5A7184', margin: 0, lineHeight: 1.5, maxWidth: 540 }}>
+            Link reference documents or folders from Google Drive or OneDrive. Files stay in your cloud
+            under your own sharing controls — myABA stores only the link.
+          </p>
+        </div>
+        {isAdmin && (
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              onClick={() => setShowPicker((v) => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, background: '#2a5f6f', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
+              Link Drive
+            </button>
+            {showPicker && (
+              <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 210, background: '#FFFFFF', borderRadius: 12, border: '1px solid #DCE7EE', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 20, overflow: 'hidden' }}>
+                <button
+                  onClick={() => { setShowPicker(false); setShowDrive('google'); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'white', border: 'none', fontSize: 13, color: '#374151', cursor: 'pointer' }}
+                >
+                  <FontAwesomeIcon icon={faGoogle} style={{ color: '#ea4335' }} /> Link from Google Drive
+                </button>
+                <button
+                  onClick={() => { setShowPicker(false); setShowDrive('microsoft'); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'white', border: 'none', borderTop: '1px solid #F0F3F5', fontSize: 13, color: '#374151', cursor: 'pointer' }}
+                >
+                  <FontAwesomeIcon icon={faMicrosoft} style={{ color: '#0078d4' }} /> Link from OneDrive
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ padding: '20px 0', textAlign: 'center', color: '#8CA4B5' }}>
+          <FontAwesomeIcon icon={faSpinner} style={{ animation: 'spin 1s linear infinite' }} />
+        </div>
+      ) : connections.length === 0 ? (
+        <div style={{ padding: '20px 16px', display: 'flex', alignItems: 'center', gap: 10, color: '#8CA4B5', fontSize: 13 }}>
+          <FontAwesomeIcon icon={faFolderOpen} style={{ fontSize: 16, color: '#DCE7EE' }} />
+          No cloud documents linked yet.
+        </div>
+      ) : (
+        <div>
+          {connections.map((c) => {
+            const isGoogle = c.driveSource === 'google';
+            return (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid #F4F7F9' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: isGoogle ? '#fdeceb' : '#e8f1fb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <FontAwesomeIcon icon={isGoogle ? faGoogle : faMicrosoft} style={{ color: isGoogle ? '#ea4335' : '#0078d4', fontSize: 14 }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1E3347', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.driveItemName}</span>
+                    {c.hipaaVerified ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: '#EEF7EA', color: '#2E7D22' }}>
+                        <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 9 }} /> HIPAA labeled
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: '#fef3c7', color: '#92400e' }}>Label unverified</span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 12, color: '#8CA4B5', margin: '1px 0 0' }}>{isGoogle ? 'Google Drive' : 'OneDrive'} · {c.driveItemType}</p>
+                </div>
+                <a href={c.driveItemUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA4B5', padding: '0 6px' }} title="Open in provider">
+                  <FontAwesomeIcon icon={faExternalLinkAlt} style={{ fontSize: 13 }} />
+                </a>
+                {isAdmin && (
+                  <button onClick={() => handleRemove(c.id)} disabled={removing === c.id}
+                    style={{ background: 'none', border: 'none', color: '#B6C2CC', cursor: 'pointer', padding: '0 4px' }} title="Remove link">
+                    <FontAwesomeIcon icon={removing === c.id ? faSpinner : faTrash} style={{ fontSize: 13, animation: removing === c.id ? 'spin 1s linear infinite' : undefined }} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showDrive && (
+        <DriveConnectWizard
+          provider={showDrive}
+          onClose={() => setShowDrive(null)}
+          onLinked={(c) => { setConnections((prev) => [c, ...prev]); setShowDrive(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Library Tab ───────────────────────────────────────────────────────────────
 
 function LibraryTab({
@@ -276,23 +417,45 @@ function LibraryTab({
         )}
       </div>
 
-      {/* Info banner */}
+      {/* Plain-language guidance — what this tab is and how the purpose tags work */}
       <div
         style={{
-          background: '#F0FBF0',
-          border: '1px solid #3F9B2F',
+          background: '#F8FBFC',
+          border: '1px solid #DCE7EE',
           borderRadius: 10,
-          padding: '12px 16px',
+          padding: '14px 18px',
           marginBottom: 20,
           fontSize: 13,
-          color: '#2E5C22',
-          lineHeight: 1.6,
+          color: '#1E3347',
+          lineHeight: 1.65,
         }}
       >
-        <strong>GROUNDING resources</strong> are sent to ACLX as reference sources. When the AI generates
-        content, ACLX checks whether facts are supported by your library. Low groundedness scores appear
-        as warnings on generated documents.
+        <p style={{ margin: '0 0 8px' }}>
+          This is your <strong>reference library</strong> — the standard set of materials myABA uses to help
+          write accurate, compliant documentation. Add a clinical standard, template, payer requirement, or
+          example document, then tag it by <em>how the AI should use it</em>:
+        </p>
+        <ul style={{ margin: '0 0 0 4px', padding: 0, listStyle: 'none' }}>
+          <li style={{ marginBottom: 4 }}>
+            <span style={{ ...purposePill(PURPOSE_COLORS.GENERATION) }}>Generation</span>
+            &nbsp;a template or example the AI writes <em>from</em>.
+          </li>
+          <li style={{ marginBottom: 4 }}>
+            <span style={{ ...purposePill(PURPOSE_COLORS.GROUNDING) }}>Grounding</span>
+            &nbsp;a trusted source the AI's facts are <em>checked against</em>, so it doesn't make things up.
+          </li>
+          <li>
+            <span style={{ ...purposePill(PURPOSE_COLORS.CLASSIFICATION) }}>Classification</span>
+            &nbsp;an example that helps the system <em>recognize sensitive content</em>.
+          </li>
+        </ul>
+        <p style={{ margin: '8px 0 0', color: '#5A7184' }}>
+          One item can have more than one tag.
+        </p>
       </div>
+
+      {/* Cloud-linked documents (Google Drive / OneDrive) — org-wide reference material */}
+      <OrgDriveResourcesSection isAdmin={isAdmin} />
 
       {/* Inline add form */}
       {showAddForm && isAdmin && (
@@ -747,6 +910,18 @@ function PoliciesTab({
         )}
       </div>
 
+      {/* Plain-language guidance */}
+      <div
+        style={{
+          background: '#F8FBFC', border: '1px solid #DCE7EE', borderRadius: 10,
+          padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#1E3347', lineHeight: 1.65,
+        }}
+      >
+        Your agency's <strong>policies and standard operating procedures</strong> — the rules your staff
+        and the AI must follow. Attach a policy to a chat so the AI keeps its guidance in mind while it works.
+        Use the <strong>Library</strong> tab for reference materials and templates; use this tab for the rules themselves.
+      </div>
+
       {/* Inline add policy form */}
       {showAddForm && isAdmin && (
         <AddPolicyForm
@@ -1014,9 +1189,13 @@ function ClassificationTab() {
           Classification Library
         </h3>
         <p style={{ fontSize: 14, color: '#5A7184', lineHeight: 1.7, margin: 0 }}>
-          Define custom sensitivity tiers and content categories that overlay ACLX's standard HIPAA
-          labels. Your custom labels will appear alongside ACLX labels in the audit log and review
-          queue. <strong>Coming soon.</strong>
+          Create your own sensitivity labels for content specific to your agency — on top of the
+          built-in HIPAA protections that already run automatically. Your custom labels would show up
+          alongside the standard ones in the audit log and review queue. <strong>Coming soon.</strong>
+        </p>
+        <p style={{ fontSize: 12.5, color: '#7C3AED', lineHeight: 1.6, margin: '10px 0 0' }}>
+          Not the same as a Library item tagged "Classification" — those are example documents that
+          teach the system; this tab defines the labels themselves.
         </p>
       </div>
     </div>

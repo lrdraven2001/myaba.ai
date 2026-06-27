@@ -14,6 +14,10 @@ interface Props {
   provider: 'google' | 'microsoft';
   onClose: () => void;
   onLinked: (connection: DriveConnection) => void;
+  /** When set, the wizard is pre-scoped to this client: permissions default to
+   *  client-inherited and the connection is linked to the client record. */
+  clientId?: string;
+  clientName?: string;
 }
 
 type PermissionType = 'org_roles' | 'individual' | 'client_inherited';
@@ -667,7 +671,7 @@ function Step4Confirm({
 
 // ── Wizard shell ──────────────────────────────────────────────────────────────
 
-export default function DriveConnectWizard({ provider, onClose, onLinked }: Props) {
+export default function DriveConnectWizard({ provider, onClose, onLinked, clientId, clientName }: Props) {
   const [step, setStep] = useState(1);
 
   // Step 1 state
@@ -683,14 +687,14 @@ export default function DriveConnectWizard({ provider, onClose, onLinked }: Prop
   const [verifyResult,     setVerifyResult]     = useState<DriveVerifyResult | null>(null);
   const [hipaaAcknowledged, setHipaaAcknowledged] = useState(false);
 
-  // Step 3 state
+  // Step 3 state — pre-scoped to the client when launched from a client record.
   const [step3, setStep3] = useState<Step3State>({
-    permissionType:    'org_roles',
+    permissionType:    clientId ? 'client_inherited' : 'org_roles',
     selectedRoles:     new Set(DEFAULT_CLINICAL_ROLES),
     userEmails:        [],
     emailInput:        '',
-    clientId:          '',
-    clientName:        '',
+    clientId:          clientId ?? '',
+    clientName:        clientName ?? '',
     inheritPermissions: true,
     inheritedRoles:    new Set(DEFAULT_CLINICAL_ROLES),
   });

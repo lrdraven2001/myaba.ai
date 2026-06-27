@@ -67,19 +67,16 @@ public class AclxInputGuard implements InputGuard {
         }
 
         if ("ESCALATE".equals(decision)) {
+            // ESCALATE on input means "flag for review" — not a hard block.
+            // The message is allowed through; the output guard runs after Claude responds
+            // and will escalate the AI response to the review queue if needed.
+            // Blocking user input on ESCALATE is too aggressive and prevents legitimate
+            // messages from being processed when the org has no custom ACLX policy yet.
             String reason = result.getDecision().getReason();
             boolean isSynthesis = reason != null && reason.startsWith("SYNTHESIS_DETECTED");
-            log.warn("AclxInputGuard ESCALATE: user={} org={} contentId={} synthesis={}",
+            log.warn("AclxInputGuard ESCALATE (pass-through): user={} org={} contentId={} synthesis={}",
                     user.getUid(), user.getOrgId(), result.getContentId(), isSynthesis);
-            return Optional.of(new Violation(
-                    "ACLX_INPUT_ESCALATED",
-                    isSynthesis
-                        ? "Your message references multiple clients. " +
-                          "Cross-client queries are subject to additional compliance review."
-                        : "Your message requires compliance review before it can be processed. " +
-                          "Please contact your supervisor.",
-                    null // do not surface detected value — may be PHI
-            ));
+            return Optional.empty();
         }
 
         return Optional.empty();
