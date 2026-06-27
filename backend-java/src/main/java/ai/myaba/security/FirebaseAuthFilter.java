@@ -30,6 +30,8 @@ import java.util.Map;
  *   purpose      – treatment | assessment | oversight | scheduling | payment
  *   orgId        – Firestore organization document ID
  *   supervisorId – (RBT / BCBA_STUDENT only) UID of their supervising BCBA
+ *   phiAccess    – boolean; true when the user may process PHI. Set at role assignment.
+ *                  Absent on legacy tokens — AppUser.hasPhiAccess() falls back to role inference.
  * </pre>
  *
  * Federation: when OIDC/SAML is configured, a Firebase Cloud Function maps the
@@ -98,6 +100,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     .purpose(str(claims, "purpose", "treatment"))
                     .orgId(str(claims, "orgId", ""))
                     .supervisorId(str(claims, "supervisorId", null))
+                    .phiAccess(bool(claims, "phiAccess"))
                     .build();
 
             setAuthentication(user);
@@ -122,5 +125,13 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     private String str(Map<String, Object> claims, String key, String defaultValue) {
         Object val = claims.get(key);
         return val != null ? val.toString() : defaultValue;
+    }
+
+    /** Returns the Boolean value of a claim, or null if absent or not a boolean. */
+    private Boolean bool(Map<String, Object> claims, String key) {
+        Object val = claims.get(key);
+        if (val instanceof Boolean b) return b;
+        if (val instanceof String s) return Boolean.parseBoolean(s);
+        return null;
     }
 }

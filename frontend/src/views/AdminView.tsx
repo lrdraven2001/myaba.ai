@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faRobot,
@@ -11,13 +11,19 @@ import {
   faFlask,
   faCloud,
   faSave,
+  faChartBar,
+  faSpinner,
+  faShieldVirus,
+  faBan,
+  faClock,
+  faRedoAlt,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TabId = 'ai' | 'dlp';
+type TabId = 'ai' | 'dlp' | 'compliance';
 
 interface SaveStatus {
   state: 'idle' | 'saving' | 'saved' | 'error';
@@ -129,11 +135,39 @@ export default function AdminView() {
     setTimeout(() => setDlpSave({ state: 'idle' }), 3000);
   };
 
+  // ── Compliance state ──────────────────────────────────────────────────────
+
+  type ComplianceSummary = Awaited<ReturnType<typeof api.getComplianceSummary>>;
+  const [complianceSummary, setComplianceSummary] = useState<ComplianceSummary | null>(null);
+  const [complianceDays, setComplianceDays]       = useState(30);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceError, setComplianceError]     = useState<string | null>(null);
+
+  const loadCompliance = async (days: number) => {
+    setComplianceLoading(true);
+    setComplianceError(null);
+    try {
+      const data = await api.getComplianceSummary(days);
+      setComplianceSummary(data);
+    } catch (e: unknown) {
+      setComplianceError(e instanceof Error ? e.message : 'Failed to load compliance data');
+    } finally {
+      setComplianceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'compliance' && complianceSummary === null) {
+      loadCompliance(complianceDays);
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const tabs: { id: TabId; label: string; icon: typeof faRobot }[] = [
-    { id: 'ai',  label: 'AI Configuration',  icon: faRobot },
-    { id: 'dlp', label: 'Sensitive Data (DLP)', icon: faShieldAlt },
+    { id: 'ai',         label: 'AI Configuration',    icon: faRobot },
+    { id: 'dlp',        label: 'Sensitive Data (DLP)', icon: faShieldAlt },
+    { id: 'compliance', label: 'Compliance',           icon: faChartBar },
   ];
 
   return (
@@ -471,6 +505,193 @@ export default function AdminView() {
                 </button>
               </div>
             </div>
+          </>
+        )}
+
+        {/* ── Compliance tab ────────────────────────────────────────────────── */}
+        {tab === 'compliance' && (
+          <>
+            {/* Period selector */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Period:</span>
+                {[7, 30, 90].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => { setComplianceDays(d); loadCompliance(d); }}
+                    className="px-3 py-1 rounded-full text-xs font-medium border transition-all"
+                    style={{
+                      background:  complianceDays === d ? '#EEF4FF' : 'white',
+                      borderColor: complianceDays === d ? '#1E88FF' : '#E5E7EB',
+                      color:       complianceDays === d ? '#1E88FF' : '#6B7280',
+                    }}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => loadCompliance(complianceDays)}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+              >
+                <FontAwesomeIcon icon={faRedoAlt} style={{ fontSize: 12 }} />
+                Refresh
+              </button>
+            </div>
+
+            {complianceLoading && (
+              <div className="flex items-center justify-center py-16">
+                <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 24, color: '#1E88FF' }} />
+              </div>
+            )}
+
+            {complianceError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm text-red-700">
+                {complianceError}
+              </div>
+            )}
+
+            {complianceSummary && !complianceLoading && (
+              <>
+                {/* Decision distribution */}
+                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                  <div className="px-6 py-4 flex items-center gap-3">
+                    <FontAwesomeIcon icon={faChartBar} style={{ color: '#1E88FF', fontSize: 16 }} />
+                    <div>
+                      <h2 className="font-semibold text-gray-900">AI Output Decisions</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {complianceSummary.totalEvents} evaluations in last {complianceSummary.periodDays} days
+                        {complianceSummary.latestPolicyVersion && (
+                          <> · Policy <span className="font-mono">{complianceSummary.latestPolicyVersion}</span></>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="px-6 py-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    {(['ALLOW', 'REDACT', 'BLOCK', 'ESCALATE'] as const).map((d) => {
+                      const count = complianceSummary.decisionCounts[d] ?? 0;
+                      const pct   = complianceSummary.totalEvents > 0
+                        ? Math.round((count / complianceSummary.totalEvents) * 100) : 0;
+                      const colors: Record<string, { bg: string; text: string; icon: typeof faCheck }> = {
+                        ALLOW:    { bg: '#F0FDF4', text: '#166534', icon: faCheck },
+                        REDACT:   { bg: '#FFF8E1', text: '#B45309', icon: faShieldAlt },
+                        BLOCK:    { bg: '#FEF2F2', text: '#991B1B', icon: faBan },
+                        ESCALATE: { bg: '#FEF9C3', text: '#854D0E', icon: faClock },
+                      };
+                      const c = colors[d];
+                      return (
+                        <div key={d} className="rounded-xl p-4" style={{ background: c.bg }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <FontAwesomeIcon icon={c.icon} style={{ fontSize: 12, color: c.text }} />
+                            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: c.text }}>{d}</span>
+                          </div>
+                          <div className="text-2xl font-bold" style={{ color: c.text }}>{count}</div>
+                          <div className="text-xs mt-0.5" style={{ color: c.text, opacity: 0.7 }}>{pct}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Key metrics row */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+                    <p className="text-xs text-gray-400 mb-1">Synthesis Events</p>
+                    <p className="text-2xl font-bold text-gray-900">{complianceSummary.synthesisEvents}</p>
+                    <p className="text-xs text-gray-400 mt-1">Cross-client PHI risk detections</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+                    <p className="text-xs text-gray-400 mb-1">Tokens Redacted</p>
+                    <p className="text-2xl font-bold text-gray-900">{complianceSummary.totalRedactions}</p>
+                    <p className="text-xs text-gray-400 mt-1">PHI removed before delivery</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
+                    <p className="text-xs text-gray-400 mb-1">Event Types</p>
+                    {Object.entries(complianceSummary.eventTypeCounts).map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-sm mt-1">
+                        <span className="text-gray-600 text-xs">{k.replace('_', ' ').toLowerCase()}</span>
+                        <span className="font-semibold text-gray-900">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Top detectors */}
+                {Object.keys(complianceSummary.topDetectors).length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                    <div className="px-6 py-4 flex items-center gap-3">
+                      <FontAwesomeIcon icon={faShieldVirus} style={{ color: '#7C3AED', fontSize: 16 }} />
+                      <h2 className="font-semibold text-gray-900">Detector Activity</h2>
+                    </div>
+                    <div className="px-6 py-4 space-y-3">
+                      {Object.entries(complianceSummary.topDetectors).map(([detector, count]) => {
+                        const maxVal = Math.max(...Object.values(complianceSummary.topDetectors));
+                        const pct    = maxVal > 0 ? Math.round((count / maxVal) * 100) : 0;
+                        return (
+                          <div key={detector}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="font-mono text-gray-700 text-xs">{detector}</span>
+                              <span className="font-semibold text-gray-900">{count}</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{ width: `${pct}%`, background: '#7C3AED' }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent escalations */}
+                {complianceSummary.recentEscalations.length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                    <div className="px-6 py-4 flex items-center gap-3">
+                      <FontAwesomeIcon icon={faClock} style={{ color: '#B45309', fontSize: 16 }} />
+                      <h2 className="font-semibold text-gray-900">Recent Escalations</h2>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {complianceSummary.recentEscalations.map((e, i) => (
+                        <div key={i} className="px-6 py-3 flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">
+                              {e.eventType?.replace('_', ' ').toLowerCase()}
+                              {e.synthesis && (
+                                <span className="ml-2 text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                                  synthesis
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5 font-mono">{e.contentId}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {e.sensitivity && (
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded"
+                                style={{
+                                  background: e.sensitivity === 'HIGH' ? '#fee2e2' : '#FEF9C3',
+                                  color:      e.sensitivity === 'HIGH' ? '#991B1B' : '#854D0E',
+                                }}>
+                                {e.sensitivity}
+                              </span>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">
+                              {e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '--'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 text-center pb-4">
+                  Powered by ACLX · Data from myABA audit log · Sensitive content excluded
+                </p>
+              </>
+            )}
           </>
         )}
       </div>

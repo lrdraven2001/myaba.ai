@@ -23,17 +23,29 @@ interface TeamMember {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:  'Super Admin',
-  ORG_ADMIN:        'Full Administrator',
-  SUPERVISING_BCBA: 'Clinical Supervisor',
-  RBT:              'Behavior Technician',
+  ORG_SUPER_ADMIN:   'Clinical Director',
+  CLINICAL_DIRECTOR: 'Clinical Director',
+  ORG_ADMIN:         'Practice Administrator',
+  TREATING_BCBA:     'Treating BCBA',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
+  BCBA_STUDENT:      'BCBA Student',
+  RBT:               'Behavior Technician',
+  GENERAL_STAFF:     'General Staff',
+  SCHEDULING_ADMIN:  'Scheduling Admin',
+  BILLING_ADMIN:     'Billing Admin',
 };
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
-  ORG_SUPER_ADMIN:  { bg: '#fee2e2', text: '#991b1b' },
-  ORG_ADMIN:        { bg: '#fef3c7', text: '#92400e' },
-  SUPERVISING_BCBA: { bg: '#d1fae5', text: '#065f46' },
-  RBT:              { bg: '#EEF4FF', text: '#1E88FF' },
+  ORG_SUPER_ADMIN:   { bg: '#ede9fe', text: '#6d28d9' },
+  CLINICAL_DIRECTOR: { bg: '#ede9fe', text: '#6d28d9' },
+  ORG_ADMIN:         { bg: '#fef3c7', text: '#92400e' },
+  TREATING_BCBA:     { bg: '#d1fae5', text: '#065f46' },
+  SUPERVISING_BCBA:  { bg: '#d1fae5', text: '#065f46' },
+  BCBA_STUDENT:      { bg: '#ede9fe', text: '#5b21b6' },
+  RBT:               { bg: '#EEF4FF', text: '#1E88FF' },
+  GENERAL_STAFF:     { bg: '#f3f4f6', text: '#374151' },
+  SCHEDULING_ADMIN:  { bg: '#f0fdf4', text: '#166534' },
+  BILLING_ADMIN:     { bg: '#fff7ed', text: '#92400e' },
 };
 
 // Stub members — replace with api.getOrgMembers()
@@ -95,7 +107,7 @@ function toInitials(name: string) {
 
 export default function TeamView() {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
   const orgId   = currentUser?.orgId ?? '';
 
   const [members, setMembers]             = useState<TeamMember[]>(STUB_MEMBERS);

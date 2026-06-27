@@ -6,6 +6,10 @@ import ai.myaba.model.dto.UserRole;
 import ai.myaba.service.AuditService;
 import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ClientService;
+import ai.myaba.service.OrgService;
+import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.firebase.cloud.FirestoreClient;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,12 +31,28 @@ public class ClientController {
     private final ClientService clientService;
     private final AuthorizationService authorizationService;
     private final AuditService auditService;
+    private final OrgService orgService;
+
+    @org.springframework.beans.factory.annotation.Value("${dev.auth-enabled:false}")
+    private boolean devMode;
+
+    /** Returns a 403 response if the org's BAA has not been signed, null otherwise. */
+    private ResponseEntity<?> baaGate(AppUser user) {
+        if (!orgService.isBaaAccepted(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "BAA_NOT_SIGNED",
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before client records can be accessed."));
+        }
+        return null;
+    }
 
     // ── GET /api/clients ─────────────────────────────────────────────────
     // Returns only clients the requesting user is authorized to see.
 
     @GetMapping
     public ResponseEntity<?> getClients(@AuthenticationPrincipal AppUser user) {
+        ResponseEntity<?> gate = baaGate(user);
+        if (gate != null) return gate;
         try {
             List<Map<String, Object>> clients = clientService.getAuthorizedClients(user);
             return ResponseEntity.ok(clients);
@@ -47,6 +67,8 @@ public class ClientController {
     @GetMapping("/{clientId}")
     public ResponseEntity<?> getClient(@PathVariable String clientId,
                                         @AuthenticationPrincipal AppUser user) {
+        ResponseEntity<?> gate = baaGate(user);
+        if (gate != null) return gate;
         try {
             Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
 
@@ -72,6 +94,8 @@ public class ClientController {
     @PostMapping
     public ResponseEntity<?> createClient(@Valid @RequestBody ClientRequest req,
                                            @AuthenticationPrincipal AppUser user) {
+        ResponseEntity<?> baaCheck = baaGate(user);
+        if (baaCheck != null) return baaCheck;
         if (!user.isClinical() && !user.isAdmin()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Only clinical staff or admins can create client records"));
@@ -147,6 +171,58 @@ public class ClientController {
         } catch (Exception e) {
             log.error("updateAuthorizations failed {}: {}", clientId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update authorizations"));
+        }
+    }
+
+    // ── GET /api/clients/{clientId}/documents ────────────────────────────────
+    //
+    // Lists AI-generated documents persisted for this client.
+    // Returns metadata only — no full content — sorted newest-first.
+
+    @GetMapping("/{clientId}/documents")
+    public ResponseEntity<?> getClientDocuments(
+            @PathVariable String clientId,
+            @AuthenticationPrincipal AppUser user) {
+
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canAccessClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to view documents for this client"));
+            }
+
+            if (devMode) {
+                return ResponseEntity.ok(Map.of("documents", List.of()));
+            }
+
+            Firestore db = FirestoreClient.getFirestore();
+            List<QueryDocumentSnapshot> docs = db
+                    .collection("orgs").document(user.getOrgId())
+                    .collection("clients").document(clientId)
+                    .collection("documents")
+                    .orderBy("createdAtMs", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                    .limit(50)
+                    .get().get().getDocuments();
+
+            List<Map<String, Object>> result = docs.stream()
+                    .map(doc -> {
+                        Map<String, Object> data = new java.util.LinkedHashMap<>(doc.getData());
+                        data.put("id", doc.getId());
+                        // Remove raw content from list view — fetch by ID for full content
+                        data.remove("content");
+                        data.remove("aclxContentLabel");
+                        return data;
+                    })
+                    .toList();
+
+            return ResponseEntity.ok(Map.of("documents", result));
+
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (Exception e) {
+            log.error("getClientDocuments failed {} / {}: {}", user.getOrgId(), clientId, e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Failed to load documents"));
         }
     }
 

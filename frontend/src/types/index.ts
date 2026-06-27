@@ -7,6 +7,8 @@ export type UserRole =
   | 'RBT'
   | 'SCHEDULING_ADMIN'
   | 'BILLING_ADMIN'
+  | 'GENERAL_STAFF'
+  | 'CLINICAL_DIRECTOR'
   | 'ORG_ADMIN'
   | 'ORG_SUPER_ADMIN';
 
@@ -24,10 +26,18 @@ export interface AppUser {
   purpose: UserPurpose;
   orgId: string;
   supervisorId?: string; // populated for RBT / BCBA_STUDENT via Firebase custom claims
+  /**
+   * Explicit PHI-access capability from Firebase custom claims.
+   * Set when a user is assigned a role — true for clinical staff, false for non-clinical.
+   * This is the authoritative gate for custom org-defined roles; the role string alone
+   * cannot be trusted for PHI decisions when agencies define their own role names.
+   * Falls back to role-name inference when the claim is absent (legacy tokens).
+   */
+  phiAccess?: boolean;
 }
 
 export function isClinicalRole(role: UserRole): boolean {
-  return ['TREATING_BCBA', 'SUPERVISING_BCBA', 'BCBA_STUDENT', 'RBT'].includes(role);
+  return ['TREATING_BCBA', 'SUPERVISING_BCBA', 'BCBA_STUDENT', 'RBT', 'CLINICAL_DIRECTOR'].includes(role);
 }
 
 export function isBcbaRole(role: UserRole): boolean {
@@ -35,11 +45,26 @@ export function isBcbaRole(role: UserRole): boolean {
 }
 
 export function isAdminRole(role: UserRole): boolean {
-  return ['ORG_ADMIN', 'ORG_SUPER_ADMIN'].includes(role);
+  return ['CLINICAL_DIRECTOR', 'ORG_ADMIN', 'ORG_SUPER_ADMIN'].includes(role);
+}
+
+/**
+ * True when the user is allowed to view/process PHI.
+ * Checks the explicit `phiAccess` claim first (works for custom org roles),
+ * then falls back to the predefined role list for legacy tokens.
+ */
+export function hasPhiAccess(user: AppUser): boolean {
+  if (user.phiAccess !== undefined) return user.phiAccess;
+  // Legacy fallback: infer from known role names
+  return isClinicalRole(user.role) || isAdminRole(user.role);
 }
 
 export function canInitiateChat(role: UserRole): boolean {
   return isClinicalRole(role);
+}
+
+export function canUseGeneralChat(role: UserRole): boolean {
+  return role === 'GENERAL_STAFF' || role === 'SCHEDULING_ADMIN' || role === 'BILLING_ADMIN';
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -138,6 +163,14 @@ export interface Org {
   adminUid: string;
   createdAt: string;
   updatedAt?: string;
+  /**
+   * True once a Clinical Director has signed the BAA.
+   * PHI features (clinical chat, client records) are locked until this is true.
+   * Absent on orgs created before this field was introduced — treated as true (legacy).
+   */
+  baaAccepted?: boolean;
+  /** "clinical_director" (BAA signed at setup) or "it_setup" (BAA deferred). */
+  setupMode?: 'clinical_director' | 'it_setup';
   settings?: {
     sessionTimeoutMinutes: number;
     mfaRequired: boolean;
@@ -146,6 +179,8 @@ export interface Org {
     aclxEnabled?: boolean;
     hipaaMode?: boolean;
     aiAudit?: boolean;
+    /** When true, ORG_ADMIN users can use AI chat and generate documents. */
+    adminClinicalAccess?: boolean;
   };
 }
 
@@ -222,6 +257,8 @@ export interface Project {
   ownerId: string;
   clientIds: string[];
   isShared: boolean;
+  /** When true, project contains PHI — only clinical/admin roles may be added as members. */
+  containsPhi: boolean;
   members: Record<string, ProjectMemberRole>; // { userId: 'editor' | 'viewer' }
   memberIds: string[];
   createdAt: string;

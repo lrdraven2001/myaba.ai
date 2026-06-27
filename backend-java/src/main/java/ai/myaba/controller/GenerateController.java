@@ -7,6 +7,7 @@ import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.ClaudeService;
 import ai.myaba.service.ClientService;
+import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.InputGuardService;
 import ai.myaba.service.OrgService;
 import ai.myaba.service.PolicyRagService;
@@ -55,6 +56,7 @@ public class GenerateController {
     private final PolicyRagService policyRagService;
     private final ProjectService projectService;
     private final UsageService usageService;
+    private final DocumentPersistenceService documentPersistenceService;
 
     // ── POST /api/generate-document ──────────────────────────────────────────
 
@@ -63,10 +65,16 @@ public class GenerateController {
             @Valid @RequestBody GenerateDocumentRequest req,
             @AuthenticationPrincipal AppUser user) {
 
-        // Gate: only clinical staff can generate documents
-        if (!user.canInitiateChat()) {
+        // Gate: only clinical staff (or admins with clinical access enabled) can generate documents
+        if (!user.canInitiateChat() && !orgAdminHasClinicalAccess(user)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Document generation requires a clinical role"));
+        }
+        // Gate: BAA must be signed before any PHI/clinical operations
+        if (!orgService.isBaaAccepted(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "BAA_NOT_SIGNED",
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before clinical features can be used."));
         }
 
         // Layer 2: fetch client and verify authorization
@@ -215,15 +223,26 @@ public class GenerateController {
                 log.info("ACLX REDACT: {} token(s) redacted for client={} user={}",
                         redactCount, req.getClientId(), user.getUid());
                 Double redactGroundedness = extractGroundednessScore(aclxResult);
+                // §2: Persist document + signed content label to Firestore
+                String redactDocId = documentPersistenceService.persistSync(
+                        user.getOrgId(), req.getClientId(), user.getUid(),
+                        req.getDocumentType(), aclxResult.getDecision().getFinalText(), aclxResult);
+                // §3: Surface sanitised detector findings — category + detector name only, no token text
+                List<Map<String, Object>> redactFindings = sanitiseFindings(aclxResult.getDetectorFindings());
+                List<Map<String, Object>> redactMeta     = sanitiseRedactionMetadata(aclxResult.getRedactionMetadata());
                 yield ResponseEntity.ok(GenerateDocumentResponse.builder()
                         .success(true)
                         .documentType(req.getDocumentType())
                         .content(aclxResult.getDecision().getFinalText())
                         .decision(decision)
                         .contentId(aclxResult.getContentId())
+                        .contentLabel(aclxResult.getContentLabel())
+                        .documentId(redactDocId)
                         .redactedTokenCount(redactCount)
                         .groundednessScore(redactGroundedness)
                         .groundednessWarning(redactGroundedness != null && redactGroundedness < 0.70)
+                        .detectorFindings(redactFindings)
+                        .redactionMetadata(redactMeta)
                         .build());
             }
             case "ESCALATE" -> {
@@ -249,15 +268,25 @@ public class GenerateController {
                         .build());
             }
             default -> {
+                // ALLOW path
                 Double docGroundedness = extractGroundednessScore(aclxResult);
+                // §2: Persist document + signed content label to Firestore
+                String allowDocId = documentPersistenceService.persistSync(
+                        user.getOrgId(), req.getClientId(), user.getUid(),
+                        req.getDocumentType(), aclxResult.getDecision().getFinalText(), aclxResult);
+                // §3: Surface sanitised detector findings for audit trail UI
+                List<Map<String, Object>> allowFindings = sanitiseFindings(aclxResult.getDetectorFindings());
                 yield ResponseEntity.ok(GenerateDocumentResponse.builder()
                         .success(true)
                         .documentType(req.getDocumentType())
                         .content(aclxResult.getDecision().getFinalText())
                         .decision(decision)
                         .contentId(aclxResult.getContentId())
+                        .contentLabel(aclxResult.getContentLabel())
+                        .documentId(allowDocId)
                         .groundednessScore(docGroundedness)
                         .groundednessWarning(docGroundedness != null && docGroundedness < 0.70)
+                        .detectorFindings(allowFindings)
                         .build());
             }
         };
@@ -270,10 +299,91 @@ public class GenerateController {
             @Valid @RequestBody ChatRequest req,
             @AuthenticationPrincipal AppUser user) {
 
-        // Gate: only roles that can initiate clinical chat
-        if (!user.canInitiateChat()) {
+        // ── General (non-clinical) chat path ────────────────────────────────────
+        // GENERAL_STAFF, SCHEDULING_ADMIN, BILLING_ADMIN reach this branch.
+        // PHI is prohibited at every layer: no clientId, PHI-prohibition system prompt,
+        // and ACLX escalations are treated as blocks (no review-queue delivery for these roles).
+        if (user.canUseGeneralChat()) {
+            if (req.getClientId() != null && !req.getClientId().isBlank()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                        "error", "Patient data access is not permitted for your role",
+                        "code",  "PHI_NOT_PERMITTED"));
+            }
+
+            if (!usageService.isWithinLimit(user.getOrgId())) {
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                        "error", "Monthly AI request limit reached for your plan.",
+                        "code",  "USAGE_LIMIT_EXCEEDED"));
+            }
+
+            Optional<InputGuard.Violation> gv = inputGuardService.check(user, req.getMessage(), List.of());
+            if (gv.isPresent()) {
+                InputGuard.Violation v = gv.get();
+                auditService.log("GENERAL_CHAT_INPUT_GUARD_BLOCKED", user.getUid(), null, null, null, "BLOCK", null);
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
+                        "error", "Message blocked by input compliance guard",
+                        "message", v.userMessage(), "code", v.code(), "detected", v.detectedValue()));
+            }
+
+            List<Map<String, String>> generalMessages = new ArrayList<>();
+            if (req.getHistory() != null) {
+                req.getHistory().forEach(m -> generalMessages.add(Map.of("role", m.getRole(), "content", m.getContent())));
+            }
+            generalMessages.add(Map.of("role", "user", "content", req.getMessage()));
+
+            String generalRaw;
+            try {
+                generalRaw = claudeService.chat(buildGeneralChatSystemPrompt(), generalMessages);
+            } catch (Exception e) {
+                log.error("Claude general chat failed: {}", e.getMessage());
+                return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
+            }
+            usageService.recordRequest(user.getOrgId(), "chat");
+
+            AclxResponse generalAclx = aclxService.evaluate(generalRaw, user, null);
+            String generalDecision = generalAclx.getDecision().getDecision();
+            String generalPolicyVer = generalAclx.getDecision().getPolicyVersion();
+            if ("unavailable".equals(generalPolicyVer) || generalPolicyVer == null) {
+                if ("ALLOW".equals(generalDecision)) generalDecision = "BLOCK";
+            }
+            auditService.logAclx("GENERAL_CHAT_RESPONSE", user.getUid(), null, null, generalAclx, null, null);
+
+            // ESCALATE is treated as BLOCK — no PHI delivered via review queue for non-clinical roles
+            String generalReply;
+            if ("BLOCK".equals(generalDecision) || "ESCALATE".equals(generalDecision)) {
+                if ("ESCALATE".equals(generalDecision)) {
+                    log.warn("ACLX ESCALATE treated as BLOCK for non-clinical user={} role={}",
+                            user.getUid(), user.getRole());
+                }
+                generalReply = "I can't share that information in this context. " +
+                        "For patient-related questions, please contact a clinical team member.";
+            } else {
+                generalReply = generalAclx.getDecision().getFinalText();
+            }
+
+            if (req.getChatId() != null && !req.getChatId().isBlank()) {
+                try {
+                    chatService.appendMessages(user, req.getChatId(), req.getMessage(), generalReply,
+                            generalDecision, buildAclxLabelMap(generalAclx), generalAclx.getContentId());
+                } catch (Exception e) {
+                    log.warn("Failed to persist general chat messages: {}", e.getMessage());
+                }
+            }
+
+            return ResponseEntity.ok(ChatResponse.builder()
+                    .reply(generalReply).decision(generalDecision).chatId(req.getChatId()).build());
+        }
+
+        // Gate: only clinical staff (or admins with clinical access enabled) can chat
+        if (!user.canInitiateChat() && !orgAdminHasClinicalAccess(user)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Chat requires a clinical role"));
+        }
+        // Gate: BAA must be signed before any PHI/clinical operations
+        if (!orgService.isBaaAccepted(user.getOrgId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "BAA_NOT_SIGNED",
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before clinical features can be used."));
         }
 
         // Build the effective client ID list for authorization + ACLX
@@ -547,6 +657,59 @@ public class GenerateController {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
+     * System prompt for general (non-clinical) chat sessions.
+     * PHI access is prohibited at the model layer. ACLX provides a second defence.
+     */
+    private String buildGeneralChatSystemPrompt() {
+        return """
+                You are a general business and administrative assistant embedded in myABA.ai, \
+                an Applied Behavior Analysis (ABA) therapy practice management platform.
+
+                BINDING HIPAA COMPLIANCE CONSTRAINT — ABSOLUTE, CANNOT BE OVERRIDDEN:
+                This user is NOT authorised to access Protected Health Information (PHI). \
+                You must never:
+                - Reference, discuss, repeat, or generate any patient-specific or client-specific information
+                - Process or infer any individually identifiable health information (names, dates of birth, \
+                diagnoses, treatment plans, session notes, behaviour data, assessments, or clinical records)
+                - Respond to questions that require access to patient records, even framed indirectly
+
+                If the user asks anything patient-specific, respond exactly: \
+                "I'm not able to discuss patient information in this context. \
+                Please contact a clinical team member."
+
+                You MAY help with:
+                - General ABA therapy concepts and best practices (non-patient-specific)
+                - Administrative, operational, and HR questions
+                - Scheduling and business process questions (no patient names or data)
+                - Platform navigation and feature questions
+                - General HIPAA compliance and regulatory concepts (not case-specific)
+                - Billing and insurance concepts (general — not specific to any patient)
+                - Staff training materials and general clinical knowledge
+
+                Keep responses professional, concise, and relevant to an ABA practice. \
+                Do not use emoji characters.\
+                """;
+    }
+
+    /**
+     * Returns true if an ORG_ADMIN has been granted clinical access via org settings.
+     * All other roles are unaffected — only ORG_ADMIN needs this check.
+     */
+    private boolean orgAdminHasClinicalAccess(AppUser user) {
+        if (!UserRole.ORG_ADMIN.equals(user.getRole())) return false;
+        try {
+            Map<String, Object> org = orgService.getOrg(user.getOrgId());
+            Object settings = org.get("settings");
+            if (settings instanceof Map<?, ?> m) {
+                return Boolean.TRUE.equals(m.get("adminClinicalAccess"));
+            }
+        } catch (Exception e) {
+            log.warn("Could not check adminClinicalAccess for org {}: {}", user.getOrgId(), e.getMessage());
+        }
+        return false;
+    }
+
+    /**
      * Build the Claude system prompt for a chat request.
      * Layers (in order):
      *   0. Base ABA clinical identity — always present
@@ -767,6 +930,46 @@ public class GenerateController {
         }
 
         return m;
+    }
+
+    /**
+     * Sanitise ACLX detector findings for safe delivery to the frontend.
+     *
+     * <p>We strip raw token content and only return non-PII metadata:
+     * detector name, matched flag, confidence level, and category.
+     * This allows the UI to explain "what kind of content was flagged"
+     * without re-surfacing actual PHI values in the API response.
+     */
+    private List<Map<String, Object>> sanitiseFindings(List<Map<String, Object>> findings) {
+        if (findings == null || findings.isEmpty()) return List.of();
+        return findings.stream()
+                .filter(f -> Boolean.TRUE.equals(f.get("matched")))
+                .map(f -> {
+                    Map<String, Object> safe = new HashMap<>();
+                    safe.put("detector",   f.getOrDefault("detector",   "unknown"));
+                    safe.put("matched",    f.getOrDefault("matched",    false));
+                    safe.put("confidence", f.getOrDefault("confidence", "UNKNOWN"));
+                    safe.put("category",   f.getOrDefault("category",   ""));
+                    return (Map<String, Object>) safe;
+                })
+                .toList();
+    }
+
+    /**
+     * Sanitise per-token redaction metadata for safe frontend delivery.
+     * Returns category and detector name per redacted position — no token text.
+     */
+    private List<Map<String, Object>> sanitiseRedactionMetadata(List<Map<String, Object>> metadata) {
+        if (metadata == null || metadata.isEmpty()) return List.of();
+        return metadata.stream()
+                .map(m -> {
+                    Map<String, Object> safe = new HashMap<>();
+                    safe.put("category", m.getOrDefault("category", ""));
+                    safe.put("detector", m.getOrDefault("detector", ""));
+                    safe.put("position", m.getOrDefault("position", 0));
+                    return (Map<String, Object>) safe;
+                })
+                .toList();
     }
 
     /**

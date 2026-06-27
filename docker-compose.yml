@@ -68,12 +68,19 @@ services:
       - ACLX_ENABLED=${ACLX_ENABLED:-false}
       - ACLX_GATEWAY_URL=${ACLX_GATEWAY_URL:-http://host.docker.internal:8080}
       - ACLX_DOMAIN=${ACLX_DOMAIN:-hipaa}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AI_PROVIDER=${AI_PROVIDER:-vertex}
+      - VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID:-myapaai}
+      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-east5}
+      - VERTEX_MODEL=${VERTEX_MODEL:-claude-sonnet-4-6@default}
+      - GOOGLE_CLOUD_PROJECT=myapaai
       - FIREBASE_PROJECT_ID=demo-myaba
       - CORS_ALLOWED_ORIGINS=http://localhost:5173
       # Point Firebase Admin SDK at the local emulators
       - FIRESTORE_EMULATOR_HOST=firebase:9150
       - FIREBASE_AUTH_EMULATOR_HOST=firebase:9099
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/adc.json
+    volumes:
+      - ${APPDATA}/gcloud/application_default_credentials.json:/root/adc.json:ro
     depends_on:
       firebase:
         condition: service_healthy
@@ -95,7 +102,7 @@ services:
       - ./frontend/public:/app/public
     environment:
       - VITE_DEV_AUTH=${VITE_DEV_AUTH:-false}
-      - VITE_API_BASE_URL=http://localhost:9090
+      - VITE_API_BASE_URL=http://api:8080
       # Firebase config — emulator-safe values (no real project needed locally)
       - VITE_FIREBASE_API_KEY=demo-key
       - VITE_FIREBASE_AUTH_DOMAIN=demo-myaba.firebaseapp.com

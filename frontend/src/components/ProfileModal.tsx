@@ -3,14 +3,16 @@ import { faTimes, faSignOutAlt, faUserCircle, faBuilding, faIdBadge } from '@for
 import { useAuth } from '../contexts/AuthContext';
 
 const ROLE_LABELS: Record<string, string> = {
-  TREATING_BCBA:    'Treating BCBA',
-  SUPERVISING_BCBA: 'Supervising BCBA',
-  BCBA_STUDENT:     'BCBA Student',
-  RBT:              'Registered Behavior Technician',
-  SCHEDULING_ADMIN: 'Scheduling Admin',
-  BILLING_ADMIN:    'Billing Admin',
-  ORG_ADMIN:        'Org Admin',
-  ORG_SUPER_ADMIN:  'Super Admin',
+  CLINICAL_DIRECTOR: 'Clinical Director',
+  TREATING_BCBA:     'Treating BCBA',
+  SUPERVISING_BCBA:  'Supervising BCBA',
+  BCBA_STUDENT:      'BCBA Student',
+  RBT:               'Registered Behavior Technician',
+  GENERAL_STAFF:     'General Staff',
+  SCHEDULING_ADMIN:  'Scheduling Admin',
+  BILLING_ADMIN:     'Billing Admin',
+  ORG_ADMIN:         'Practice Administrator',
+  ORG_SUPER_ADMIN:   'Clinical Director',
 };
 
 interface Props {

@@ -53,23 +53,11 @@ public class PlatformService {
                 "PERSON_NAME", "DATE_OF_BIRTH",
                 "MEDICAL_RECORD_NUMBER", "US_HEALTHCARE_NPI"));
 
-        // ── Tenants ───────────────────────────────────────────────────────────
-        addOrg("org-sunshine-001",  "Sunshine ABA Services",      "team",       "active",    "2025-10-12T00:00:00Z", 12, "sunshine@myaba.ai");
-        addOrg("org-blueridge-002", "Blue Ridge Behavioral",       "solo",       "active",    "2026-01-15T00:00:00Z",  3, "admin@blueridge.com");
-        addOrg("org-pacific-003",   "Pacific Coast ABA",           "enterprise", "active",    "2025-08-03T00:00:00Z", 28, "it@pacificaba.com");
-        addOrg("org-midwest-004",   "Midwest Behavioral Health",   "team",       "trial",     "2026-05-28T00:00:00Z",  7, "hello@midwestbh.com");
-        addOrg("org-suspended-005", "Summit Behavior Group",       "solo",       "suspended", "2026-03-01T00:00:00Z",  2, "admin@summitbg.com");
-        addOrg("dev-org-001",       "MyABA Dev Organization",      "team",       "active",    "2026-01-01T00:00:00Z",  4, "chris@myaba.ai");
+        // Dev mode starts with an empty tenant list — real orgs are created through the UI.
+        addOrg("dev-org-001", "MyABA Dev Organization", "team", "active", "2026-01-01T00:00:00Z", 1, "chris@myaba.ai");
+        addUsage("dev-org-001", 0, 0, 0L, 1);
 
-        // ── Usage (current month) ─────────────────────────────────────────────
-        addUsage("org-sunshine-001",  1_240, 2_180_000, 3_400_000L,  12);
-        addUsage("org-blueridge-002",   187,   312_000,   820_000L,   3);
-        addUsage("org-pacific-003",   4_830, 8_920_000, 14_200_000L, 28);
-        addUsage("org-midwest-004",     312,   540_000,  1_100_000L,  7);
-        addUsage("org-suspended-005",     0,         0,    200_000L,  2);
-        addUsage("dev-org-001",           42,    68_000,    150_000L,  4);
-
-        log.info("Dev mode: PlatformService seeded {} tenants", devOrgs.size());
+        log.info("Dev mode: PlatformService initialized (no sample tenant data)");
     }
 
     private void addOrg(String id, String name, String plan, String status,

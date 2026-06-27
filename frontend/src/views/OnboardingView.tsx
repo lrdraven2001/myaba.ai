@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBrain, faBuilding, faCopy, faCheck, faArrowRight, faFileContract, faShieldAlt, faFlask, faEnvelope, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
+import { faBuilding, faCopy, faCheck, faArrowRight, faFileContract, faShieldAlt, faFlask, faEnvelope, faSignOutAlt } from '@fortawesome/free-solid-svg-icons';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { BAA_TEXT } from '../lib/baaText';
@@ -23,16 +23,18 @@ const PLANS: { value: OrgPlan; label: string; description: string }[] = [
 ];
 
 const INVITE_ROLES: { value: UserRole; label: string }[] = [
-  { value: 'TREATING_BCBA',    label: 'Treating BCBA' },
-  { value: 'SUPERVISING_BCBA', label: 'Supervising BCBA' },
-  { value: 'RBT',              label: 'RBT' },
-  { value: 'BCBA_STUDENT',     label: 'BCBA Student' },
-  { value: 'SCHEDULING_ADMIN', label: 'Scheduling Admin' },
-  { value: 'BILLING_ADMIN',    label: 'Billing Admin' },
-  { value: 'ORG_ADMIN',        label: 'Org Admin' },
+  { value: 'CLINICAL_DIRECTOR', label: 'Clinical Director' },
+  { value: 'TREATING_BCBA',     label: 'Treating BCBA' },
+  { value: 'SUPERVISING_BCBA',  label: 'Supervising BCBA' },
+  { value: 'RBT',               label: 'RBT' },
+  { value: 'BCBA_STUDENT',      label: 'BCBA Student' },
+  { value: 'SCHEDULING_ADMIN',  label: 'Scheduling Admin' },
+  { value: 'BILLING_ADMIN',     label: 'Billing Admin' },
+  { value: 'ORG_ADMIN',         label: 'Practice Administrator' },
 ];
 
 type Step = 'org' | 'baa' | 'invite' | 'done';
+type SetupMode = 'clinical_director' | 'it_setup';
 
 interface Props {
   /** Called with the new orgId so App can refresh auth + transition to main UI. */
@@ -43,6 +45,7 @@ export default function OnboardingView({ onComplete }: Props) {
   const [step, setStep]           = useState<Step>('org');
   const [orgName, setOrgName]     = useState('');
   const [plan, setPlan]           = useState<OrgPlan>('team');
+  const [setupMode, setSetupMode] = useState<SetupMode>('clinical_director');
   const [saving, setSaving]       = useState(false);
   const [orgId, setOrgId]         = useState('');
   const [error, setError]         = useState('');
@@ -68,13 +71,13 @@ export default function OnboardingView({ onComplete }: Props) {
     setSaving(true);
     setError('');
     try {
-      const { orgId: newOrgId } = await api.createOrg({ name: orgName.trim(), plan });
+      const { orgId: newOrgId } = await api.createOrg({ name: orgName.trim(), plan, setupMode });
       setOrgId(newOrgId);
-      // Force token refresh so new orgId/role claims are ready for the BAA call
       if (!DEV_AUTH) {
         try { await auth.currentUser?.getIdToken(true); } catch { /* non-fatal */ }
       }
-      setStep('baa');
+      // IT setup skips the BAA step — go straight to invite
+      setStep(setupMode === 'it_setup' ? 'invite' : 'baa');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create organization');
     } finally {
@@ -248,16 +251,25 @@ export default function OnboardingView({ onComplete }: Props) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4"
-         style={{ background: 'linear-gradient(135deg, #1e4d5c 0%, #2a5f6f 60%, #3a7d94 100%)' }}>
+    <div className="h-screen flex flex-col items-center justify-start px-4 pt-4 pb-8 overflow-y-auto"
+         style={{ background: 'linear-gradient(135deg, #0F2744 0%, #1565C0 60%, #1E88FF 100%)' }}>
 
       {/* Logo */}
       <div className="flex flex-col items-center mb-10">
-        <div className="flex items-center justify-center rounded-2xl mb-3"
-             style={{ background: 'white', width: 72, height: 72 }}>
-          <FontAwesomeIcon icon={faBrain} style={{ fontSize: 40, color: '#2a5f6f' }} />
+        <div className="flex items-center justify-center rounded-2xl mb-3 overflow-hidden"
+             style={{ background: 'white', width: 72, height: 72, boxShadow: '0 4px 14px rgba(0,0,0,0.15)' }}>
+          <img
+            src="/app-icon.png"
+            alt="myABA.ai"
+            style={{ width: 58, height: 58, objectFit: 'contain' }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
         </div>
-        <div className="text-white font-bold text-2xl tracking-tight">myABA.ai</div>
+        <div className="font-bold text-2xl tracking-tight">
+          <span style={{ color: 'white' }}>my</span>
+          <span style={{ color: '#93C5FD' }}>ABA</span>
+          <span style={{ color: '#86EFAC' }}>.ai</span>
+        </div>
         <div className="text-white/70 text-sm mt-1">Clinical AI for ABA therapy</div>
       </div>
 
@@ -276,7 +288,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 <div
                   className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
                   style={{
-                    background: step === s ? '#2a5f6f' : past ? '#5fb3d0' : '#e5e7eb',
+                    background: step === s ? '#1E88FF' : past ? '#93C5FD' : '#e5e7eb',
                     color: step === s || past ? 'white' : '#9ca3af',
                   }}
                 >
@@ -284,7 +296,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </div>
                 {i < 2 && (
                   <div className="h-px flex-1 min-w-[20px]"
-                       style={{ background: past ? '#5fb3d0' : '#e5e7eb' }} />
+                       style={{ background: past ? '#93C5FD' : '#e5e7eb' }} />
                 )}
               </div>
             );
@@ -302,8 +314,8 @@ export default function OnboardingView({ onComplete }: Props) {
           <>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                   style={{ background: '#e8f4f8' }}>
-                <FontAwesomeIcon icon={faBuilding} style={{ color: '#2a5f6f', fontSize: 20 }} />
+                   style={{ background: '#EEF4FF' }}>
+                <FontAwesomeIcon icon={faBuilding} style={{ color: '#1E88FF', fontSize: 20 }} />
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Create your organization</h2>
@@ -318,7 +330,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                   placeholder="e.g. Sunrise ABA Therapy"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
@@ -332,19 +344,79 @@ export default function OnboardingView({ onComplete }: Props) {
                   Plan
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {PLANS.map((p) => (
-                    <button
-                      key={p.value}
-                      className={`rounded-lg border p-3 text-left transition-colors ${
-                        plan === p.value ? 'border-teal-600' : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                      style={plan === p.value ? { background: '#e8f4f8' } : {}}
-                      onClick={() => setPlan(p.value)}
-                    >
-                      <div className="font-semibold text-sm text-gray-800">{p.label}</div>
-                      <div className="text-xs text-gray-400 mt-0.5 leading-snug">{p.description}</div>
-                    </button>
-                  ))}
+                  {PLANS.map((p) => {
+                    const isEnterprise = p.value === 'enterprise';
+                    return isEnterprise ? (
+                      <a
+                        key={p.value}
+                        href="mailto:sales@myaba.ai?subject=Enterprise%20Inquiry"
+                        className="rounded-lg border border-gray-200 p-3 text-left block"
+                        style={{ background: '#F9FAFB', textDecoration: 'none' }}
+                      >
+                        <div className="font-semibold text-sm text-gray-400">{p.label}</div>
+                        <div className="text-xs text-gray-400 mt-0.5 leading-snug">{p.description}</div>
+                        <div className="text-xs font-semibold mt-1.5" style={{ color: '#1E88FF' }}>Contact Sales →</div>
+                      </a>
+                    ) : (
+                      <button
+                        key={p.value}
+                        className={`rounded-lg border p-3 text-left transition-colors ${
+                          plan === p.value ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        style={plan === p.value ? { background: '#EEF4FF' } : {}}
+                        onClick={() => setPlan(p.value)}
+                      >
+                        <div className="font-semibold text-sm text-gray-800">{p.label}</div>
+                        <div className="text-xs text-gray-400 mt-0.5 leading-snug">{p.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Who is setting this up? */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Who is completing this setup?
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSetupMode('clinical_director')}
+                    className={`rounded-xl border p-4 text-left transition-colors ${
+                      setupMode === 'clinical_director' ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={setupMode === 'clinical_director' ? { background: '#EEF4FF' } : {}}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <FontAwesomeIcon icon={faFileContract} style={{ fontSize: 14, color: setupMode === 'clinical_director' ? '#1E88FF' : '#9ca3af' }} />
+                      <span className="font-semibold text-sm text-gray-800">I am the Clinical Director</span>
+                    </div>
+                    <p className="text-xs text-gray-400 leading-snug">
+                      You are the authorized representative who will sign the BAA and take clinical responsibility.
+                      You will be set up as <strong>Clinical Director</strong> with full PHI and administrative access.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSetupMode('it_setup')}
+                    className={`rounded-xl border p-4 text-left transition-colors ${
+                      setupMode === 'it_setup' ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={setupMode === 'it_setup' ? { background: '#EEF4FF' } : {}}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <FontAwesomeIcon icon={faFlask} style={{ fontSize: 14, color: setupMode === 'it_setup' ? '#1E88FF' : '#9ca3af' }} />
+                      <span className="font-semibold text-sm text-gray-800">I am IT / technical setup</span>
+                    </div>
+                    <p className="text-xs text-gray-400 leading-snug">
+                      You are configuring the system on behalf of a Clinical Director who will sign the BAA later.
+                      You will be set up as <strong>Administrator</strong> (no PHI access).
+                      Clinical chat and client records will be locked until the BAA is signed.
+                      General chat and non-HIPAA features are available immediately for testing.
+                    </p>
+                  </button>
                 </div>
               </div>
 
@@ -352,12 +424,15 @@ export default function OnboardingView({ onComplete }: Props) {
 
               <button
                 className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
-                style={{ background: orgName.trim() ? '#2a5f6f' : '#9ca3af' }}
+                style={{ background: orgName.trim() ? '#1E88FF' : '#9ca3af' }}
                 disabled={!orgName.trim() || saving}
                 onClick={handleCreateOrg}
               >
                 {saving ? 'Creating…' : (
-                  <>Create Organization <FontAwesomeIcon icon={faArrowRight} /></>
+                  <>
+                    {setupMode === 'it_setup' ? 'Create Organization & Skip BAA' : 'Create Organization'}
+                    {' '}<FontAwesomeIcon icon={faArrowRight} />
+                  </>
                 )}
               </button>
             </div>
@@ -369,8 +444,8 @@ export default function OnboardingView({ onComplete }: Props) {
           <>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                   style={{ background: '#e8f4f8' }}>
-                <FontAwesomeIcon icon={faFileContract} style={{ color: '#2a5f6f', fontSize: 18 }} />
+                   style={{ background: '#EEF4FF' }}>
+                <FontAwesomeIcon icon={faFileContract} style={{ color: '#1E88FF', fontSize: 18 }} />
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Business Associate Agreement</h2>
@@ -380,21 +455,21 @@ export default function OnboardingView({ onComplete }: Props) {
 
             {/* BAA text scroll box */}
             <div
-              className="rounded-xl border border-gray-200 bg-gray-50 p-4 mb-4 overflow-y-auto text-xs text-gray-600 leading-relaxed whitespace-pre-wrap font-mono"
-              style={{ maxHeight: 220 }}
+              className="rounded-xl border border-gray-200 bg-gray-50 p-4 mb-3 overflow-y-auto text-xs text-gray-600 leading-relaxed whitespace-pre-wrap font-mono"
+              style={{ maxHeight: 140 }}
             >
               {BAA_TEXT}
             </div>
 
             {/* Signer fields */}
-            <div className="space-y-3 mb-4">
+            <div className="space-y-2 mb-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
                   Full Legal Name
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                   placeholder="e.g. Jane Smith"
                   value={signerName}
                   onChange={(e) => setSignerName(e.target.value)}
@@ -407,17 +482,22 @@ export default function OnboardingView({ onComplete }: Props) {
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
-                  placeholder="e.g. Executive Director"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="e.g. Clinical Director, BCBA-D"
                   value={signerTitle}
                   onChange={(e) => setSignerTitle(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && baaChecked) handleAcceptBaa(); }}
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  The person signing the BAA must be an authorized representative of the organization —
+                  typically the Clinical Director, Practice Owner, or Executive Director.
+                  Your account will be set up as <strong>Clinical Director</strong>, giving you full clinical and administrative access.
+                </p>
               </div>
             </div>
 
             {/* Authority checkbox */}
-            <label className="flex items-start gap-3 cursor-pointer mb-4 group">
+            <label className="flex items-start gap-3 cursor-pointer mb-3 group">
               <input
                 type="checkbox"
                 className="mt-0.5 shrink-0 accent-teal-700"
@@ -431,7 +511,7 @@ export default function OnboardingView({ onComplete }: Props) {
             </label>
 
             {/* HIPAA notice */}
-            <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 mb-4">
+            <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 mb-3">
               <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#1d4ed8', fontSize: 12, marginTop: 2, flexShrink: 0 }} />
               <p className="text-xs text-blue-700 leading-relaxed">
                 A signed BAA is required by 45 C.F.R. § 164.504(e) before a Business Associate
@@ -444,7 +524,7 @@ export default function OnboardingView({ onComplete }: Props) {
             <button
               className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
               style={{
-                background: (signerName.trim() && signerTitle.trim() && baaChecked) ? '#2a5f6f' : '#9ca3af',
+                background: (signerName.trim() && signerTitle.trim() && baaChecked) ? '#1E88FF' : '#9ca3af',
               }}
               disabled={!signerName.trim() || !signerTitle.trim() || !baaChecked || baaLoading}
               onClick={handleAcceptBaa}
@@ -472,7 +552,7 @@ export default function OnboardingView({ onComplete }: Props) {
                   Role to invite
                 </label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={inviteRole}
                   onChange={(e) => { setInviteRole(e.target.value as UserRole); setInviteUrl(''); }}
                 >
@@ -484,7 +564,7 @@ export default function OnboardingView({ onComplete }: Props) {
 
               <button
                 className="w-full py-2.5 rounded-lg text-white font-medium text-sm transition-opacity"
-                style={{ background: '#2a5f6f' }}
+                style={{ background: '#1E88FF' }}
                 disabled={generating}
                 onClick={handleGenerateInvite}
               >
@@ -507,7 +587,7 @@ export default function OnboardingView({ onComplete }: Props) {
                     <button
                       onClick={handleCopy}
                       className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white flex items-center gap-1.5"
-                      style={{ background: copied ? '#16a34a' : '#2a5f6f' }}
+                      style={{ background: copied ? '#16a34a' : '#1E88FF' }}
                     >
                       <FontAwesomeIcon icon={copied ? faCheck : faCopy} />
                       {copied ? 'Copied!' : 'Copy'}
@@ -525,7 +605,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </button>
                 <button
                   className="flex-1 py-2.5 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2"
-                  style={{ background: '#2a5f6f' }}
+                  style={{ background: '#1E88FF' }}
                   onClick={handleFinish}
                 >
                   Enter myABA <FontAwesomeIcon icon={faArrowRight} />

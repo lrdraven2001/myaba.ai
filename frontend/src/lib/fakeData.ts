@@ -23,16 +23,7 @@ export interface FakeClientFile {
   uploadedAt: string;
 }
 
-// ── Fallback templates (used by FileAttachModal when API is unreachable) ──────
-
-export const FAKE_TEMPLATES: FakeTemplate[] = [
-  { id: 't-001', title: 'BIP — Standard Format',             category: 'bip'             },
-  { id: 't-002', title: 'FBA — Indirect + Direct Methods',   category: 'fba'             },
-  { id: 't-003', title: 'Progress Note — Session Summary',   category: 'progress_note'   },
-  { id: 't-004', title: 'Skill Acquisition Program',         category: 'skill_acquisition'},
-  { id: 't-005', title: 'Parent Training Outline',           category: 'parent_training' },
-];
-
+export const FAKE_TEMPLATES: FakeTemplate[] = [];
 export const FAKE_CLIENT_FILES: FakeClientFile[] = [];
 
 // Re-export ChatMessage so existing imports keep compiling

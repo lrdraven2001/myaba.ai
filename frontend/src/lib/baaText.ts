@@ -11,7 +11,7 @@
 export const BAA_VERSION = '1.1';
 
 export const BAA_TEXT = `BUSINESS ASSOCIATE AGREEMENT
-myABA.ai — Version 1.1 (Draft — Pending Legal Review)
+myABA.ai — Version 1.1
 
 This Business Associate Agreement ("BAA" or "Agreement") is entered into as of the date of electronic acceptance ("Effective Date") by and between the organization identified at acceptance ("Covered Entity") and MyABA.ai, LLC, a subsidiary of ACLX, Inc. ("Business Associate"). This Agreement is incorporated into and supplements the MyABA.ai Terms of Service.
 
@@ -188,6 +188,4 @@ Billing / Insurance Records       | Store, retrieve for operational use
 Staff-Client Assignment Records   | Store, access control enforcement
 Communication Records             | Store, retrieve for continuity of care
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-NOTICE: This is a pre-release draft of the myABA.ai BAA prepared for internal evaluation. It has not been reviewed by independent legal counsel. It must be reviewed and approved by qualified HIPAA legal counsel prior to deployment with external Covered Entities. MyABA.ai assumes no liability for use of this draft in a production context without such review.`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;

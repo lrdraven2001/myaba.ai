@@ -114,24 +114,27 @@ const ACLX_LABEL_META: Record<string, { bg: string; text: string; label: string 
 };
 
 const CHAT_USER_COLORS: Record<string, string> = {
-  ORG_SUPER_ADMIN:  '#2a5f6f',
-  ORG_ADMIN:        '#1d4ed8',
-  SUPERVISING_BCBA: '#7c3aed',
-  RBT:              '#3F9B2F',
+  ORG_SUPER_ADMIN:   '#2a5f6f',
+  CLINICAL_DIRECTOR: '#6d28d9',
+  ORG_ADMIN:         '#1d4ed8',
+  SUPERVISING_BCBA:  '#7c3aed',
+  RBT:               '#3F9B2F',
 };
 
 const CHAT_ROLE_CHIP: Record<string, { bg: string; text: string }> = {
-  ORG_SUPER_ADMIN:  { bg: '#e8f4f8', text: '#1e4d5c' },
-  ORG_ADMIN:        { bg: '#eff6ff', text: '#1d4ed8' },
-  SUPERVISING_BCBA: { bg: '#ede9fe', text: '#5b21b6' },
-  RBT:              { bg: '#EEF7EA', text: '#3F9B2F' },
+  ORG_SUPER_ADMIN:   { bg: '#ede9fe', text: '#6d28d9' },
+  CLINICAL_DIRECTOR: { bg: '#ede9fe', text: '#6d28d9' },
+  ORG_ADMIN:         { bg: '#fef3c7', text: '#92400e' },
+  SUPERVISING_BCBA:  { bg: '#ede9fe', text: '#5b21b6' },
+  RBT:               { bg: '#EEF7EA', text: '#3F9B2F' },
 };
 
 const CHAT_ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:  'Super Admin',
-  ORG_ADMIN:        'Full Administrator',
-  SUPERVISING_BCBA: 'Clinical Supervisor',
-  RBT:              'Behavior Technician',
+  ORG_SUPER_ADMIN:   'Clinical Director',
+  CLINICAL_DIRECTOR: 'Clinical Director',
+  ORG_ADMIN:         'Practice Administrator',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
+  RBT:               'Behavior Technician',
 };
 
 const STUB_CHAT_SESSIONS: StubChatSession[] = [
@@ -294,6 +297,7 @@ export default function ReviewQueueView() {
   const currentUid  = (currentUser as any)?.uid ?? currentUser?.id ?? '';
 
   const canViewChats = currentRole === 'ORG_SUPER_ADMIN'
+                    || currentRole === 'CLINICAL_DIRECTOR'
                     || currentRole === 'ORG_ADMIN'
                     || currentRole === 'SUPERVISING_BCBA';
 
@@ -1410,7 +1414,7 @@ function ChatReviewTab({
   const [selectedSession, setSelectedSession] = useState<StubChatSession | null>(null);
   const [groupBy, setGroupBy] = useState<ChatGroupBy>('all');
 
-  const isAdmin = currentUserRole === 'ORG_SUPER_ADMIN' || currentUserRole === 'ORG_ADMIN';
+  const isAdmin = currentUserRole === 'ORG_SUPER_ADMIN' || currentUserRole === 'CLINICAL_DIRECTOR' || currentUserRole === 'ORG_ADMIN';
 
   // Access-filter: admin sees all; BCBA sees own sessions + supervisees' sessions
   const visibleSessions = STUB_CHAT_SESSIONS.filter((s) => {

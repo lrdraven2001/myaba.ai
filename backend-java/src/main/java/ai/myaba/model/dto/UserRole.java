@@ -31,37 +31,72 @@ public final class UserRole {
     public static final String SCHEDULING_ADMIN  = "SCHEDULING_ADMIN";
     /** Billing codes and insurance data — no clinical content. */
     public static final String BILLING_ADMIN     = "BILLING_ADMIN";
+    /**
+     * General business/admin staff — can use AI chat for operational questions
+     * but are HIPAA-gated from all patient data (PHI blocked at every layer).
+     */
+    public static final String GENERAL_STAFF     = "GENERAL_STAFF";
 
     // ── Organization management ───────────────────────────────────────────
-    /** Manages org users, templates, policies. No clinical chat access. */
+    /**
+     * Agency owner / BAA signatory. Assigned to the user who creates the organization.
+     * Has full clinical access (PHI) plus all administrative capabilities.
+     * Intended for a senior BCBA who also runs the practice.
+     */
+    public static final String CLINICAL_DIRECTOR = "CLINICAL_DIRECTOR";
+    /** Non-clinical org administrator: manages users, templates, policies. No PHI access. */
     public static final String ORG_ADMIN         = "ORG_ADMIN";
-    /** Platform-level: org setup, billing, IdP federation config. */
+    /** Platform-level: org setup, billing, IdP federation config. Full PHI access. */
     public static final String ORG_SUPER_ADMIN   = "ORG_SUPER_ADMIN";
 
     // ── Role sets for permission checks ──────────────────────────────────
+
+    /** Roles with direct PHI / clinical data access. */
     public static final Set<String> CLINICAL_ROLES = Set.of(
-            TREATING_BCBA, SUPERVISING_BCBA, BCBA_STUDENT, RBT);
+            TREATING_BCBA, SUPERVISING_BCBA, BCBA_STUDENT, RBT, CLINICAL_DIRECTOR);
 
     public static final Set<String> BCBA_ROLES = Set.of(
             TREATING_BCBA, SUPERVISING_BCBA, BCBA_STUDENT);
 
+    /** Roles with org-management permissions (invite users, change settings, etc.). */
     public static final Set<String> ADMIN_ROLES = Set.of(
-            ORG_ADMIN, ORG_SUPER_ADMIN);
+            CLINICAL_DIRECTOR, ORG_ADMIN, ORG_SUPER_ADMIN);
+
+    /**
+     * Roles allowed to use general (non-clinical) chat.
+     * These users get PHI-blocked responses at every layer — no client context,
+     * PHI-prohibition system prompt, and ACLX escalations treated as blocks.
+     */
+    public static final Set<String> GENERAL_CHAT_ROLES = Set.of(
+            GENERAL_STAFF, SCHEDULING_ADMIN, BILLING_ADMIN);
+
+    /**
+     * Roles that carry {@code phiAccess: true} in their Firebase custom claims.
+     * Used by {@link #hasPhiAccess(String)} and {@code setUserClaims} to stamp
+     * the explicit capability claim so downstream code never needs to know role names.
+     */
+    public static final Set<String> PHI_ACCESS_ROLES = Set.of(
+            TREATING_BCBA, SUPERVISING_BCBA, BCBA_STUDENT, RBT,
+            CLINICAL_DIRECTOR, ORG_SUPER_ADMIN);
 
     // ── Helpers ───────────────────────────────────────────────────────────
-    public static boolean isClinical(String role)     { return CLINICAL_ROLES.contains(role); }
-    public static boolean isBcba(String role)         { return BCBA_ROLES.contains(role); }
-    public static boolean isAdmin(String role)        { return ADMIN_ROLES.contains(role); }
+    public static boolean isClinical(String role)    { return CLINICAL_ROLES.contains(role); }
+    public static boolean isBcba(String role)        { return BCBA_ROLES.contains(role); }
+    public static boolean isAdmin(String role)       { return ADMIN_ROLES.contains(role); }
+    public static boolean hasPhiAccess(String role)  { return PHI_ACCESS_ROLES.contains(role); }
+
     public static boolean canInitiateClinicalChat(String role) {
-        return TREATING_BCBA.equals(role) || SUPERVISING_BCBA.equals(role)
-                || BCBA_STUDENT.equals(role) || RBT.equals(role)
-                || ORG_SUPER_ADMIN.equals(role); // super admins have full platform access
+        return PHI_ACCESS_ROLES.contains(role);
+    }
+    public static boolean canUseGeneralChat(String role) {
+        return GENERAL_CHAT_ROLES.contains(role);
     }
 
-    /** Returns true if {@code role} is one of the 8 known role constants. */
+    /** Returns true if {@code role} is one of the known role constants. */
     public static boolean isValid(String role) {
         return CLINICAL_ROLES.contains(role) || ADMIN_ROLES.contains(role)
-                || SCHEDULING_ADMIN.equals(role) || BILLING_ADMIN.equals(role);
+                || SCHEDULING_ADMIN.equals(role) || BILLING_ADMIN.equals(role)
+                || GENERAL_STAFF.equals(role);
     }
 
     private UserRole() {}

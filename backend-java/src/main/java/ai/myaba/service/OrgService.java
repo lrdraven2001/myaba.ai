@@ -89,15 +89,10 @@ public class OrgService {
         )));
         devOrgs.put("dev-org-001", org);
 
-        // Seed dev members — only the 4 roles that exist in ROLES_CONFIG
-        List<Map<String, Object>> members = new ArrayList<>();
-        members.add(devMember("dev-user-001", "Chris Hunt",    "chris@myaba.ai",  UserRole.ORG_SUPER_ADMIN,  "oversight",  true,  null));
-        members.add(devMember("dev-user-002", "Sarah Johnson", "sarah@myaba.ai",  UserRole.SUPERVISING_BCBA, "treatment",  true,  null));
-        members.add(devMember("dev-user-003", "Mike Torres",   "mike@myaba.ai",   UserRole.RBT,              "treatment",  true,  "dev-user-002"));
-        members.add(devMember("dev-user-004", "Lisa Chen",     "lisa@myaba.ai",   UserRole.SUPERVISING_BCBA, "treatment",  false, null));
-        devOrgMembers.put("dev-org-001", members);
+        // Dev org starts with only the admin — no seeded members
+        devOrgMembers.put("dev-org-001", new ArrayList<>());
 
-        log.info("Dev mode: seeded org dev-org-001 with {} members", members.size());
+        log.info("Dev mode: seeded org dev-org-001");
     }
 
     private Map<String, Object> devMember(String uid, String displayName, String email,
@@ -220,8 +215,19 @@ public class OrgService {
     // ── Create org ────────────────────────────────────────────────────────────
 
     /**
-     * Create a new organization and make the calling user its first ORG_ADMIN.
-     * Sets Firebase custom claims: { role: ORG_ADMIN, orgId, purpose: oversight }.
+     * Create a new organization.
+     * <p>
+     * Two setup modes (controlled by {@link OrgRequest#getSetupMode()}):
+     * <ul>
+     *   <li>{@code clinical_director} (default) — org creator is the Clinical Director.
+     *       They are assigned {@code CLINICAL_DIRECTOR} role with full PHI access.
+     *       The BAA must still be signed in the next onboarding step; until then
+     *       {@code baaAccepted} is {@code false} on the org doc.</li>
+     *   <li>{@code it_setup} — an IT administrator is standing up the org on behalf
+     *       of the Clinical Director. Creator gets {@code ORG_ADMIN} (no PHI access).
+     *       {@code baaAccepted} stays {@code false} and PHI features are locked until
+     *       a {@code CLINICAL_DIRECTOR} user signs the BAA.</li>
+     * </ul>
      *
      * @return new orgId
      */
@@ -229,24 +235,52 @@ public class OrgService {
         String orgId  = "org-" + UUID.randomUUID().toString().substring(0, 8);
         String now    = Instant.now().toString();
 
+        boolean itSetup = "it_setup".equals(req.getSetupMode());
+        String creatorRole = itSetup ? UserRole.ORG_ADMIN : UserRole.CLINICAL_DIRECTOR;
+
         Map<String, Object> data = new HashMap<>();
-        data.put("id",        orgId);
-        data.put("name",      req.getName());
-        data.put("plan",      req.getPlan());
-        data.put("adminUid",  adminUid);
-        data.put("createdAt", now);
-        data.put("settings",  Map.of("sessionTimeoutMinutes", 15, "mfaRequired", false));
+        data.put("id",          orgId);
+        data.put("name",        req.getName());
+        data.put("plan",        req.getPlan());
+        data.put("adminUid",    adminUid);
+        data.put("setupMode",   itSetup ? "it_setup" : "clinical_director");
+        data.put("baaAccepted", false);   // set to true in acceptBaa()
+        data.put("createdAt",   now);
+        data.put("settings",    Map.of("sessionTimeoutMinutes", 15, "mfaRequired", false));
 
         if (devMode) {
             devOrgs.put(orgId, data);
-            log.info("Dev: created org {} for user {}", orgId, adminUid);
+            log.info("Dev: created org {} (mode={}) for user {}", orgId, data.get("setupMode"), adminUid);
         } else {
             Firestore db = FirestoreClient.getFirestore();
             db.collection("organizations").document(orgId).set(data).get();
-            setUserClaims(adminUid, orgId, UserRole.ORG_ADMIN, "oversight");
-            writeMemberRecord(db, orgId, adminUid, UserRole.ORG_ADMIN, "oversight");
+            setUserClaims(adminUid, orgId, creatorRole, "oversight");
+            writeMemberRecord(db, orgId, adminUid, creatorRole, "oversight");
         }
         return orgId;
+    }
+
+    /**
+     * Returns true when the org's BAA has been accepted (i.e. PHI features are enabled).
+     * Falls back to {@code true} if the field is absent (pre-BAA-gate legacy orgs).
+     */
+    public boolean isBaaAccepted(String orgId) {
+        if (devMode) {
+            Map<String, Object> org = devOrgs.get(orgId);
+            if (org == null) return true; // dev mode: always allow
+            Object v = org.get("baaAccepted");
+            return v == null || Boolean.TRUE.equals(v); // absent = legacy = allowed
+        }
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            var snap = db.collection("organizations").document(orgId).get().get();
+            if (!snap.exists()) return false;
+            Object v = snap.getData().get("baaAccepted");
+            return v == null || Boolean.TRUE.equals(v);
+        } catch (Exception e) {
+            log.warn("Could not read baaAccepted for org {}: {}", orgId, e.getMessage());
+            return true; // fail-open on read error (don't lock out existing users)
+        }
     }
 
     // ── Org name ──────────────────────────────────────────────────────────────
@@ -365,17 +399,47 @@ public class OrgService {
             Map<String, Object> org = devOrgs.get(orgId);
             if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
             org.put("baaAcceptance", baaRecord);
-            org.put("updatedAt", now);
+            org.put("baaAccepted",   true);
+            org.put("updatedAt",     now);
         } else {
             Firestore db = FirestoreClient.getFirestore();
             db.collection("organizations").document(orgId)
               .update(Map.of(
                   "baaAcceptance", baaRecord,
+                  "baaAccepted",   true,
                   "updatedAt",     now
               )).get();
+
+            // If the signer is currently ORG_ADMIN (IT-setup flow), promote them to
+            // CLINICAL_DIRECTOR now that they are taking clinical responsibility by signing.
+            promoteToClinicaDirectorIfNeeded(uid, orgId);
         }
         log.info("BAA v1.1 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return baaRecord;
+    }
+
+    /**
+     * If the given user currently holds ORG_ADMIN in this org, upgrade their Firebase
+     * custom claims and member record to CLINICAL_DIRECTOR.  Safe to call when the
+     * signer already has CLINICAL_DIRECTOR or higher — those cases are skipped.
+     */
+    private void promoteToClinicaDirectorIfNeeded(String uid, String orgId) {
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            var memberSnap = db.collection("organizations").document(orgId)
+                    .collection("members").document(uid).get().get();
+            if (!memberSnap.exists()) return;
+            String currentRole = (String) memberSnap.getData().getOrDefault("role", "");
+            if (!UserRole.ORG_ADMIN.equals(currentRole)) return; // already CLINICAL_DIRECTOR or higher
+            setUserClaims(uid, orgId, UserRole.CLINICAL_DIRECTOR, "oversight");
+            db.collection("organizations").document(orgId)
+              .collection("members").document(uid)
+              .update(Map.of("role", UserRole.CLINICAL_DIRECTOR,
+                             "updatedAt", Instant.now().toString())).get();
+            log.info("Promoted user {} from ORG_ADMIN to CLINICAL_DIRECTOR after BAA sign (org={})", uid, orgId);
+        } catch (Exception e) {
+            log.warn("Could not promote user {} to CLINICAL_DIRECTOR: {}", uid, e.getMessage());
+        }
     }
 
     // ── Invite tokens ─────────────────────────────────────────────────────────
@@ -523,9 +587,12 @@ public class OrgService {
     private void setUserClaims(String uid, String orgId, String role, String purpose) {
         try {
             Map<String, Object> claims = new HashMap<>();
-            claims.put("orgId",   orgId);
-            claims.put("role",    role);
-            claims.put("purpose", purpose);
+            claims.put("orgId",     orgId);
+            claims.put("role",      role);
+            claims.put("purpose",   purpose);
+            // Explicit PHI-access capability claim — lets downstream code gate on a boolean
+            // instead of knowing every possible role name (critical for custom org roles).
+            claims.put("phiAccess", UserRole.hasPhiAccess(role));
             FirebaseAuth.getInstance().setCustomUserClaims(uid, claims);
         } catch (Exception e) {
             log.error("Failed to set custom claims for user {}: {}", uid, e.getMessage());
@@ -536,7 +603,8 @@ public class OrgService {
     private String defaultPurpose(String role) {
         return switch (role) {
             case UserRole.TREATING_BCBA, UserRole.SUPERVISING_BCBA,
-                 UserRole.BCBA_STUDENT, UserRole.RBT     -> "treatment";
+                 UserRole.BCBA_STUDENT, UserRole.RBT,
+                 UserRole.CLINICAL_DIRECTOR               -> "treatment";
             case UserRole.SCHEDULING_ADMIN                -> "scheduling";
             case UserRole.BILLING_ADMIN                   -> "payment";
             case UserRole.ORG_ADMIN, UserRole.ORG_SUPER_ADMIN -> "oversight";

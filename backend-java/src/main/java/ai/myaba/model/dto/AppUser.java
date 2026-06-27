@@ -33,6 +33,14 @@ public class AppUser {
      */
     private String supervisorId;
 
+    /**
+     * Explicit PHI-access capability from the Firebase custom claim "phiAccess".
+     * Set when an org admin assigns a role so that custom org-defined role names
+     * don't need to be known by the backend. May be null on legacy tokens — in that
+     * case the backend falls back to role-name inference via {@link UserRole}.
+     */
+    private Boolean phiAccess;
+
     // ── Convenience role checks ───────────────────────────────────────────
 
     public boolean isClinical()  { return UserRole.isClinical(role); }
@@ -41,5 +49,19 @@ public class AppUser {
 
     public boolean canInitiateChat() {
         return UserRole.canInitiateClinicalChat(role);
+    }
+
+    public boolean canUseGeneralChat() {
+        return UserRole.canUseGeneralChat(role);
+    }
+
+    /**
+     * True when the user may view or process protected health information.
+     * Checks the explicit claim first; falls back to role-name inference for
+     * tokens minted before the phiAccess claim was introduced.
+     */
+    public boolean hasPhiAccess() {
+        if (phiAccess != null) return phiAccess;
+        return isClinical() || isAdmin();
     }
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faLock, faEnvelope, faFlask, faUser } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faLock, faEnvelope, faFlask, faUser, faEnvelopeOpen } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 
 // Google "G" logo as a clean inline SVG — no extra package dependency
@@ -15,9 +15,14 @@ function GoogleLogo() {
   );
 }
 
-export default function LoginView() {
+interface Props {
+  invitePreview?: { orgName: string; role: string } | null;
+}
+
+export default function LoginView({ invitePreview }: Props = {}) {
   const { login, register, loginWithGoogle } = useAuth();
-  const [mode, setMode]             = useState<'signin' | 'register'>('signin');
+  const hasInvite = !!invitePreview;
+  const [mode, setMode]             = useState<'signin' | 'register'>(hasInvite ? 'register' : 'signin');
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -139,31 +144,47 @@ export default function LoginView() {
           </div>
         </div>
 
-        {/* ── Mode tabs ── */}
-        <div style={{
-          display: 'flex', borderRadius: 10, border: '1.5px solid #DCE7EE',
-          marginBottom: 20, overflow: 'hidden',
-        }}>
-          {(['signin', 'register'] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => switchMode(m)}
-              style={{
-                flex: 1, padding: '9px 0',
-                background: mode === m ? '#1E3347' : 'transparent',
-                color: mode === m ? 'white' : '#6B7B88',
-                border: 'none', cursor: 'pointer',
-                fontSize: 13, fontWeight: 700,
-                transition: 'background 0.15s, color 0.15s',
-              }}
-            >
-              {m === 'signin' ? 'Sign In' : 'Create Account'}
-            </button>
-          ))}
-        </div>
+        {/* ── Mode tabs — only shown when arriving via invite (Sign In + Create Account) ── */}
+        {hasInvite && (
+          <div style={{
+            display: 'flex', borderRadius: 10, border: '1.5px solid #DCE7EE',
+            marginBottom: 20, overflow: 'hidden',
+          }}>
+            {(['signin', 'register'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => switchMode(m)}
+                style={{
+                  flex: 1, padding: '9px 0',
+                  background: mode === m ? '#1E3347' : 'transparent',
+                  color: mode === m ? 'white' : '#6B7B88',
+                  border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 700,
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+              >
+                {m === 'signin' ? 'Sign In' : 'Create Account'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* ── Early-access notice (sign-in only) ── */}
-        {!isRegister && (
+        {/* ── Invite banner (when arriving via invite link) ── */}
+        {invitePreview ? (
+          <div style={{
+            background: '#EEF7EA', border: '1px solid #B9DEB0', borderRadius: 10,
+            padding: '11px 14px', marginBottom: 20, fontSize: 12.5, color: '#2E6B20', lineHeight: 1.55,
+            display: 'flex', gap: 10, alignItems: 'flex-start',
+          }}>
+            <FontAwesomeIcon icon={faEnvelopeOpen} style={{ color: '#3F9B2F', fontSize: 14, marginTop: 2, flexShrink: 0 }} />
+            <div>
+              You've been invited to join <strong>{invitePreview.orgName}</strong> as a{' '}
+              <strong>{invitePreview.role.replace(/_/g, ' ').toLowerCase()}</strong>.
+              <br />
+              <span style={{ color: '#4A7A3A' }}>Sign in or create an account to accept.</span>
+            </div>
+          </div>
+        ) : !isRegister && (
           <div style={{
             background: '#F8FBFF', border: '1px solid #CCDFF8', borderRadius: 10,
             padding: '11px 14px', marginBottom: 20, fontSize: 12.5, color: '#3A5270', lineHeight: 1.55,

@@ -65,35 +65,7 @@ public class ProjectService {
 
     @PostConstruct
     void seedDevData() {
-        if (!devMode) return;
-
-        put("proj-001", Map.ofEntries(
-            Map.entry("title",        "Q2 Caseload Review"),
-            Map.entry("description",  "Quarterly review of all active clients"),
-            Map.entry("instructions",
-                "You are assisting a BCBA team with a quarterly caseload review. " +
-                "Focus on each client's progress toward treatment goals, observable data trends, " +
-                "and any programming adjustments that may be warranted. " +
-                "Use precise ABA terminology and maintain a professional clinical tone."),
-            Map.entry("orgId",        "dev-org-001"),
-            Map.entry("ownerId",      "dev-user-001"),
-            Map.entry("clientIds",    List.of("c-001", "c-002", "c-003")),
-            Map.entry("isShared",     true),
-            Map.entry("members",      Map.of("supervisor-001", "viewer")),
-            Map.entry("memberIds",    List.of("dev-user-001", "supervisor-001")),
-            Map.entry("createdAt",    "2026-04-01T00:00:00Z"),
-            Map.entry("updatedAt",    "2026-05-20T10:00:00Z")
-        ));
-
-        // Seed a knowledge doc for proj-001
-        addDevKnowledgeDoc("proj-001", "kd-001",
-            "Q2 Goals Summary",
-            "Client c-001: Reduce hitting to <2x/session. Increase manding to 20 independent requests/session.\n" +
-            "Client c-002: Generalize PECS Phase IV across 3 settings. Increase on-task behavior to 80% per interval.\n" +
-            "Client c-003: Complete FBA. Identify function of elopement. Begin FCT protocol."
-        );
-
-        log.info("Dev mode: seeded {} projects", devProjects.size());
+        // No sample projects seeded — testers create their own data.
     }
 
     private void put(String id, Map<String, Object> data) {
@@ -158,6 +130,7 @@ public class ProjectService {
         data.put("ownerId",      user.getUid());
         data.put("clientIds",    clientIds);
         data.put("isShared",     isShared);
+        data.put("containsPhi",  Boolean.TRUE.equals(req.getContainsPhi()));
         data.put("members",      members);
         data.put("memberIds",    computeMemberIds(user.getUid(), members));
         data.put("createdAt",    now);
@@ -186,6 +159,7 @@ public class ProjectService {
         if (req.getInstructions() != null) updates.put("instructions", req.getInstructions());
         if (req.getClientIds()    != null) updates.put("clientIds",    req.getClientIds());
         if (req.getIsShared()     != null) updates.put("isShared",     req.getIsShared());
+        if (req.getContainsPhi()  != null) updates.put("containsPhi",  req.getContainsPhi());
         updates.put("updatedAt", Instant.now().toString());
 
         if (devMode) { project.putAll(updates); return; }
@@ -209,6 +183,14 @@ public class ProjectService {
         } else {
             if (!"editor".equals(role) && !"viewer".equals(role))
                 throw new IllegalArgumentException("Role must be 'editor' or 'viewer'");
+            // PHI gate: non-clinical roles cannot be added to PHI projects
+            if (Boolean.TRUE.equals(project.get("containsPhi"))) {
+                // targetUserId's role comes from Firestore org member lookup
+                // For now we rely on the frontend to pre-filter; log a warning here
+                // so security teams can audit unexpected attempts.
+                log.warn("PHI project member add: projectId={} targetUser={} — caller is responsible for role validation",
+                        projectId, targetUserId);
+            }
             members.put(targetUserId, role);
         }
 

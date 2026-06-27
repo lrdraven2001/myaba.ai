@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronDown, faShieldAlt } from '@fortawesome/free-solid-svg-icons';
+import { faChevronDown, faShieldAlt, faLock, faFileContract } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProfileModal from './components/ProfileModal';
 import Sidebar from './components/Sidebar';
@@ -14,6 +14,15 @@ import ReviewQueueView from './views/ReviewQueueView';
 import TeamView from './views/TeamView';
 import LoginView from './views/LoginView';
 import OnboardingView from './views/OnboardingView';
+import InviteAcceptView from './views/InviteAcceptView';
+import { api } from './lib/api';
+
+// Capture invite token from URL before any render — store in sessionStorage, clean URL
+const INVITE_MATCH = window.location.pathname.match(/^\/invite\/([A-Za-z0-9]+)/);
+if (INVITE_MATCH) {
+  sessionStorage.setItem('pendingInviteToken', INVITE_MATCH[1]);
+  history.replaceState(null, '', '/');
+}
 
 export type View = 'chat' | 'search' | 'documents' | 'clients' | 'projects' | 'settings' | 'review' | 'team';
 
@@ -22,14 +31,18 @@ export type DocumentTab = 'resources' | 'templates';
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
 const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:  'Super Admin',
-  ORG_ADMIN:        'Administrator',
-  TREATING_BCBA:    'Treating BCBA',
-  SUPERVISING_BCBA: 'Supervising BCBA',
-  BCBA_STUDENT:     'BCBA Student',
-  RBT:              'RBT',
-  PARENT_GUARDIAN:  'Parent / Guardian',
-  VIEWER:           'Viewer',
+  ORG_SUPER_ADMIN:   'Clinical Director',
+  CLINICAL_DIRECTOR: 'Clinical Director',
+  ORG_ADMIN:         'Practice Administrator',
+  TREATING_BCBA:     'Treating BCBA',
+  SUPERVISING_BCBA:  'Supervising BCBA',
+  BCBA_STUDENT:      'BCBA Student',
+  RBT:               'RBT',
+  GENERAL_STAFF:     'General Staff',
+  SCHEDULING_ADMIN:  'Scheduling Admin',
+  BILLING_ADMIN:     'Billing Admin',
+  PARENT_GUARDIAN:   'Parent / Guardian',
+  VIEWER:            'Viewer',
 };
 
 // ── Global footer ──────────────────────────────────────────────────────────────
@@ -129,10 +142,32 @@ function AppFooter() {
 
 function AppShell() {
   const { currentUser, loading } = useAuth();
-  const [activeView, setActiveView]         = useState<View>('chat');
-  const [pendingChatId, setPendingChatId]   = useState<string | null>(null);
+  const [activeView, setActiveView]           = useState<View>('chat');
+  const [pendingChatId, setPendingChatId]     = useState<string | null>(null);
   const [pendingClientId, setPendingClientId] = useState<string | null>(null);
-  const [pendingDocTab, setPendingDocTab]   = useState<DocumentTab>('resources');
+  const [pendingDocTab, setPendingDocTab]     = useState<DocumentTab>('resources');
+  const [invitePreview, setInvitePreview]     = useState<{ orgName: string; role: string } | null>(null);
+  // Org BAA state — absent field on legacy orgs treated as accepted (true).
+  const [baaAccepted, setBaaAccepted] = useState<boolean>(true);
+
+  // Pre-fetch org name so InviteAcceptView can show it before the user logs in.
+  // Never remove the token on failure — the invite may still be valid even if preview fails.
+  useEffect(() => {
+    const token = sessionStorage.getItem('pendingInviteToken');
+    if (token) {
+      api.resolveInvite(token).then(setInvitePreview).catch(() => {});
+    }
+  }, []);
+
+  // Load org BAA status whenever the user (and their orgId) is known.
+  useEffect(() => {
+    if (!currentUser?.orgId) return;
+    api.getOrg(currentUser.orgId)
+      .then((org) => setBaaAccepted(org.baaAccepted ?? true))
+      .catch(() => setBaaAccepted(true)); // fail-open: don't lock out on network error
+  }, [currentUser?.orgId]);
+
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const handleNavigateToChat = (chatId: string) => {
     setPendingChatId(chatId);
@@ -164,6 +199,13 @@ function AppShell() {
     );
   }
 
+  // Invite flow — shown for any pending invite token regardless of auth state.
+  // InviteAcceptView owns the full setup flow (account → 2FA → agreements → claim).
+  const pendingToken = sessionStorage.getItem('pendingInviteToken');
+  if (pendingToken) {
+    return <InviteAcceptView token={pendingToken} invitePreview={invitePreview} />;
+  }
+
   if (!currentUser) return <LoginView />;
 
   if (!DEV_AUTH && (!currentUser.orgId || currentUser.orgId === '')) {
@@ -187,27 +229,69 @@ function AppShell() {
               initialChatId={pendingChatId}
               initialClientId={pendingClientId}
               key={pendingChatId ?? 'chat'}
+              baaAccepted={baaAccepted}
             />
           )}
           {activeView === 'search'    && <SearchView onNavigate={handleNavigateFromSearch} />}
           {activeView === 'documents' && <ResourcesView />}
           {activeView === 'clients'   && (
-            <ClientsView onStartChat={(clientId) => {
-              setPendingChatId(null);
-              setPendingClientId(clientId);
-              setActiveView('chat');
-            }} />
+            baaAccepted
+              ? <ClientsView onStartChat={(clientId) => {
+                  setPendingChatId(null);
+                  setPendingClientId(clientId);
+                  setActiveView('chat');
+                }} />
+              : <BaaRequiredWall onGoToSettings={() => setActiveView('settings')} />
           )}
           {activeView === 'projects'  && (
             <ProjectsView onNavigateToChat={handleNavigateToChat} />
           )}
-          {activeView === 'settings'  && <SettingsView />}
+          {activeView === 'settings'  && isAdmin && <SettingsView />}
           {activeView === 'review'    && <ReviewQueueView />}
           {activeView === 'team'      && <TeamView />}
         </div>
       </div>
       {/* Global footer */}
       <AppFooter />
+    </div>
+  );
+}
+
+// ── BAA required wall ─────────────────────────────────────────────────────────
+
+function BaaRequiredWall({ onGoToSettings }: { onGoToSettings: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center px-8 bg-gray-50">
+      <div
+        className="flex flex-col items-center gap-5 max-w-md text-center p-10 rounded-2xl border border-amber-200"
+        style={{ background: '#fffbeb' }}
+      >
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center"
+          style={{ background: '#fef3c7' }}
+        >
+          <FontAwesomeIcon icon={faLock} style={{ fontSize: 26, color: '#d97706' }} />
+        </div>
+        <div>
+          <p className="text-lg font-semibold text-gray-900">BAA Required</p>
+          <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+            Access to client records and other HIPAA-protected features requires a signed
+            Business Associate Agreement (BAA). A <strong>Clinical Director</strong> must
+            sign the BAA before this section can be used.
+          </p>
+        </div>
+        <button
+          onClick={onGoToSettings}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold"
+          style={{ background: '#2a5f6f' }}
+        >
+          <FontAwesomeIcon icon={faFileContract} style={{ fontSize: 13 }} />
+          Go to Settings → BAA
+        </button>
+        <p className="text-xs text-gray-400">
+          Once signed, refresh the page to enable clinical features.
+        </p>
+      </div>
     </div>
   );
 }

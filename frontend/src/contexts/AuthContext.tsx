@@ -46,15 +46,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (user) {
             const { getIdTokenResult } = await import('firebase/auth');
             const tokenResult = await getIdTokenResult(user);
-            const claims = tokenResult.claims as Record<string, string>;
+            const claims = tokenResult.claims as Record<string, unknown>;
             setCurrentUser({
               uid: user.uid,
               email: user.email ?? '',
               displayName: user.displayName,
               role: (claims.role as UserRole) ?? 'TREATING_BCBA',
               purpose: (claims.purpose as UserPurpose) ?? 'treatment',
-              orgId: claims.orgId ?? '',
-              supervisorId: claims.supervisorId,
+              orgId: (claims.orgId as string) ?? '',
+              supervisorId: claims.supervisorId as string | undefined,
+              phiAccess: claims.phiAccess as boolean | undefined,
             });
           } else {
             setCurrentUser(null);

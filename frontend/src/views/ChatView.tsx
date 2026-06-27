@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
+import { canUseGeneralChat, hasPhiAccess } from '../types';
 import ChatSidebar from '../components/chat/ChatSidebar';
 import type { SidebarClient } from '../components/chat/ChatSidebar';
 import NewChatModal from '../components/chat/NewChatModal';
@@ -138,9 +140,18 @@ interface ChatViewProps {
   /** When set, auto-open New Chat modal pre-scoped to this client (e.g. navigating from ClientsView).
    *  Re-fires whenever the value changes so clicking a second client while already in chat view works. */
   initialClientId?: string | null;
+  /** False when the org's BAA has not been signed — clinical chat is blocked, general chat still works. */
+  baaAccepted?: boolean;
 }
 
-export default function ChatView({ initialChatId, initialClientId }: ChatViewProps = {}) {
+export default function ChatView({ initialChatId, initialClientId, baaAccepted = true }: ChatViewProps = {}) {
+  const { currentUser } = useAuth();
+  const isGeneralChatOnly = canUseGeneralChat(currentUser?.role ?? 'GENERAL_STAFF');
+  const userHasPhiAccess  = currentUser ? hasPhiAccess(currentUser) : false;
+  // Clinical chat is locked when BAA hasn't been signed, even for clinical users.
+  // General chat (non-PHI) is always available regardless of BAA status.
+  const clinicalChatLocked = !baaAccepted && !isGeneralChatOnly;
+
   const [chats, setChats]                       = useState<Chat[]>([]);
   const [sidebarClients, setSidebarClients]     = useState<SidebarClient[]>([]);
   const [activeChatId, setActiveChatId]         = useState<string | null>(initialChatId ?? null);
@@ -184,9 +195,10 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
     (async () => {
       setLoadingChats(true);
       try {
+        // General-chat-only users have no client access — skip the clients fetch
         const [chatsData, clientsData] = await Promise.all([
           api.getChats(),
-          api.getClients(),
+          isGeneralChatOnly ? Promise.resolve([]) : api.getClients(),
         ]);
         setChats(chatsData);
         setSidebarClients(
@@ -485,11 +497,19 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
           [activeChatId]: [...(prev[activeChatId] ?? []), errMsg],
         }));
       } else {
-        // ── Generic backend / network error ────────────────────────────────
+        // ── Generic error — show actual message so we can diagnose ──────────
+        const isNetworkErr = err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('network'));
+        const detail = err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
         const errMsg: ChatMessage = {
           id:        (Date.now() + 1).toString(),
           role:      'assistant',
-          content:   'Could not reach the backend. Make sure the API is running on port 9090 (`mvn spring-boot:run -Dspring-boot.run.profiles=local` in `backend-java/`).',
+          content:   isNetworkErr
+            ? 'Could not reach the backend. Make sure the API container is running (`docker compose up` in the project root).'
+            : `Backend error: ${detail}`,
           timestamp: new Date().toISOString(),
         };
         setMessagesByChat((prev) => ({
@@ -570,6 +590,36 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
       {/* Right: active chat */}
       {activeChat ? (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {/* PHI access warning — shown whenever the user cannot process HIPAA data */}
+          {/* BAA not yet signed — clinical features locked for this user's org */}
+          {clinicalChatLocked && (
+            <div
+              className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0"
+              style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d' }}
+            >
+              <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: '#d97706', flexShrink: 0 }} />
+              <p className="text-xs font-medium" style={{ color: '#92400e' }}>
+                <strong>BAA Required:</strong> Clinical chat is locked until your organization's Business Associate Agreement is signed.
+                Go to <strong>Settings → BAA</strong> to complete setup.
+                General-purpose chat (non-clinical questions) is still available.
+              </p>
+            </div>
+          )}
+
+          {!userHasPhiAccess && (
+            <div
+              className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0"
+              style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}
+            >
+              <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: '#b45309', flexShrink: 0 }} />
+              <p className="text-xs font-medium" style={{ color: '#92400e' }}>
+                <strong>HIPAA Notice:</strong> Your role does not permit processing protected health information (PHI).
+                Do not enter patient names, dates of birth, diagnoses, or any other identifying information in this chat.
+                Contact your administrator if you believe this is an error.
+              </p>
+            </div>
+          )}
+
           {/* Chat header */}
           <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
             {activeClient && (
@@ -777,7 +827,7 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
           </div>
         </div>
       ) : (
-        <ChatLandingPage onNewChat={() => setShowNewChat(true)} />
+        <ChatLandingPage onNewChat={() => setShowNewChat(true)} hasPhiAccess={userHasPhiAccess} />
       )}
 
       {/* Modals */}
@@ -786,6 +836,7 @@ export default function ChatView({ initialChatId, initialClientId }: ChatViewPro
           clients={sidebarClients}
           onClose={() => setShowNewChat(false)}
           onCreate={handleNewChat}
+          generalChatOnly={isGeneralChatOnly || clinicalChatLocked}
         />
       )}
       {showFileAttach && (
@@ -838,7 +889,7 @@ function AclxBadge({ decision }: { decision: string }) {
 
 // ── Chat landing page (shown when no chat is open) ───────────────────────────
 
-function ChatLandingPage({ onNewChat }: { onNewChat: () => void }) {
+function ChatLandingPage({ onNewChat, hasPhiAccess }: { onNewChat: () => void; hasPhiAccess: boolean }) {
   const isMac = navigator.platform.toUpperCase().includes('MAC');
   const shortcut = isMac ? '⌘ K' : 'Ctrl K';
 
@@ -892,6 +943,37 @@ function ChatLandingPage({ onNewChat }: { onNewChat: () => void }) {
           <strong style={{ fontWeight: 600 }}>All AI-generated content should be reviewed and verified before use.</strong>
         </p>
       </div>
+
+      {/* PHI access warning for non-clinical roles */}
+      {!hasPhiAccess && (
+        <div
+          className="mb-6 flex items-start gap-3"
+          style={{
+            maxWidth: 520,
+            width: '100%',
+            background: '#fff7ed',
+            border: '1px solid #fed7aa',
+            borderRadius: 12,
+            padding: '14px 16px',
+          }}
+        >
+          <FontAwesomeIcon icon={faExclamationTriangle} style={{ fontSize: 15, color: '#b45309', flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
+              PHI / HIPAA Data Not Permitted
+            </p>
+            <p style={{ fontSize: 12, color: '#92400e', lineHeight: 1.7, margin: 0 }}>
+              Your role does not have clinical access. You <strong>must not</strong> enter patient names,
+              dates of birth, diagnoses, treatment notes, insurance IDs, or any other protected health
+              information into this chat.
+            </p>
+            <p style={{ fontSize: 12, color: '#92400e', lineHeight: 1.7, margin: '6px 0 0' }}>
+              If your work requires access to patient data, contact your organization administrator
+              to request a clinical role.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* CTA — single button, no duplicate */}
       <button

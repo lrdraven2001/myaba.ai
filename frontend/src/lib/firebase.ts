@@ -32,7 +32,7 @@ if (!DEV_AUTH) {
   const authEmulatorUrl = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL;
   if (authEmulatorUrl) {
     // disableWarnings suppresses the console banner — still secure, just noisy
-    connectAuthEmulator(auth, authEmulatorUrl, { disableWarnings: false });
+    connectAuthEmulator(auth, authEmulatorUrl, { disableWarnings: true });
     // Firestore emulator always runs alongside auth emulator in local stack
     connectFirestoreEmulator(db, 'localhost', 9150);
     console.info('[firebase] Connected to local emulators:', authEmulatorUrl);

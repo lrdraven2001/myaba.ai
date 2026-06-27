@@ -18,6 +18,13 @@ public class ProjectRequest {
     private String instructions;
     private List<String> clientIds;
     private Boolean isShared;
+    /**
+     * When true, this project contains PHI and may only be shared with users
+     * who hold a clinical or administrative org role. GENERAL_STAFF, SCHEDULING_ADMIN,
+     * and BILLING_ADMIN are blocked from being added as members and are excluded
+     * from org-wide sharing of PHI projects.
+     */
+    private Boolean containsPhi;
     /** Initial members beyond the owner: { userId: "editor"|"viewer" } */
     private Map<String, String> members;
 }

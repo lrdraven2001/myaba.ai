@@ -32,7 +32,7 @@ export default function SettingsView() {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('org');
 
-  const isAdmin   = currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin   = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
   const orgId     = currentUser?.orgId ?? '';
 
   return (
@@ -880,10 +880,14 @@ function SecurityTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
 // ── Roles & Permissions tab ───────────────────────────────────────────────────
 
 const ROLES_CONFIG = [
-  { key: 'ORG_SUPER_ADMIN',  label: 'Super Admin',         locked: true,  baseline: false },
-  { key: 'ORG_ADMIN',        label: 'Full Administrator',  locked: false, baseline: true  },
-  { key: 'SUPERVISING_BCBA', label: 'Clinical Supervisor', locked: false, baseline: true  },
-  { key: 'RBT',              label: 'Behavior Technician', locked: false, baseline: true  },
+  { key: 'ORG_SUPER_ADMIN',   label: 'Clinical Director',      locked: true,  baseline: false },
+  { key: 'CLINICAL_DIRECTOR', label: 'Clinical Director',      locked: true,  baseline: false },
+  { key: 'ORG_ADMIN',         label: 'Practice Administrator', locked: false, baseline: true  },
+  { key: 'SUPERVISING_BCBA',  label: 'Clinical Supervisor', locked: false, baseline: true  },
+  { key: 'RBT',               label: 'Behavior Technician', locked: false, baseline: true  },
+  { key: 'GENERAL_STAFF',     label: 'General Staff',       locked: false, baseline: false },
+  { key: 'SCHEDULING_ADMIN',  label: 'Scheduling Admin',    locked: false, baseline: false },
+  { key: 'BILLING_ADMIN',     label: 'Billing Admin',       locked: false, baseline: false },
 ];
 
 const PERM_GROUPS = [
@@ -898,10 +902,11 @@ const PERM_ACTIONS = ['add', 'edit', 'delete'] as const;
 type PermMatrix = Record<string, Record<string, Record<string, boolean>>>;
 
 const DEFAULT_PERMS: PermMatrix = {
-  ORG_SUPER_ADMIN:  { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:true }  },
-  ORG_ADMIN:        { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:false}  },
-  SUPERVISING_BCBA: { clients:{add:true,  edit:true,  delete:false},  projects:{add:true,  edit:true,  delete:false},  resources:{add:false, edit:true,  delete:false},  team:{add:false, edit:false, delete:false}  },
-  RBT:              { clients:{add:false, edit:true,  delete:false},  projects:{add:false, edit:false, delete:false},  resources:{add:false, edit:false, delete:false},  team:{add:false, edit:false, delete:false}  },
+  ORG_SUPER_ADMIN:   { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:true }  },
+  CLINICAL_DIRECTOR: { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:true }  },
+  ORG_ADMIN:         { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:false}  },
+  SUPERVISING_BCBA:  { clients:{add:true,  edit:true,  delete:false},  projects:{add:true,  edit:true,  delete:false},  resources:{add:false, edit:true,  delete:false},  team:{add:false, edit:false, delete:false}  },
+  RBT:               { clients:{add:false, edit:true,  delete:false},  projects:{add:false, edit:false, delete:false},  resources:{add:false, edit:false, delete:false},  team:{add:false, edit:false, delete:false}  },
 };
 
 type CustomRole = { key: string; label: string };
@@ -919,14 +924,35 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   const [saved, setSaved]             = useState(false);
 
+  // Admin clinical access toggle
+  const [adminClinicalAccess, setAdminClinicalAccess] = useState(false);
+  const [adminClinicalSaving, setAdminClinicalSaving] = useState(false);
+
   // Roles currently assigned to at least one org member — fetched on mount
   const [memberRoles, setMemberRoles] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!orgId) return;
+    api.getOrg(orgId)
+      .then((o) => setAdminClinicalAccess(o.settings?.adminClinicalAccess ?? false))
+      .catch(() => {});
     api.getOrgMembers(orgId)
       .then((members) => setMemberRoles(new Set(members.map((m) => m.role))))
       .catch(() => { /* silently ignore — we won't block deletions on API failure */ });
   }, [orgId]);
+
+  const handleAdminClinicalToggle = async () => {
+    if (!isAdmin) return;
+    const next = !adminClinicalAccess;
+    setAdminClinicalAccess(next);
+    setAdminClinicalSaving(true);
+    try {
+      await api.updateOrgSettings(orgId, { adminClinicalAccess: next });
+    } catch {
+      setAdminClinicalAccess(!next); // revert on failure
+    } finally {
+      setAdminClinicalSaving(false);
+    }
+  };
 
   // Editable display names — keyed by role key
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>(() =>
@@ -1039,6 +1065,32 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
             Add Role
           </button>
         )}
+      </div>
+
+      {/* Administrator Clinical Access */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Administrator Clinical Access</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              When on, users with the <strong className="text-gray-600">Full Administrator</strong> role
+              can use AI chat and generate clinical documents — useful when your administrator is
+              also your lead BCBA.
+            </p>
+          </div>
+          <button
+            onClick={handleAdminClinicalToggle}
+            disabled={!isAdmin || adminClinicalSaving}
+            className="shrink-0 transition-colors disabled:opacity-50"
+            style={{ color: adminClinicalAccess ? '#3F9B2F' : '#d1d5db' }}
+            title={isAdmin ? (adminClinicalAccess ? 'Disable admin clinical access' : 'Enable admin clinical access') : 'Admin only'}
+          >
+            <FontAwesomeIcon
+              icon={adminClinicalAccess ? faToggleOn : faToggleOff}
+              style={{ fontSize: 28 }}
+            />
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

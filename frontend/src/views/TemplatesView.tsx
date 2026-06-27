@@ -33,21 +33,22 @@ const CATEGORY_COLORS: Record<TemplateCategory, { bg: string; text: string }> = 
 const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as TemplateCategory[];
 
 const ALL_ROLES: { value: UserRole; label: string }[] = [
-  { value: 'TREATING_BCBA',    label: 'Treating BCBA'    },
-  { value: 'SUPERVISING_BCBA', label: 'Supervising BCBA' },
-  { value: 'BCBA_STUDENT',     label: 'BCBA Student'     },
-  { value: 'RBT',              label: 'RBT'              },
-  { value: 'SCHEDULING_ADMIN', label: 'Scheduling Admin' },
-  { value: 'BILLING_ADMIN',    label: 'Billing Admin'    },
-  { value: 'ORG_ADMIN',        label: 'Org Admin'        },
-  { value: 'ORG_SUPER_ADMIN',  label: 'Super Admin'      },
+  { value: 'CLINICAL_DIRECTOR', label: 'Clinical Director' },
+  { value: 'TREATING_BCBA',     label: 'Treating BCBA'    },
+  { value: 'SUPERVISING_BCBA',  label: 'Supervising BCBA' },
+  { value: 'BCBA_STUDENT',      label: 'BCBA Student'     },
+  { value: 'RBT',               label: 'RBT'              },
+  { value: 'SCHEDULING_ADMIN',  label: 'Scheduling Admin' },
+  { value: 'BILLING_ADMIN',     label: 'Billing Admin'    },
+  { value: 'ORG_ADMIN',         label: 'Practice Administrator' },
+  { value: 'ORG_SUPER_ADMIN',   label: 'Clinical Director' },
 ];
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 
 export default function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const [templates, setTemplates]   = useState<Template[]>([]);
   const [loading, setLoading]       = useState(true);

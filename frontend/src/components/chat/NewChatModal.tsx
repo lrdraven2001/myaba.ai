@@ -23,6 +23,8 @@ interface Props {
   initialProjectId?: string;
   /** Pre-select a client when opening from ClientsView */
   initialClientId?: string;
+  /** When true, locks scope to 'general' and hides client/project tabs (non-clinical users) */
+  generalChatOnly?: boolean;
 }
 
 function autoTitle(scope: Scope, clientName?: string, projectTitle?: string): string {
@@ -32,9 +34,9 @@ function autoTitle(scope: Scope, clientName?: string, projectTitle?: string): st
   return `Chat — ${date}`;
 }
 
-export default function NewChatModal({ clients, onClose, onCreate, initialProjectId, initialClientId }: Props) {
+export default function NewChatModal({ clients, onClose, onCreate, initialProjectId, initialClientId, generalChatOnly }: Props) {
   const [scope, setScope]                         = useState<Scope>(
-    initialProjectId ? 'project' : initialClientId ? 'client' : 'general'
+    generalChatOnly ? 'general' : initialProjectId ? 'project' : initialClientId ? 'client' : 'general'
   );
   const [title, setTitle]                         = useState('');
   const [selectedClientId, setSelectedClientId]   = useState(initialClientId ?? clients[0]?.id ?? '');
@@ -114,23 +116,25 @@ export default function NewChatModal({ clients, onClose, onCreate, initialProjec
           </button>
         </div>
 
-        {/* Scope tabs */}
-        <div className="flex gap-1.5 mb-5 bg-gray-100 p-1 rounded-xl">
-          {(['general', 'client', 'project'] as Scope[]).map((s) => (
-            <button
-              key={s}
-              className="flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-colors"
-              style={
-                scope === s
-                  ? { background: '#2a5f6f', color: 'white' }
-                  : { background: 'transparent', color: '#6b7280' }
-              }
-              onClick={() => setScope(s)}
-            >
-              {s === 'general' ? '💬 General' : s === 'client' ? '👤 Client' : '📁 Project'}
-            </button>
-          ))}
-        </div>
+        {/* Scope tabs — hidden for general-chat-only users */}
+        {!generalChatOnly && (
+          <div className="flex gap-1.5 mb-5 bg-gray-100 p-1 rounded-xl">
+            {(['general', 'client', 'project'] as Scope[]).map((s) => (
+              <button
+                key={s}
+                className="flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-colors"
+                style={
+                  scope === s
+                    ? { background: '#2a5f6f', color: 'white' }
+                    : { background: 'transparent', color: '#6b7280' }
+                }
+                onClick={() => setScope(s)}
+              >
+                {s === 'general' ? '💬 General' : s === 'client' ? '👤 Client' : '📁 Project'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Client selector */}
         {scope === 'client' && (

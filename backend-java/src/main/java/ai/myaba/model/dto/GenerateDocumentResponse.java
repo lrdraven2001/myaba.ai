@@ -3,6 +3,9 @@ package ai.myaba.model.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+import java.util.Map;
+
 @Data
 @Builder
 public class GenerateDocumentResponse {
@@ -12,6 +15,27 @@ public class GenerateDocumentResponse {
     private String content;
     private String decision;
     private String contentId;
+
+    /**
+     * Signed content passport (JWS compact serialisation) returned by ACLX.
+     * Stored with the document so the label can be verified independently of ACLX.
+     * Null when {@code LABEL_SIGNING_ENABLED=false} on the gateway.
+     */
+    private Object contentLabel;
+
+    /**
+     * Detector findings from ACLX — summary metadata only (detector name, matched flag,
+     * confidence). The UI uses this to explain "why was content redacted/flagged"
+     * without exposing raw PHI token content.
+     */
+    private List<Map<String, Object>> detectorFindings;
+
+    /**
+     * Per-token redaction metadata when {@code decision == REDACT}.
+     * Each entry: {@code category}, {@code detector}, {@code position}.
+     * Token text itself is not included to avoid re-surfacing PHI in the response.
+     */
+    private List<Map<String, Object>> redactionMetadata;
     /**
      * Number of tokens redacted by ACLX when {@code decision == REDACT}.
      * Zero on ALLOW, BLOCK, and ESCALATE decisions.

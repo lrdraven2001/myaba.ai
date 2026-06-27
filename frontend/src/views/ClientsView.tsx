@@ -9,6 +9,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import type { Client, PolicyDocument, Chat } from '../types';
 import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
+import GenerateDocumentModal from '../components/GenerateDocumentModal';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -33,7 +34,6 @@ const EMPTY_CLIENT = {
   ehrProvider: '', ehrCaseId: '',
 };
 
-const DEV_CLIENT_IDS = ['c-001', 'c-002', 'c-003'];
 
 function toInitials(client: { firstName?: string; lastName?: string; legalName?: string }) {
   const f = client.firstName?.[0]?.toUpperCase() ?? '';
@@ -64,8 +64,6 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [activeTab, setActiveTab]     = useState<ClientTab>('info');
   const [form, setForm]               = useState(EMPTY_CLIENT);
-  const [devClientId, setDevClientId] = useState(DEV_CLIENT_IDS[0]);
-  const [devClientDx, setDevClientDx] = useState('');
 
   // List controls
   const [search, setSearch]           = useState('');
@@ -90,14 +88,6 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
     }
   }, [currentUser?.orgId]);
 
-  // Fetch diagnosis for dev mode
-  useEffect(() => {
-    if (selectedClient) return;
-    setDevClientDx('');
-    api.getClient(devClientId)
-      .then((c) => setDevClientDx(c.diagnosis ?? ''))
-      .catch(() => {});
-  }, [devClientId, selectedClient]);
 
   // Unique diagnoses for filter dropdown
   const diagnosisOptions = useMemo(
@@ -150,8 +140,8 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
     setShowSortMenu(false);
   };
 
-  const activeClientId = selectedClient?.id ?? devClientId;
-  const activeClientDx = selectedClient?.diagnosis ?? devClientDx;
+  const activeClientId = selectedClient?.id ?? '';
+  const activeClientDx = selectedClient?.diagnosis ?? '';
 
   const labelClass = 'block font-semibold text-gray-700 mb-1.5 text-sm';
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 text-sm';
@@ -271,7 +261,13 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
               </>
             )}
 
-            {activeTab === 'ai_data' && <ConnectedAIDataTab clientId={selectedClient.id} onStartChat={onStartChat ? () => onStartChat!(selectedClient.id) : undefined} />}
+            {activeTab === 'ai_data' && (
+              <ConnectedAIDataTab
+                clientId={selectedClient.id}
+                clientName={selectedClient.preferredName || selectedClient.firstName || 'Client'}
+                onStartChat={onStartChat ? () => onStartChat!(selectedClient.id) : undefined}
+              />
+            )}
             {activeTab === 'treatment_team' && (
               <TreatmentTeamTab
                 client={selectedClient}
@@ -294,25 +290,6 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
                     Required before AI features can process client data.
                   </p>
                 </div>
-                {!selectedClient && (
-                  <div className="mb-5 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                    <span className="text-xs text-amber-700 font-medium shrink-0">Dev preview:</span>
-                    <div className="flex gap-2">
-                      {DEV_CLIENT_IDS.map((id) => (
-                        <button
-                          key={id}
-                          onClick={() => setDevClientId(id)}
-                          className="px-3 py-1 rounded-lg text-xs font-semibold border transition-colors"
-                          style={devClientId === id
-                            ? { background: '#3F9B2F', color: 'white', borderColor: '#3F9B2F' }
-                            : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }}
-                        >
-                          {id}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 <ClientAuthorizationsPanel clientId={activeClientId} clientDiagnosis={activeClientDx} />
               </div>
             )}
@@ -829,14 +806,17 @@ function NewClientModal({
 
 function ConnectedAIDataTab({
   clientId,
+  clientName,
   onStartChat,
 }: {
   clientId: string;
+  clientName?: string;
   onStartChat?: () => void;
 }) {
-  const [chats, setChats]       = useState<Chat[]>([]);
-  const [docs, setDocs]         = useState<unknown[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [chats, setChats]               = useState<Chat[]>([]);
+  const [docs, setDocs]                 = useState<unknown[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [showGenerate, setShowGenerate] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -930,14 +910,39 @@ function ConnectedAIDataTab({
         </div>
       )}
 
+      {/* Generate document modal */}
+      {showGenerate && (
+        <GenerateDocumentModal
+          clientId={clientId}
+          clientName={clientName ?? 'Client'}
+          onClose={() => setShowGenerate(false)}
+          onDocumentGenerated={() => {
+            // Refresh docs list
+            api.getClientDocuments(clientId)
+              .then((r) => setDocs(r.documents))
+              .catch(() => {});
+          }}
+        />
+      )}
+
       {/* AI-generated documents section */}
-      {docs.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
             <FontAwesomeIcon icon={faRobot} style={{ color: '#1E88FF', fontSize: 14 }} />
             <h3 className="text-sm font-semibold text-gray-700">AI-Generated Documents</h3>
-            <span className="text-xs text-gray-400">({docs.length})</span>
+            {docs.length > 0 && <span className="text-xs text-gray-400">({docs.length})</span>}
           </div>
+          <button
+            onClick={() => setShowGenerate(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+            style={{ background: '#1E88FF' }}
+          >
+            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 11 }} />
+            Generate
+          </button>
+        </div>
+        {docs.length > 0 && (
           <div className="space-y-2">
             {docs.map((doc, i) => {
               const d = doc as Record<string, string>;
@@ -967,8 +972,14 @@ function ConnectedAIDataTab({
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+
+        {docs.length === 0 && (
+          <p className="text-sm text-gray-400 py-4 text-center">
+            No documents generated yet. Click <strong>Generate</strong> to create one.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1104,8 +1115,8 @@ const TEAM_ROLE_LABEL: Record<string, string> = {
   SUPERVISING_BCBA: 'Supervising BCBA',
   BCBA_STUDENT:     'BCBA Student',
   RBT:              'Behavior Technician',
-  ORG_ADMIN:        'Administrator',
-  ORG_SUPER_ADMIN:  'Super Admin',
+  ORG_ADMIN:        'Practice Administrator',
+  ORG_SUPER_ADMIN:  'Clinical Director',
 };
 
 const TEAM_ROLE_COLORS: Record<string, { bg: string; text: string }> = {

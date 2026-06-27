@@ -12,6 +12,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import { isClinicalRole, isAdminRole } from '../types';
 import type { View } from '../App';
 
 interface SidebarProps {
@@ -26,14 +27,14 @@ const navItems: { view: View; icon: typeof faCommentDots; label: string; color: 
   { view: 'clients',   icon: faUsers,          label: 'Clients',   color: '#7ED957' },
   { view: 'documents', icon: faFileAlt,        label: 'Resources', color: '#1E88FF' },
   { view: 'team',      icon: faUsersCog,       label: 'Team',      color: '#F5A623' },
-  { view: 'settings',  icon: faCog,            label: 'Settings',  color: '#3F9B2F' },
 ];
 
 export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const { currentUser } = useAuth();
   const [orgName, setOrgName] = useState('');
 
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin    = isAdminRole(currentUser?.role ?? '');
+  const isClinical = isClinicalRole(currentUser?.role ?? '');
 
   // Load org name
   useEffect(() => {
@@ -151,17 +152,25 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
             );
           })}
 
-          {/* Review queue — admin only */}
-          {isAdmin && (() => {
-            const isActive = activeView === 'review';
+          {/* Clinical + admin nav items */}
+          {(isClinical || isAdmin) && (() => {
+            const reviewActive = activeView === 'review';
             return navBtn(
-              isActive,
+              reviewActive,
               () => onViewChange('review'),
-              <FontAwesomeIcon
-                icon={faShieldAlt}
-                style={{ fontSize: 19, color: isActive ? '#F5A623' : '#A8B4BF', flexShrink: 0, width: 22 }}
-              />,
+              <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 19, color: reviewActive ? '#F5A623' : '#A8B4BF', flexShrink: 0, width: 22 }} />,
               'Review',
+            );
+          })()}
+
+          {/* Admin-only nav items */}
+          {isAdmin && (() => {
+            const settingsActive = activeView === 'settings';
+            return navBtn(
+              settingsActive,
+              () => onViewChange('settings'),
+              <FontAwesomeIcon icon={faCog} style={{ fontSize: 19, color: settingsActive ? '#3F9B2F' : '#A8B4BF', flexShrink: 0, width: 22 }} />,
+              'Settings',
             );
           })()}
 

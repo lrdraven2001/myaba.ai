@@ -26,10 +26,12 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/api/health").permitAll()
-                // Org creation + invite endpoints must be accessible to authenticated users
-                // who don't yet have an orgId (e.g. first-time onboarding, accepting an invite).
+                // Invite preview is public — unauthenticated users need to read org/role
+                // before they create an account. Claim requires authentication.
+                .requestMatchers(org.springframework.http.HttpMethod.GET,  "/api/invite/*").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/invite/*/claim").authenticated()
+                // Org creation accessible to authenticated users without an orgId yet
                 .requestMatchers("/api/orgs").authenticated()
-                .requestMatchers("/api/invite/**").authenticated()
                 .anyRequest().authenticated()
             )
             // 1. Authenticate via Firebase token

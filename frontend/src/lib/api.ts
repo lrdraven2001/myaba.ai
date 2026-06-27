@@ -247,6 +247,7 @@ export const api = {
     instructions?: string;
     clientIds?: string[];
     isShared?: boolean;
+    containsPhi?: boolean;
     members?: Record<string, string>;
   }) =>
     request<{ projectId: string }>('/projects', {
@@ -262,6 +263,7 @@ export const api = {
       instructions?: string;
       clientIds?: string[];
       isShared?: boolean;
+      containsPhi?: boolean;
     },
   ) =>
     request<void>(`/projects/${projectId}`, {
@@ -393,7 +395,13 @@ export const api = {
   // ── Organizations ─────────────────────────────────────────────────────────
 
   /** Create a new organization (called during onboarding). Returns { orgId }. */
-  createOrg: (data: { name: string; plan: OrgPlan; adminDisplayName?: string }) =>
+  createOrg: (data: {
+    name: string;
+    plan: OrgPlan;
+    adminDisplayName?: string;
+    /** "clinical_director" (default) or "it_setup" */
+    setupMode?: 'clinical_director' | 'it_setup';
+  }) =>
     request<{ orgId: string }>('/orgs', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -567,10 +575,61 @@ export const api = {
   // ── AI Generation ─────────────────────────────────────────────────────────
 
   generateDocument: (clientId: string, documentType: string, additionalContext?: string) =>
-    request<{ content: string; documentId: string; decision: string }>('/generate-document', {
+    request<{
+      content: string;
+      documentId: string;
+      decision: string;
+      contentId: string;
+      contentLabel?: unknown;
+      redactedTokenCount?: number;
+      groundednessScore?: number;
+      groundednessWarning?: boolean;
+      detectorFindings?: Array<{ detector: string; matched: boolean; confidence: string; category: string }>;
+      redactionMetadata?: Array<{ category: string; detector: string; position: number }>;
+    }>('/generate-document', {
       method: 'POST',
       body: JSON.stringify({ clientId, documentType, additionalContext }),
     }),
+
+  // ── Compliance dashboard ──────────────────────────────────────────────────
+
+  /** ACLX governance summary for the admin compliance dashboard. Admin only. */
+  getComplianceSummary: (days = 30) =>
+    request<{
+      periodDays: number;
+      totalEvents: number;
+      decisionCounts: Record<string, number>;
+      eventTypeCounts: Record<string, number>;
+      topDetectors: Record<string, number>;
+      synthesisEvents: number;
+      totalRedactions: number;
+      latestPolicyVersion: string | null;
+      recentEscalations: Array<{
+        eventType: string;
+        timestamp: string;
+        sensitivity: string | null;
+        contentId: string;
+        synthesis: boolean;
+      }>;
+    }>(`/compliance/summary?days=${days}`),
+
+  /** Recent ACLX audit events (metadata only). Admin only. */
+  getComplianceEvents: (days = 7, limit = 50) =>
+    request<{
+      events: Array<{
+        id: string;
+        eventType: string;
+        timestamp: string;
+        decision: string;
+        sensitivity: string | null;
+        contentId: string;
+        policyVersion: string;
+        redacted: number;
+        synthesis: boolean;
+        detectors: Array<{ detector: string; matched: boolean }>;
+      }>;
+      total: number;
+    }>(`/compliance/events?days=${days}&limit=${limit}`),
 
   // ── Review queue ──────────────────────────────────────────────────────────
 

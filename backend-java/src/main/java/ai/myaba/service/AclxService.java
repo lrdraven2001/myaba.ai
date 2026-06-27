@@ -102,7 +102,7 @@ public class AclxService {
                         .role(user.getRole())
                         .purpose(user.getPurpose())
                         .organization(user.getOrgId())
-                        .scopes(List.of())
+                        .scopes(buildScopes(user))
                         .allowedDistributions(List.of())
                         .build())
                 .aiResponse(AclxRequest.AiResponse.builder()
@@ -140,7 +140,26 @@ public class AclxService {
             }
 
             String body = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            return mapper.readValue(body, AclxResponse.class);
+            AclxResponse response = mapper.readValue(body, AclxResponse.class);
+
+            // §1 Synthesis escalation — override ALLOW/REDACT to ESCALATE when
+            // the synthesis detector flagged cross-client data aggregation risk.
+            // ACLX sets synthesis_detected=true when the Minimum Necessary Rule
+            // (45 CFR §164.514(d)) may be violated by the combined output.
+            if (response.isSynthesisDetected()
+                    && response.getDecision() != null
+                    && ("ALLOW".equals(response.getDecision().getDecision())
+                        || "REDACT".equals(response.getDecision().getDecision()))) {
+                log.warn("synthesis_detected=true — overriding {} to ESCALATE: contentId={}",
+                        response.getDecision().getDecision(), response.getContentId());
+                String prior = response.getDecision().getReason();
+                response.getDecision().setDecision("ESCALATE");
+                response.getDecision().setReason(
+                        "SYNTHESIS_DETECTED: cross-client data aggregation risk"
+                        + (prior != null && !prior.isBlank() ? "; " + prior : ""));
+            }
+
+            return response;
 
         } catch (Exception e) {
             log.error("ACLX Gateway unreachable: {}", e.getMessage());
@@ -314,6 +333,126 @@ public class AclxService {
             }
         }
         return subjects;
+    }
+
+    /**
+     * Evaluate user input text through ACLX before forwarding to Claude.
+     *
+     * <p>Sends the raw user message as if it were AI output — ACLX's HIPAA
+     * detectors will catch SSNs, cross-client PHI, and other sensitive content
+     * that should never reach the model context.  Returns a standard
+     * {@link AclxResponse}; callers should block on BLOCK or ESCALATE decisions.
+     *
+     * <p>Uses a minimal identity block and no authorized subjects, since we
+     * are evaluating the input before we have evaluated the subject scope.
+     * Grounding sources are empty — there is no groundedness concept for input.
+     *
+     * @param inputText user's raw message text
+     * @param user      requesting identity (for identity-aware detection)
+     * @return ACLX evaluation result; ALLOW means safe to forward to Claude
+     */
+    public AclxResponse evaluateInput(String inputText, AppUser user) {
+        if (!enabled || inputText == null || inputText.isBlank()) {
+            return buildPassThrough(inputText != null ? inputText : "");
+        }
+
+        AclxRequest request = AclxRequest.builder()
+                .domain(domain)
+                .identity(AclxRequest.Identity.builder()
+                        .subject(user.getUid())
+                        .actorType("human")
+                        .role(user.getRole())
+                        .purpose(user.getPurpose())
+                        .organization(user.getOrgId())
+                        .scopes(buildScopes(user))
+                        .allowedDistributions(List.of())
+                        .build())
+                .aiResponse(AclxRequest.AiResponse.builder()
+                        .text(inputText)
+                        .sources(List.of())
+                        .build())
+                .requestContext(AclxRequest.RequestContext.builder()
+                        .timestamp(java.time.Instant.now().toString())
+                        .build())
+                .build();
+
+        try {
+            byte[] payload = mapper.writeValueAsBytes(request);
+            HttpURLConnection conn =
+                    (HttpURLConnection) new URL(gatewayUrl + "/evaluate").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(3_000); // shorter timeout — this is pre-flight
+            conn.setReadTimeout(3_000);
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload);
+            }
+
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                log.warn("ACLX input-guard returned {} — pass-through (non-fatal)", status);
+                return buildPassThrough(inputText);
+            }
+
+            String body = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            return mapper.readValue(body, AclxResponse.class);
+
+        } catch (Exception e) {
+            // Input guard failure is non-fatal — local guards already ran.
+            // Log and pass through rather than blocking every message when ACLX is unreachable.
+            log.warn("ACLX input-guard unreachable (non-fatal): {}", e.getMessage());
+            return buildPassThrough(inputText);
+        }
+    }
+
+    /**
+     * Build the ACLX {@code scopes} list from the user's role.
+     *
+     * <p>Scopes constrain the content autonomy envelope in Rego policy beyond
+     * the coarse role name — e.g. {@code supervisor_review_required} lets the
+     * policy apply stricter handling for BCBA_STUDENT output even within the
+     * same broad ALLOW envelope as TREATING_BCBA.
+     *
+     * @param user authenticated user principal
+     * @return ordered list of scope strings; empty for unknown roles
+     */
+    private List<String> buildScopes(AppUser user) {
+        if (user == null || user.getRole() == null) return List.of();
+        return switch (user.getRole()) {
+            case ai.myaba.model.dto.UserRole.TREATING_BCBA ->
+                    List.of("clinical_access", "phi_read", "phi_write", "document_generate");
+
+            case ai.myaba.model.dto.UserRole.SUPERVISING_BCBA ->
+                    List.of("clinical_access", "phi_read", "phi_write",
+                            "document_generate", "document_approve", "caseload_oversight");
+
+            case ai.myaba.model.dto.UserRole.BCBA_STUDENT ->
+                    List.of("clinical_access", "phi_read", "phi_write",
+                            "document_generate", "supervisor_review_required");
+
+            case ai.myaba.model.dto.UserRole.RBT ->
+                    List.of("session_notes_only", "phi_read_limited", "assigned_clients_only");
+
+            case ai.myaba.model.dto.UserRole.SCHEDULING_ADMIN ->
+                    List.of("scheduling_access", "demographics_read");
+
+            case ai.myaba.model.dto.UserRole.BILLING_ADMIN ->
+                    List.of("billing_access", "insurance_data");
+
+            case ai.myaba.model.dto.UserRole.CLINICAL_DIRECTOR ->
+                    List.of("org_management", "user_management", "phi_read", "phi_write",
+                            "clinical_oversight", "all_clients");
+
+            case ai.myaba.model.dto.UserRole.ORG_ADMIN ->
+                    List.of("org_management", "user_management");
+
+            case ai.myaba.model.dto.UserRole.ORG_SUPER_ADMIN ->
+                    List.of("org_management", "user_management", "platform_config", "phi_read");
+
+            default -> List.of();
+        };
     }
 
     private List<String> buildClientIdList(String primaryClientId, List<String> additional) {
