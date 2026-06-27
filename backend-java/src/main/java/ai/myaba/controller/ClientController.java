@@ -41,7 +41,7 @@ public class ClientController {
         if (!orgService.isBaaAccepted(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "BAA_NOT_SIGNED",
-                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before client records can be accessed."));
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Director must sign the BAA before client records can be accessed."));
         }
         return null;
     }

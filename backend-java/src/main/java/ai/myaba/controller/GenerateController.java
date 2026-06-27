@@ -74,7 +74,7 @@ public class GenerateController {
         if (!orgService.isBaaAccepted(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "BAA_NOT_SIGNED",
-                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before clinical features can be used."));
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Director must sign the BAA before clinical features can be used."));
         }
 
         // Layer 2: fetch client and verify authorization
@@ -383,7 +383,7 @@ public class GenerateController {
         if (!orgService.isBaaAccepted(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "BAA_NOT_SIGNED",
-                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Administrator must sign the BAA before clinical features can be used."));
+                                 "message", "Your organization's Business Associate Agreement has not been signed. A Clinical Director must sign the BAA before clinical features can be used."));
         }
 
         // Build the effective client ID list for authorization + ACLX
