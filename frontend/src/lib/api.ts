@@ -302,6 +302,13 @@ export const api = {
   deleteProject: (projectId: string) =>
     request<void>(`/projects/${projectId}`, { method: 'DELETE' }),
 
+  /** Soft-deleted projects still within the 48h restore window (super admin only). */
+  getTrashedProjects: () => request<Project[]>('/projects/trash'),
+
+  /** Restore a soft-deleted project (super admin only, within 48h). */
+  restoreProject: (projectId: string) =>
+    request<{ success: boolean }>(`/projects/${projectId}/restore`, { method: 'POST' }),
+
   // ── Templates ─────────────────────────────────────────────────────────────
 
   /**
@@ -361,6 +368,15 @@ export const api = {
     category: string;
     textContent?: string;
     isActive?: boolean;
+    /** Bucket: LIBRARY | GROUNDING | POLICY */
+    bucket?: string;
+    resourceType?: string;
+    purposes?: string[];
+    /** For GENERATION_TEMPLATE library resources — the client document type it customizes. */
+    documentType?: string;
+    /** Whether a default template has been customized by the agency. */
+    customized?: boolean;
+    clientId?: string;
   }) =>
     request<{ policyId: string }>('/policies', {
       method: 'POST',
@@ -445,6 +461,22 @@ export const api = {
       signerTitle?: string;
       version?: string;
     }>(`/orgs/${orgId}/baa`),
+
+  /** Download the executed BAA as a PDF. */
+  downloadBaa: async (orgId: string) => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE}/orgs/${orgId}/baa/document`, { headers });
+    if (!res.ok) throw new Error(`Failed to download BAA (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BAA-${orgId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   /** Record BAA acceptance (ORG_ADMIN only). */
   acceptBaa: (orgId: string, data: { signerName: string; signerTitle: string }) =>

@@ -53,7 +53,7 @@ interface Props {
 
 export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = '' }: Props) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const [records, setRecords]     = useState<SubjectAuthorization[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -159,7 +159,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
             className="shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 whitespace-nowrap"
             style={{ background: '#2a5f6f' }}
           >
-            {saving ? 'Adding…' : 'Add Authorization'}
+            {saving ? 'Adding…' : 'Add Standard'}
           </button>
         </div>
       )}
@@ -202,7 +202,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
               style={{ background: '#2a5f6f' }}
             >
               <FontAwesomeIcon icon={faPlus} className="text-xs" />
-              Add Authorization
+              Custom Authorization
             </button>
           )}
         </div>

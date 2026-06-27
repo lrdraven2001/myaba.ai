@@ -4,7 +4,7 @@ import {
   faShieldAlt, faSpinner, faCheckCircle, faBan, faClock,
   faChevronDown, faChevronUp, faInfoCircle,
   faChartBar, faListAlt, faTag, faPlus, faTrash, faLock,
-  faBookOpen, faComments, faUser,
+  faBookOpen, faComments, faUser, faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -114,11 +114,11 @@ const ACLX_LABEL_META: Record<string, { bg: string; text: string; label: string 
 };
 
 const CHAT_USER_COLORS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   '#2a5f6f',
-  CLINICAL_DIRECTOR: '#6d28d9',
+  ORG_SUPER_ADMIN:   'Practice Administrator',
+  CLINICAL_DIRECTOR: 'Clinical Director',
   ORG_ADMIN:         '#1d4ed8',
-  SUPERVISING_BCBA:  '#7c3aed',
-  RBT:               '#3F9B2F',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
+  RBT:               'Behavior Technician',
 };
 
 const CHAT_ROLE_CHIP: Record<string, { bg: string; text: string }> = {
@@ -130,7 +130,7 @@ const CHAT_ROLE_CHIP: Record<string, { bg: string; text: string }> = {
 };
 
 const CHAT_ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   'Clinical Director',
+  ORG_SUPER_ADMIN:   'Practice Administrator',
   CLINICAL_DIRECTOR: 'Clinical Director',
   ORG_ADMIN:         'Practice Administrator',
   SUPERVISING_BCBA:  'Clinical Supervisor',
@@ -163,7 +163,7 @@ function statusChip(status: ReviewStatus) {
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 
-type TabId = 'queue' | 'auditlog' | 'analytics' | 'rules' | 'chats';
+type TabId = 'queue' | 'auditlog' | 'analytics' | 'chats';
 type ChatGroupBy = 'all' | 'user' | 'client' | 'project';
 
 export default function ReviewQueueView() {
@@ -205,7 +205,6 @@ export default function ReviewQueueView() {
   }, [orgId]);
 
   const pending  = items.filter((i) => i.status === 'PENDING');
-  const auditLog = items.filter((i) => i.status === 'LOGGED');
   const history  = items.filter((i) => i.status === 'APPROVED' || i.status === 'DENIED');
 
   const handleReviewed = (updated: ReviewQueueItem) => {
@@ -215,10 +214,9 @@ export default function ReviewQueueView() {
   const tabs = [
     // Review Queue tab only appears when Human Review is on
     ...(reviewRequired ? [{ id: 'queue' as TabId,    label: 'Review Queue',  icon: faListAlt,  count: pending.length }] : []),
-    {                    id: 'auditlog' as TabId,     label: 'Audit Log',     icon: faBookOpen, count: auditLog.length  },
+    {                    id: 'auditlog' as TabId,     label: 'Audit Log',     icon: faBookOpen, count: null             },
     ...(canViewChats    ? [{ id: 'chats' as TabId,   label: 'Chat Review',   icon: faComments, count: null             }] : []),
     {                    id: 'analytics' as TabId,    label: 'Insights',      icon: faChartBar, count: null             },
-    {                    id: 'rules' as TabId,        label: 'Content Rules', icon: faTag,      count: null             },
   ];
 
   return (
@@ -296,9 +294,8 @@ export default function ReviewQueueView() {
           ) : (
             <>
               {tab === 'queue'     && <ReviewQueueTab pending={pending} history={history} orgId={orgId} reviewRequired={reviewRequired} onReviewed={handleReviewed} />}
-              {tab === 'auditlog'  && <AuditLogTab   items={auditLog}  />}
+              {tab === 'auditlog'  && <AuditLogTab />}
               {tab === 'analytics' && <InsightsTab />}
-              {tab === 'rules'     && <OrgPolicyTab  orgId={orgId}     />}
             </>
           )}
         </div>
@@ -421,200 +418,171 @@ function HistoryTab({ items }: { items: ReviewQueueItem[] }) {
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────
 
-function AuditLogTab({ items }: { items: ReviewQueueItem[] }) {
-  if (items.length === 0) {
+interface ComplianceEvent {
+  id: string; eventType: string; timestamp: string; decision: string;
+  sensitivity: string | null; contentId: string; policyVersion: string;
+  redacted: number; synthesis: boolean; detectors: Array<{ detector: string; matched: boolean }>;
+}
+
+const DECISION_COLORS: Record<string, { bg: string; text: string }> = {
+  ALLOW:    { bg: '#EEF7EA', text: '#166534' },
+  REDACT:   { bg: '#fff7ed', text: '#92400e' },
+  ESCALATE: { bg: '#fef3c7', text: '#92400e' },
+  BLOCK:    { bg: '#fee2e2', text: '#991b1b' },
+};
+
+function AuditLogTab() {
+  const [events, setEvents] = useState<ComplianceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api.getComplianceEvents(30, 100)
+      .then((r) => setEvents(r.events))
+      .catch(() => setEvents([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-gray-400">
+        <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
     return (
       <div className="text-center py-20 text-gray-400">
         <FontAwesomeIcon icon={faBookOpen} className="text-5xl mb-4" style={{ color: '#b2dce8' }} />
-        <p className="text-base font-medium">No audit log entries yet</p>
+        <p className="text-base font-medium">No audit events yet</p>
         <p className="text-sm mt-1 max-w-xs mx-auto leading-relaxed">
-          When <strong>Human Review Required</strong> is off, ACLX escalations are delivered
-          to users immediately and recorded here for oversight.
+          Every AI response is labeled and recorded by ACLX. Events from the last 30 days appear here.
         </p>
       </div>
     );
   }
 
-  const sorted = [...items].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl p-4 text-sm flex items-start gap-3"
+    <div className="space-y-3">
+      <div className="rounded-xl p-4 flex items-start gap-3"
         style={{ background: '#e8f4f8', border: '1px solid #b2dce8', color: '#1e4d5c' }}>
         <FontAwesomeIcon icon={faInfoCircle} className="mt-0.5 shrink-0" />
         <p className="text-xs leading-relaxed">
-          These items were flagged by ACLX but delivered to users without blocking — because
-          <strong> Human Review Required</strong> is currently <strong>off</strong> for this organization.
-          ACLX labeling ran on every response. Review these entries to validate that your HIPAA
-          authorizations cover the content being generated, and adjust Org Policy rules as needed.
+          Every AI response is evaluated by ACLX and recorded here — its decision, sensitivity, and any
+          redactions. Showing the last 30 days.
         </p>
       </div>
-      <div className="space-y-3">
-        {sorted.map((item) => (
-          <AuditLogCard key={item.id} item={item} />
-        ))}
-      </div>
+      {events.map((e) => <ComplianceEventCard key={e.id} event={e} />)}
     </div>
   );
 }
 
-function AuditLogCard({ item }: { item: ReviewQueueItem }) {
+function ComplianceEventCard({ event }: { event: ComplianceEvent }) {
   const [expanded, setExpanded] = useState(false);
-  const sensColors = SENSITIVITY_COLORS[item.aclxSensitivity ?? ''] ?? { bg: '#f3f4f6', text: '#374151' };
+  const dc = DECISION_COLORS[event.decision] ?? { bg: '#f3f4f6', text: '#374151' };
+  const sc = SENSITIVITY_COLORS[event.sensitivity ?? ''] ?? { bg: '#f3f4f6', text: '#374151' };
+  const matched = (event.detectors ?? []).filter((d) => d.matched);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="p-4 flex items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-sm font-semibold text-gray-800">
-              {EVENT_LABELS[item.eventType] ?? item.eventType}
-            </span>
-            {statusChip(item.status)}
-            {item.aclxSensitivity && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                style={{ background: sensColors.bg, color: sensColors.text }}>
-                {item.aclxSensitivity} sensitivity
-              </span>
+            <span className="text-sm font-semibold text-gray-800">{EVENT_LABELS[event.eventType] ?? event.eventType}</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: dc.bg, color: dc.text }}>{event.decision}</span>
+            {event.sensitivity && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>{event.sensitivity}</span>
+            )}
+            {event.synthesis && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#ede9fe', color: '#6d28d9' }}>cross-client</span>
+            )}
+            {event.redacted > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#fff7ed', color: '#92400e' }}>{event.redacted} redacted</span>
             )}
           </div>
-          {item.aclxReason && (
-            <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
-              <span className="font-medium text-gray-600">ACLX flag: </span>{item.aclxReason}
-            </p>
-          )}
-          <p className="text-xs text-gray-400 mt-1">Logged {fmtDate(item.createdAt)}</p>
+          <p className="text-xs text-gray-400 mt-1">{fmtDate(event.timestamp)} · policy {event.policyVersion || '—'}</p>
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 shrink-0"
-        >
+        <button onClick={() => setExpanded((v) => !v)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 shrink-0">
           <FontAwesomeIcon icon={expanded ? faChevronUp : faChevronDown} className="text-sm" />
         </button>
       </div>
-
       {expanded && (
-        <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">AI Output (delivered)</p>
-            <pre className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed max-h-40 overflow-y-auto">
-              {item.rawContent}
-            </pre>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <span className="text-gray-400 font-medium">Content type: </span>
-              <span className="text-gray-700">{EVENT_LABELS[item.eventType]}</span>
-            </div>
-            <div>
-              <span className="text-gray-400 font-medium">ACLX category: </span>
-              <span className="text-gray-700">{item.aclxCategory ?? '--'}</span>
-            </div>
-            {item.clientId && (
-              <div>
-                <span className="text-gray-400 font-medium">Client ID: </span>
-                <span className="text-gray-700 font-mono">{item.clientId}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-gray-400 font-medium">Content ID: </span>
-              <span className="text-gray-700 font-mono truncate">{item.contentId}</span>
-            </div>
-          </div>
-          {item.authDenyReason && AUTH_DENY_LABELS[item.authDenyReason] && (
-            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <FontAwesomeIcon icon={faLock} className="text-amber-500 mt-0.5 shrink-0 text-sm" />
-              <div>
-                <p className="text-xs font-semibold text-amber-800">
-                  Authorization check failed: {AUTH_DENY_LABELS[item.authDenyReason].label}
-                </p>
-                <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-                  {AUTH_DENY_LABELS[item.authDenyReason].action}
-                </p>
-              </div>
-            </div>
-          )}
+        <div className="px-4 pb-4 border-t border-gray-100 pt-3 text-xs text-gray-500 space-y-1">
+          <p><span className="font-medium text-gray-600">Content ID:</span> {event.contentId || '—'}</p>
+          <p><span className="font-medium text-gray-600">Detectors fired:</span> {matched.length ? matched.map((d) => d.detector).join(', ') : 'none'}</p>
         </div>
       )}
     </div>
   );
 }
 
-// ── Analytics tab ─────────────────────────────────────────────────────────────
-
-// ── Activity stub data ────────────────────────────────────────────────────────
-
-interface ActivityItem {
-  id: string;
-  userId: string;
-  userName: string;
-  userRole: string;
-  type: 'Chat' | 'Document' | 'Search';
-  detail: string;
-  context?: string;
-  timestamp: string;
-  messageCount?: number;
-}
-
-const STUB_ACTIVITY: ActivityItem[] = [
-  { id: 'act-001', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Chat',     detail: 'Session Notes — DTT Program',         context: 'Client: Alex R.',           timestamp: '2026-06-10T14:32:00Z', messageCount: 4 },
-  { id: 'act-002', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Document', detail: 'Behavior Intervention Plan',           context: 'Client: Alex R.',           timestamp: '2026-06-10T09:15:00Z' },
-  { id: 'act-003', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Chat',     detail: 'BIP Review — Escape Behaviors',        context: 'Client: Alex R.',           timestamp: '2026-06-09T10:15:00Z', messageCount: 4 },
-  { id: 'act-004', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Document', detail: 'Session Note — June 9',                context: 'Client: Alex R.',           timestamp: '2026-06-09T09:00:00Z' },
-  { id: 'act-005', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Chat',     detail: 'Goal Progress Summary',                context: 'Project: Q2 Program Review', timestamp: '2026-06-08T09:45:00Z', messageCount: 2 },
-  { id: 'act-006', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Search',   detail: 'ABA data collection methods',          timestamp: '2026-06-08T08:30:00Z' },
-  { id: 'act-007', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Chat',     detail: 'Staff Training — Data Collection',     timestamp: '2026-06-07T16:20:00Z',    messageCount: 4 },
-  { id: 'act-008', userId: 'dev-user-003', userName: 'Mike Torres',    userRole: 'RBT',              type: 'Document', detail: 'Session Note — June 6',                context: 'Client: Alex R.',           timestamp: '2026-06-07T15:10:00Z' },
-  { id: 'act-009', userId: 'dev-user-001', userName: 'Chris Hunt',     userRole: 'ORG_SUPER_ADMIN',  type: 'Chat',     detail: 'System Prompt Review',                 timestamp: '2026-06-06T11:05:00Z',    messageCount: 2 },
-  { id: 'act-010', userId: 'dev-user-002', userName: 'Sarah Johnson',  userRole: 'SUPERVISING_BCBA', type: 'Search',   detail: 'BCBA supervision requirements',        timestamp: '2026-06-05T10:00:00Z' },
-];
-
-const ACTIVITY_TYPE_STYLE: Record<string, { bg: string; text: string; icon: typeof faComments }> = {
-  Chat:     { bg: '#EEF7EA', text: '#3F9B2F', icon: faComments  },
-  Document: { bg: '#EEF4FF', text: '#1E88FF', icon: faBookOpen  },
-  Search:   { bg: '#fef3c7', text: '#92400e', icon: faListAlt   },
-};
-
 // ── Insights tab ──────────────────────────────────────────────────────────────
 
+interface ComplianceSummary {
+  periodDays: number;
+  totalEvents: number;
+  decisionCounts: Record<string, number>;
+  eventTypeCounts: Record<string, number>;
+  topDetectors: Record<string, number>;
+  synthesisEvents: number;
+  totalRedactions: number;
+  latestPolicyVersion: string | null;
+  recentEscalations: Array<{ eventType: string; timestamp: string; sensitivity: string | null; contentId: string; synthesis: boolean }>;
+}
+
 function InsightsTab() {
-  const sorted = [...STUB_ACTIVITY].sort(
-    (a, b) => b.timestamp.localeCompare(a.timestamp),
-  );
+  const [summary, setSummary] = useState<ComplianceSummary | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Stats
-  const totalInteractions = sorted.length;
-  const activeUsers       = new Set(sorted.map((a) => a.userId)).size;
-  const chatCount         = sorted.filter((a) => a.type === 'Chat').length;
-  const docCount          = sorted.filter((a) => a.type === 'Document').length;
+  useEffect(() => {
+    setLoading(true);
+    api.getComplianceSummary(30)
+      .then(setSummary)
+      .catch(() => setSummary(null))
+      .finally(() => setLoading(false));
+  }, []);
 
-  // Usage by user
-  const byUser: Record<string, { name: string; role: string; count: number }> = {};
-  sorted.forEach((a) => {
-    if (!byUser[a.userId]) byUser[a.userId] = { name: a.userName, role: a.userRole, count: 0 };
-    byUser[a.userId].count++;
-  });
-  const userRows = Object.entries(byUser)
-    .sort(([, a], [, b]) => b.count - a.count);
-  const maxUserCount = userRows[0]?.[1].count ?? 1;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-gray-400">
+        <FontAwesomeIcon icon={faSpinner} className="animate-spin text-2xl" />
+      </div>
+    );
+  }
 
-  // Usage by type
-  const byType: Record<string, number> = {};
-  sorted.forEach((a) => { byType[a.type] = (byType[a.type] ?? 0) + 1; });
+  if (!summary || summary.totalEvents === 0) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <FontAwesomeIcon icon={faChartBar} className="text-5xl mb-4" style={{ color: '#b2dce8' }} />
+        <p className="text-base font-medium">No activity to analyze yet</p>
+        <p className="text-sm mt-1 max-w-xs mx-auto leading-relaxed">
+          Insights are built from the last 30 days of ACLX-evaluated AI activity. They'll appear once your team starts using the AI.
+        </p>
+      </div>
+    );
+  }
+
+  const d = summary.decisionCounts ?? {};
+  const cards: Array<{ label: string; value: number; bg: string; color: string }> = [
+    { label: 'Total Responses', value: summary.totalEvents,   bg: '#f9fafb', color: '#1f2937' },
+    { label: 'Allowed',         value: d.ALLOW ?? 0,          bg: '#EEF7EA', color: '#166534' },
+    { label: 'Escalated',       value: d.ESCALATE ?? 0,       bg: '#fef3c7', color: '#92400e' },
+    { label: 'Blocked',         value: d.BLOCK ?? 0,          bg: '#fee2e2', color: '#991b1b' },
+    { label: 'Redactions',      value: summary.totalRedactions, bg: '#fff7ed', color: '#9a3412' },
+    { label: 'Cross-client',    value: summary.synthesisEvents, bg: '#ede9fe', color: '#6d28d9' },
+  ];
+
+  const topDetectors = Object.entries(summary.topDetectors ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxDet = topDetectors[0]?.[1] ?? 1;
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-5 max-w-2xl">
+      <p className="text-xs text-gray-400">Last {summary.periodDays} days · policy {summary.latestPolicyVersion ?? '—'}</p>
 
-      {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { label: 'Total Interactions', value: totalInteractions, bg: '#f9fafb',  color: '#1f2937' },
-          { label: 'Active Users',        value: activeUsers,       bg: '#e8f4f8',  color: '#1e4d5c' },
-          { label: 'AI Chats',            value: chatCount,         bg: '#EEF7EA',  color: '#166534' },
-          { label: 'Documents Generated', value: docCount,          bg: '#EEF4FF',  color: '#1d4ed8' },
-        ].map(({ label, value, bg, color }) => (
+      {/* Metric cards */}
+      <div className="grid grid-cols-3 gap-3">
+        {cards.map(({ label, value, bg, color }) => (
           <div key={label} className="rounded-xl border border-gray-200 p-4" style={{ background: bg }}>
             <div className="text-2xl font-bold" style={{ color }}>{value}</div>
             <div className="text-xs text-gray-500 mt-0.5">{label}</div>
@@ -622,126 +590,58 @@ function InsightsTab() {
         ))}
       </div>
 
-      {/* ── Recent activity feed ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-700">Recent Activity</h3>
+      {/* Top detectors */}
+      {topDetectors.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100">
+            <h4 className="text-sm font-semibold text-gray-700">Top detectors fired</h4>
+          </div>
+          <div className="p-5 space-y-3">
+            {topDetectors.map(([name, count]) => (
+              <div key={name} className="flex items-center gap-3">
+                <span className="text-xs text-gray-600 w-40 shrink-0 truncate">{name}</span>
+                <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${Math.max(6, (count / maxDet) * 100)}%`, background: '#2a5f6f' }} />
+                </div>
+                <span className="text-xs font-semibold text-gray-700 w-8 text-right">{count}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-gray-50">
-          {sorted.map((item) => {
-            const ts   = ACTIVITY_TYPE_STYLE[item.type] ?? ACTIVITY_TYPE_STYLE.Chat;
-            const chip = CHAT_ROLE_CHIP[item.userRole] ?? { bg: '#f3f4f6', text: '#374151' };
-            const avatarColor = CHAT_USER_COLORS[item.userRole] ?? '#6b7280';
-            return (
-              <div key={item.id} className="flex items-center gap-3 px-5 py-3">
-                {/* Avatar */}
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                  style={{ background: avatarColor }}
-                >
-                  {toInitials(item.userName)}
-                </div>
+      )}
 
-                {/* Type icon */}
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: ts.bg }}
-                >
-                  <FontAwesomeIcon icon={ts.icon} style={{ fontSize: 11, color: ts.text }} />
-                </div>
-
-                {/* Detail */}
+      {/* Recent escalations */}
+      {summary.recentEscalations.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100">
+            <h4 className="text-sm font-semibold text-gray-700">Recent escalations</h4>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {summary.recentEscalations.map((e, i) => (
+              <div key={i} className="px-5 py-3 flex items-center gap-3">
+                <FontAwesomeIcon icon={faExclamationTriangle} style={{ color: '#d97706', fontSize: 13 }} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-gray-800 truncate">{item.detail}</span>
-                    {item.messageCount != null && (
-                      <span className="text-xs text-gray-400">{item.messageCount} messages</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <span className="text-xs font-medium text-gray-600">{item.userName}</span>
-                    <span className="text-xs px-1.5 rounded font-medium leading-5"
-                      style={{ background: chip.bg, color: chip.text }}>
-                      {CHAT_ROLE_LABELS[item.userRole] ?? item.userRole}
-                    </span>
-                    {item.context && (
-                      <span className="text-xs text-gray-400">{item.context}</span>
-                    )}
-                  </div>
+                  <p className="text-sm text-gray-800">{EVENT_LABELS[e.eventType] ?? e.eventType}</p>
+                  <p className="text-xs text-gray-400">{fmtDate(e.timestamp)}{e.synthesis ? ' · cross-client' : ''}</p>
                 </div>
-
-                {/* Time */}
-                <span className="text-xs text-gray-400 shrink-0 ml-2">{fmtRelative(item.timestamp)}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Usage by user ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">Usage by Team Member</h3>
-        <div className="space-y-3">
-          {userRows.map(([userId, { name, role, count }]) => {
-            const avatarColor = CHAT_USER_COLORS[role] ?? '#6b7280';
-            const chip        = CHAT_ROLE_CHIP[role] ?? { bg: '#f3f4f6', text: '#374151' };
-            return (
-              <div key={userId} className="flex items-center gap-3">
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                  style={{ background: avatarColor }}
-                >
-                  {toInitials(name)}
-                </div>
-                <div className="w-28 shrink-0">
-                  <p className="text-xs font-medium text-gray-800 truncate">{name}</p>
-                  <span className="text-xs px-1.5 rounded font-medium leading-5"
-                    style={{ background: chip.bg, color: chip.text }}>
-                    {CHAT_ROLE_LABELS[role] ?? role}
+                {e.sensitivity && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold shrink-0"
+                    style={SENSITIVITY_COLORS[e.sensitivity] ?? { background: '#f3f4f6', color: '#374151' }}>
+                    {e.sensitivity}
                   </span>
-                </div>
-                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${(count / maxUserCount) * 100}%`, background: avatarColor, opacity: 0.7 }}
-                  />
-                </div>
-                <span className="text-xs font-semibold text-gray-600 w-6 text-right shrink-0">{count}</span>
+                )}
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
-
-      {/* ── Breakdown by type ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">Interactions by Type</h3>
-        <div className="flex gap-4 flex-wrap">
-          {Object.entries(byType).map(([type, count]) => {
-            const ts = ACTIVITY_TYPE_STYLE[type];
-            if (!ts) return null;
-            const pct = Math.round((count / totalInteractions) * 100);
-            return (
-              <div key={type}
-                className="flex-1 min-w-[100px] rounded-xl p-4 flex flex-col items-center"
-                style={{ background: ts.bg }}>
-                <FontAwesomeIcon icon={ts.icon} style={{ color: ts.text, fontSize: 18, marginBottom: 6 }} />
-                <div className="text-2xl font-bold" style={{ color: ts.text }}>{count}</div>
-                <div className="text-xs font-semibold mt-0.5" style={{ color: ts.text }}>{type}</div>
-                <div className="text-xs mt-0.5" style={{ color: ts.text, opacity: 0.7 }}>{pct}%</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
+      )}
     </div>
   );
 }
 
 // ── Org Policy tab ────────────────────────────────────────────────────────────
 
-function OrgPolicyTab({ orgId }: { orgId: string }) {
+export function OrgPolicyTab({ orgId }: { orgId: string }) {
   const [policy, setPolicy]   = useState<OrgAclxPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');

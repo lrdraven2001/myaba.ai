@@ -172,11 +172,34 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
+    // ── Trash / restore (super admin, 48h window) ─────────────────────────
+
+    /** GET /api/projects/trash — soft-deleted projects still restorable. Super admin only. */
+    @GetMapping("/trash")
+    public ResponseEntity<List<Map<String, Object>>> getTrash(
+            @AuthenticationPrincipal AppUser user) throws Exception {
+        return ResponseEntity.ok(projectService.getTrashedProjects(user));
+    }
+
+    /** POST /api/projects/{projectId}/restore — restore a soft-deleted project. Super admin only. */
+    @PostMapping("/{projectId}/restore")
+    public ResponseEntity<Map<String, Object>> restoreProject(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId) throws Exception {
+        projectService.restoreProject(user, projectId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     // ── Exception handling ────────────────────────────────────────────────
 
     @ExceptionHandler(SecurityException.class)
     public ResponseEntity<Map<String, String>> handleSecurity(SecurityException ex) {
         return ResponseEntity.status(403).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(IllegalStateException ex) {
+        return ResponseEntity.status(409).body(Map.of("error", ex.getMessage()));
     }
 
     @ExceptionHandler(java.util.NoSuchElementException.class)

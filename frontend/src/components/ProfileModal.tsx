@@ -5,14 +5,14 @@ import { useAuth } from '../contexts/AuthContext';
 const ROLE_LABELS: Record<string, string> = {
   CLINICAL_DIRECTOR: 'Clinical Director',
   TREATING_BCBA:     'Treating BCBA',
-  SUPERVISING_BCBA:  'Supervising BCBA',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
   BCBA_STUDENT:      'BCBA Student',
-  RBT:               'Registered Behavior Technician',
+  RBT:               'Behavior Technician',
   GENERAL_STAFF:     'General Staff',
   SCHEDULING_ADMIN:  'Scheduling Admin',
   BILLING_ADMIN:     'Billing Admin',
   ORG_ADMIN:         'Practice Administrator',
-  ORG_SUPER_ADMIN:   'Clinical Director',
+  ORG_SUPER_ADMIN:   'Practice Administrator',
 };
 
 interface Props {

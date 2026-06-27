@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               uid: user.uid,
               email: user.email ?? '',
               displayName: user.displayName,
-              role: (claims.role as UserRole) ?? 'TREATING_BCBA',
+              role: (claims.role as UserRole) ?? 'GENERAL_STAFF',
               purpose: (claims.purpose as UserPurpose) ?? 'treatment',
               orgId: (claims.orgId as string) ?? '',
               supervisorId: claims.supervisorId as string | undefined,

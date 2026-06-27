@@ -113,8 +113,29 @@ public class AiService {
     // ── Public API ─────────────────────────────────────────────────────────────
 
     public String generateDocument(String documentType, String clientContext, String additionalContext) {
-        String typePrompt = DOCUMENT_PROMPTS.getOrDefault(documentType,
-                "Generate a clinical ABA document based on the provided context.");
+        return generateDocument(documentType, clientContext, additionalContext, null);
+    }
+
+    /**
+     * Generate a clinical document. When {@code customTemplate} is non-blank, the agency's
+     * customized Generation Template (from the Agency Library) is used in place of the
+     * built-in default prompt for this document type.
+     */
+    public String generateDocument(String documentType, String clientContext,
+                                   String additionalContext, String customTemplate) {
+        String typePrompt;
+        if (customTemplate != null && !customTemplate.isBlank()) {
+            typePrompt = """
+                    Use the agency's customized template below as the structure and content guide
+                    for this document. Follow its sections, headings, and instructions closely.
+
+                    AGENCY TEMPLATE:
+                    %s
+                    """.formatted(customTemplate);
+        } else {
+            typePrompt = DOCUMENT_PROMPTS.getOrDefault(documentType,
+                    "Generate a clinical ABA document based on the provided context.");
+        }
 
         String userContent = """
                 CLIENT CONTEXT (de-identified):

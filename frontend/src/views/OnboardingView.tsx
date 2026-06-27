@@ -5,6 +5,7 @@ import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { BAA_TEXT } from '../lib/baaText';
 import type { OrgPlan, UserRole } from '../types';
+import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../types';
 
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
@@ -22,19 +23,45 @@ const PLANS: { value: OrgPlan; label: string; description: string }[] = [
   { value: 'enterprise', label: 'Enterprise', description: 'Unlimited staff + SSO federation' },
 ];
 
-const INVITE_ROLES: { value: UserRole; label: string }[] = [
-  { value: 'CLINICAL_DIRECTOR', label: 'Clinical Director' },
-  { value: 'TREATING_BCBA',     label: 'Treating BCBA' },
-  { value: 'SUPERVISING_BCBA',  label: 'Supervising BCBA' },
-  { value: 'RBT',               label: 'RBT' },
-  { value: 'BCBA_STUDENT',      label: 'BCBA Student' },
-  { value: 'SCHEDULING_ADMIN',  label: 'Scheduling Admin' },
-  { value: 'BILLING_ADMIN',     label: 'Billing Admin' },
-  { value: 'ORG_ADMIN',         label: 'Practice Administrator' },
-];
+const INVITE_ROLES: { value: UserRole; label: string }[] =
+  ASSIGNABLE_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
 type Step = 'org' | 'baa' | 'invite' | 'done';
 type SetupMode = 'clinical_director' | 'it_setup';
+
+/** A yes/no attestation question with an optional hint shown when "No" is selected. */
+function YesNoQuestion({
+  label, value, onChange, noHint,
+}: {
+  label: string;
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+  noHint?: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-gray-700 mb-2">{label}</p>
+      <div className="flex gap-2">
+        {([['Yes', true], ['No', false]] as const).map(([lbl, val]) => (
+          <button
+            key={lbl}
+            type="button"
+            onClick={() => onChange(val)}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+              value === val ? 'border-blue-500 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            }`}
+            style={value === val ? { background: '#EEF4FF' } : {}}
+          >
+            {lbl}
+          </button>
+        ))}
+      </div>
+      {value === false && noHint && (
+        <p className="text-xs text-amber-600 mt-2 leading-snug">{noHint}</p>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   /** Called with the new orgId so App can refresh auth + transition to main UI. */
@@ -46,6 +73,9 @@ export default function OnboardingView({ onComplete }: Props) {
   const [orgName, setOrgName]     = useState('');
   const [plan, setPlan]           = useState<OrgPlan>('team');
   const [setupMode, setSetupMode] = useState<SetupMode>('clinical_director');
+  // Onboarding authorization attestations
+  const [canSignBaa, setCanSignBaa]             = useState<boolean | null>(null);
+  const [hasHipaaAuthority, setHasHipaaAuthority] = useState<boolean | null>(null);
   const [saving, setSaving]       = useState(false);
   const [orgId, setOrgId]         = useState('');
   const [error, setError]         = useState('');
@@ -58,7 +88,7 @@ export default function OnboardingView({ onComplete }: Props) {
   const [baaError, setBaaError]       = useState('');
 
   // Invite step
-  const [inviteRole, setInviteRole]   = useState<UserRole>('TREATING_BCBA');
+  const [inviteRole, setInviteRole]   = useState<UserRole>('SUPERVISING_BCBA');
   const [inviteUrl, setInviteUrl]     = useState('');
   const [generating, setGenerating]   = useState(false);
   const [copied, setCopied]           = useState(false);
@@ -374,63 +404,39 @@ export default function OnboardingView({ onComplete }: Props) {
                 </div>
               </div>
 
-              {/* Who is setting this up? */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Who is completing this setup?
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSetupMode('clinical_director')}
-                    className={`rounded-xl border p-4 text-left transition-colors ${
-                      setupMode === 'clinical_director' ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={setupMode === 'clinical_director' ? { background: '#EEF4FF' } : {}}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <FontAwesomeIcon icon={faFileContract} style={{ fontSize: 14, color: setupMode === 'clinical_director' ? '#1E88FF' : '#9ca3af' }} />
-                      <span className="font-semibold text-sm text-gray-800">I am the Clinical Director</span>
-                    </div>
-                    <p className="text-xs text-gray-400 leading-snug">
-                      You are the authorized representative who will sign the BAA and take clinical responsibility.
-                      You will be set up as <strong>Clinical Director</strong> with full PHI and administrative access.
-                    </p>
-                  </button>
+              {/* Authorization attestations */}
+              <div className="space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  You'll be set up as the <strong>Practice Administrator</strong> — the organization's owner and
+                  super administrator. A couple of authorization questions first:
+                </p>
 
-                  <button
-                    type="button"
-                    onClick={() => setSetupMode('it_setup')}
-                    className={`rounded-xl border p-4 text-left transition-colors ${
-                      setupMode === 'it_setup' ? 'border-blue-500' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={setupMode === 'it_setup' ? { background: '#EEF4FF' } : {}}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <FontAwesomeIcon icon={faFlask} style={{ fontSize: 14, color: setupMode === 'it_setup' ? '#1E88FF' : '#9ca3af' }} />
-                      <span className="font-semibold text-sm text-gray-800">I am IT / technical setup</span>
-                    </div>
-                    <p className="text-xs text-gray-400 leading-snug">
-                      You are configuring the system on behalf of a Clinical Director who will sign the BAA later.
-                      You will be set up as <strong>Administrator</strong> (no PHI access).
-                      Clinical chat and client records will be locked until the BAA is signed.
-                      General chat and non-HIPAA features are available immediately for testing.
-                    </p>
-                  </button>
-                </div>
+                <YesNoQuestion
+                  label="Are you authorized to sign the Business Associate Agreement (BAA) on behalf of this organization?"
+                  value={canSignBaa}
+                  onChange={(v) => { setCanSignBaa(v); setSetupMode(v ? 'clinical_director' : 'it_setup'); }}
+                  noHint="No problem — you can still create the organization. HIPAA features (clinical chat, client records) stay locked until someone authorized signs the BAA. General chat and non-HIPAA projects work right away."
+                />
+
+                <YesNoQuestion
+                  label="Do you have the authority to use and handle HIPAA-protected health information (PHI) for this organization?"
+                  value={hasHipaaAuthority}
+                  onChange={setHasHipaaAuthority}
+                  noHint="You can set up the organization, but you should not enter or process PHI until an authorized person confirms HIPAA authority."
+                />
               </div>
 
               {error && <p className="text-sm text-red-500">{error}</p>}
 
               <button
                 className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-opacity"
-                style={{ background: orgName.trim() ? '#1E88FF' : '#9ca3af' }}
-                disabled={!orgName.trim() || saving}
+                style={{ background: (orgName.trim() && canSignBaa !== null && hasHipaaAuthority !== null) ? '#1E88FF' : '#9ca3af' }}
+                disabled={!orgName.trim() || canSignBaa === null || hasHipaaAuthority === null || saving}
                 onClick={handleCreateOrg}
               >
                 {saving ? 'Creating…' : (
                   <>
-                    {setupMode === 'it_setup' ? 'Create Organization & Skip BAA' : 'Create Organization'}
+                    {canSignBaa ? 'Create Organization' : 'Create Organization & Sign BAA Later'}
                     {' '}<FontAwesomeIcon icon={faArrowRight} />
                   </>
                 )}

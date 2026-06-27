@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import type { CSSProperties } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faTrash, faSpinner, faTimes, faBook,
@@ -10,26 +9,28 @@ import { api } from '../lib/api';
 import type { PolicyDocument, PolicyCategory, DriveConnection } from '../types';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { useAuth } from '../contexts/AuthContext';
+import { DOCUMENT_TYPES, documentTypeLabel, defaultTemplateFor } from '../lib/documentTypes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ResourceTab = 'library' | 'policies' | 'classification';
+type ResourceTab = 'library' | 'policies' | 'grounding';
 
-type ResourcePurpose = 'GENERATION' | 'GROUNDING' | 'CLASSIFICATION';
-
+// The three Agency Library resource types.
 type ResourceType =
-  | 'POLICY'
-  | 'STANDARD'
-  | 'TEMPLATE'
-  | 'REGULATION'
-  | 'PAYER_REQUIREMENT'
-  | 'CLIENT_RECORD';
+  | 'STANDARD_TEMPLATE'
+  | 'GENERATION_TEMPLATE'
+  | 'KNOWLEDGE_REFERENCE';
 
 interface Resource {
   id: string;
   title: string;
   resourceType: ResourceType;
-  purposes: ResourcePurpose[];
+  /** Bucket: LIBRARY | GROUNDING | POLICY */
+  bucket?: string;
+  /** For GENERATION_TEMPLATE — the client document type this template customizes. */
+  documentType?: string;
+  /** false for seeded defaults; true once the agency edits the template. */
+  customized?: boolean;
   clientId?: string;
   content: string;
   isActive: boolean;
@@ -41,43 +42,32 @@ interface Resource {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TABS: { key: ResourceTab; label: string }[] = [
-  { key: 'library',        label: 'Library'        },
+  { key: 'library',        label: 'Agency Library' },
   { key: 'policies',       label: 'Policies'       },
-  { key: 'classification', label: 'Classification' },
+  { key: 'grounding',      label: 'Grounding'      },
 ];
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
-  POLICY:            'Policy',
-  STANDARD:          'Standard',
-  TEMPLATE:          'Template',
-  REGULATION:        'Regulation',
-  PAYER_REQUIREMENT: 'Payer Requirement',
-  CLIENT_RECORD:     'Client Record',
+  STANDARD_TEMPLATE:   'Standard Template',
+  GENERATION_TEMPLATE: 'Generation Template',
+  KNOWLEDGE_REFERENCE: 'Knowledge Reference',
+};
+
+const RESOURCE_TYPE_HELP: Record<ResourceType, string> = {
+  STANDARD_TEMPLATE:   'A reusable document template the team can start from.',
+  GENERATION_TEMPLATE: 'Customizes how the AI drafts a specific client document type (BIP, FBA, etc.).',
+  KNOWLEDGE_REFERENCE: 'Reference material the AI can draw on during any chat.',
 };
 
 const ALL_RESOURCE_TYPES: ResourceType[] = [
-  'POLICY', 'STANDARD', 'TEMPLATE', 'REGULATION', 'PAYER_REQUIREMENT', 'CLIENT_RECORD',
+  'STANDARD_TEMPLATE', 'GENERATION_TEMPLATE', 'KNOWLEDGE_REFERENCE',
 ];
 
-const PURPOSE_COLORS: Record<ResourcePurpose, { bg: string; text: string }> = {
-  GENERATION:     { bg: '#EEF4FF', text: '#1E88FF' },
-  GROUNDING:      { bg: '#F0FBF0', text: '#3F9B2F' },
-  CLASSIFICATION: { bg: '#F3EEFE', text: '#7C3AED' },
+const RESOURCE_TYPE_COLORS: Record<ResourceType, { bg: string; text: string }> = {
+  STANDARD_TEMPLATE:   { bg: '#EEF4FF', text: '#1E88FF' },
+  GENERATION_TEMPLATE: { bg: '#F3EEFE', text: '#7C3AED' },
+  KNOWLEDGE_REFERENCE: { bg: '#F0FBF0', text: '#3F9B2F' },
 };
-
-/** Inline pill style for a purpose label (used in guidance text). */
-function purposePill(c: { bg: string; text: string }): CSSProperties {
-  return {
-    display: 'inline-block',
-    background: c.bg,
-    color: c.text,
-    fontWeight: 700,
-    fontSize: 11,
-    padding: '1px 7px',
-    borderRadius: 999,
-    marginRight: 2,
-  };
-}
 
 const CATEGORY_LABELS: Record<PolicyCategory, string> = {
   policy_manual: 'Policy Manual',
@@ -122,7 +112,7 @@ const labelStyle: React.CSSProperties = {
 
 export default function ResourcesView() {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const [activeTab, setActiveTab]     = useState<ResourceTab>('library');
   const [resources, setResources]     = useState<Resource[]>([]);
@@ -233,6 +223,9 @@ export default function ResourcesView() {
             onDelete={handleResourceDelete}
           />
         )}
+        {activeTab === 'grounding' && (
+          <GroundingTab resources={resources} isLoading={isLoading} onResourceCreated={handleResourceCreated} isAdmin={isAdmin} />
+        )}
         {activeTab === 'policies' && (
           <PoliciesTab
             policies={policies}
@@ -242,7 +235,6 @@ export default function ResourcesView() {
             onPolicyCreated={(p) => setPolicies((prev) => [p, ...prev])}
           />
         )}
-        {activeTab === 'classification' && <ClassificationTab />}
       </div>
     </div>
   );
@@ -389,11 +381,24 @@ function LibraryTab({
   onToggleActive: (r: Resource) => void;
   onDelete: (r: Resource) => void;
 }) {
+  // The Agency Library shows writing material only — grounding sources live in their
+  // own tab and are excluded here.
+  const libraryResources = resources.filter((r) => (r.bucket ?? 'LIBRARY') === 'LIBRARY');
+
+  // Document type the admin is customizing a generation template for (pre-fills the form).
+  const [customizeDoc, setCustomizeDoc] = useState<string | null>(null);
+
+  // Map each document type → its customized generation template (if any).
+  const genTemplates = libraryResources.filter(
+    (r) => r.resourceType === 'GENERATION_TEMPLATE' && r.documentType,
+  );
+  const customizedFor = (docValue: string) =>
+    genTemplates.find((r) => r.documentType === docValue && r.customized);
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Resource Library</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Agency Resource Library</h2>
         {isAdmin && (
           <button
             onClick={onToggleAddForm}
@@ -431,28 +436,76 @@ function LibraryTab({
         }}
       >
         <p style={{ margin: '0 0 8px' }}>
-          This is your <strong>reference library</strong> — the standard set of materials myABA uses to help
-          write accurate, compliant documentation. Add a clinical standard, template, payer requirement, or
-          example document, then tag it by <em>how the AI should use it</em>:
+          The <strong>Agency Library</strong> holds your reusable building blocks: <strong>Standard Templates</strong>{' '}
+          (documents to start from), <strong>Generation Templates</strong> (which shape how the AI drafts each client
+          document type), and <strong>Knowledge References</strong> (material the AI can draw on).
         </p>
-        <ul style={{ margin: '0 0 0 4px', padding: 0, listStyle: 'none' }}>
-          <li style={{ marginBottom: 4 }}>
-            <span style={{ ...purposePill(PURPOSE_COLORS.GENERATION) }}>Generation</span>
-            &nbsp;a template or example the AI writes <em>from</em>.
-          </li>
-          <li style={{ marginBottom: 4 }}>
-            <span style={{ ...purposePill(PURPOSE_COLORS.GROUNDING) }}>Grounding</span>
-            &nbsp;a trusted source the AI's facts are <em>checked against</em>, so it doesn't make things up.
-          </li>
-          <li>
-            <span style={{ ...purposePill(PURPOSE_COLORS.CLASSIFICATION) }}>Classification</span>
-            &nbsp;an example that helps the system <em>recognize sensitive content</em>.
-          </li>
-        </ul>
-        <p style={{ margin: '8px 0 0', color: '#5A7184' }}>
-          One item can have more than one tag.
+        <p style={{ margin: 0, color: '#5A7184' }}>
+          The Library, <strong>Policies</strong>, and <strong>Grounding</strong> are three separate buckets — they
+          don't overlap, but any of them can be used in any chat. Policies hold your agency's rules and SOPs;
+          Grounding holds trusted sources the AI is checked against. Each lives in its own tab.
         </p>
       </div>
+
+      {/* Document Generation Templates — one slot per client document type */}
+      {isAdmin && (
+        <div style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1E3347', margin: '0 0 4px' }}>
+            Document Generation Templates
+          </h3>
+          <p style={{ fontSize: 12, color: '#8CA4B5', margin: '0 0 10px' }}>
+            Each client document type uses a built-in <strong>Default</strong> template until your agency customizes it.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+            {DOCUMENT_TYPES.map((dt) => {
+              const custom = customizedFor(dt.value);
+              return (
+                <div
+                  key={dt.value}
+                  style={{
+                    border: '1px solid #DCE7EE', borderRadius: 10, padding: '12px 14px',
+                    background: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 8,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1E3347' }}>{dt.label}</span>
+                    <span
+                      style={{
+                        padding: '1px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                        background: custom ? '#F3EEFE' : '#F0F4F8',
+                        color: custom ? '#7C3AED' : '#8CA4B5',
+                      }}
+                    >
+                      {custom ? 'Customized' : 'Default'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => { setCustomizeDoc(dt.value); onCancelAddForm(); }}
+                    style={{
+                      alignSelf: 'flex-start', padding: '4px 10px', borderRadius: 6,
+                      border: '1px solid #1E88FF', background: 'white', color: '#1E88FF',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {custom ? 'Replace template' : 'Customize'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {customizeDoc && (
+            <div style={{ marginTop: 12 }}>
+              <AddResourceForm
+                bucket="LIBRARY"
+                presetResourceType="GENERATION_TEMPLATE"
+                presetDocumentType={customizeDoc}
+                onSaved={(r) => { onResourceCreated(r); setCustomizeDoc(null); }}
+                onCancel={() => setCustomizeDoc(null)}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Cloud-linked documents (Google Drive / OneDrive) — org-wide reference material */}
       <OrgDriveResourcesSection isAdmin={isAdmin} />
@@ -460,6 +513,7 @@ function LibraryTab({
       {/* Inline add form */}
       {showAddForm && isAdmin && (
         <AddResourceForm
+          bucket="LIBRARY"
           onSaved={onResourceCreated}
           onCancel={onCancelAddForm}
         />
@@ -487,7 +541,7 @@ function LibraryTab({
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 160, color: '#5A7184' }}>
           <FontAwesomeIcon icon={faSpinner} style={{ fontSize: 24, animation: 'spin 1s linear infinite' }} />
         </div>
-      ) : resources.length === 0 && !showAddForm ? (
+      ) : libraryResources.length === 0 && !showAddForm ? (
         <div
           style={{
             display: 'flex',
@@ -507,7 +561,7 @@ function LibraryTab({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {resources.map((resource) => (
+          {libraryResources.map((resource) => (
             <ResourceCard
               key={resource.id}
               resource={resource}
@@ -527,15 +581,15 @@ function LibraryTab({
 interface ResourceFormData {
   title: string;
   resourceType: ResourceType;
-  purposes: ResourcePurpose[];
+  documentType: string;
   clientId: string;
   content: string;
 }
 
 const EMPTY_FORM: ResourceFormData = {
   title:        '',
-  resourceType: 'POLICY',
-  purposes:     [],
+  resourceType: 'KNOWLEDGE_REFERENCE',
+  documentType: '',
   clientId:     '',
   content:      '',
 };
@@ -543,41 +597,58 @@ const EMPTY_FORM: ResourceFormData = {
 function AddResourceForm({
   onSaved,
   onCancel,
+  bucket = 'LIBRARY',
+  presetResourceType,
+  presetDocumentType,
 }: {
   onSaved: (r: Resource) => void;
   onCancel: () => void;
+  /** Which bucket the new resource belongs to (LIBRARY or GROUNDING). */
+  bucket?: string;
+  presetResourceType?: ResourceType;
+  presetDocumentType?: string;
 }) {
-  const [form, setForm]     = useState<ResourceFormData>(EMPTY_FORM);
+  const isGrounding = bucket === 'GROUNDING';
+  const [form, setForm]     = useState<ResourceFormData>({
+    ...EMPTY_FORM,
+    resourceType: presetResourceType ?? EMPTY_FORM.resourceType,
+    documentType: presetDocumentType ?? '',
+    // Pre-load the default skeleton when customizing a generation template for a doc type.
+    title:   presetDocumentType ? `${documentTypeLabel(presetDocumentType)} Template` : '',
+    content: presetDocumentType ? defaultTemplateFor(presetDocumentType) : '',
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
-
-  const togglePurpose = (p: ResourcePurpose) => {
-    setForm((f) => ({
-      ...f,
-      purposes: f.purposes.includes(p) ? f.purposes.filter((x) => x !== p) : [...f.purposes, p],
-    }));
-  };
 
   const handleSave = async () => {
     if (!form.title.trim())   { setError('Title is required.');   return; }
     if (!form.content.trim()) { setError('Content is required.'); return; }
+    if (!isGrounding && form.resourceType === 'GENERATION_TEMPLATE' && !form.documentType) {
+      setError('Choose the document type this generation template customizes.'); return;
+    }
     setSaving(true);
     setError('');
     try {
-      // Map resource form to the policy API shape used by the backend.
-      // The `category` field carries the resourceType; purposes go into
-      // the textContent JSON envelope until a dedicated endpoint exists.
+      const resourceType = isGrounding ? 'KNOWLEDGE_REFERENCE' : form.resourceType;
+      const isGenTemplate = !isGrounding && form.resourceType === 'GENERATION_TEMPLATE';
       const { policyId } = await api.createPolicy({
-        title:       form.title,
-        category:    form.resourceType.toLowerCase() as PolicyCategory,
-        textContent: form.content,
-        isActive:    true,
+        title:        form.title,
+        category:     resourceType.toLowerCase() as PolicyCategory,
+        textContent:  form.content,
+        isActive:     true,
+        bucket,
+        resourceType,
+        documentType: isGenTemplate ? form.documentType : undefined,
+        customized:   isGenTemplate ? true : undefined,
+        clientId:     form.clientId || undefined,
       });
       const newResource: Resource = {
         id:           policyId,
         title:        form.title,
-        resourceType: form.resourceType,
-        purposes:     form.purposes,
+        resourceType,
+        bucket,
+        documentType: isGenTemplate ? form.documentType : undefined,
+        customized:   isGenTemplate ? true : undefined,
         clientId:     form.clientId || undefined,
         content:      form.content,
         isActive:     true,
@@ -605,7 +676,7 @@ function AddResourceForm({
       }}
     >
       <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E3347', marginTop: 0, marginBottom: 16 }}>
-        New Resource
+        {isGrounding ? 'New Grounding Source' : 'New Library Resource'}
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -617,61 +688,48 @@ function AddResourceForm({
             style={inputStyle}
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder="e.g. HIPAA Privacy Policy 2024"
+            placeholder={isGrounding ? 'e.g. BACB Ethics Code (2022)' : 'e.g. Standard BIP Template'}
           />
         </div>
 
-        {/* Resource Type */}
-        <div>
-          <label style={labelStyle}>Resource Type</label>
-          <select
-            style={inputStyle}
-            value={form.resourceType}
-            onChange={(e) => setForm((f) => ({ ...f, resourceType: e.target.value as ResourceType }))}
-          >
-            {ALL_RESOURCE_TYPES.map((t) => (
-              <option key={t} value={t}>{RESOURCE_TYPE_LABELS[t]}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Purposes */}
-        <div>
-          <label style={labelStyle}>Purposes</label>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {(['GENERATION', 'GROUNDING', 'CLASSIFICATION'] as ResourcePurpose[]).map((p) => {
-              const checked = form.purposes.includes(p);
-              const colors  = PURPOSE_COLORS[p];
-              return (
-                <label
-                  key={p}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    cursor: 'pointer',
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    border: `1px solid ${checked ? colors.text : '#DCE7EE'}`,
-                    background: checked ? colors.bg : '#F8FBFC',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: checked ? colors.text : '#5A7184',
-                    userSelect: 'none',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => togglePurpose(p)}
-                    style={{ accentColor: colors.text }}
-                  />
-                  {p}
-                </label>
-              );
-            })}
+        {/* Resource Type — Agency Library only */}
+        {!isGrounding && (
+          <div>
+            <label style={labelStyle}>Resource Type</label>
+            <select
+              style={inputStyle}
+              value={form.resourceType}
+              onChange={(e) => setForm((f) => ({ ...f, resourceType: e.target.value as ResourceType }))}
+            >
+              {ALL_RESOURCE_TYPES.map((t) => (
+                <option key={t} value={t}>{RESOURCE_TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+            <p style={{ fontSize: 12, color: '#8CA4B5', margin: '6px 0 0' }}>
+              {RESOURCE_TYPE_HELP[form.resourceType]}
+            </p>
           </div>
-        </div>
+        )}
+
+        {/* Document type — only for Generation Templates */}
+        {!isGrounding && form.resourceType === 'GENERATION_TEMPLATE' && (
+          <div>
+            <label style={labelStyle}>Document Type <span style={{ color: '#EF4444' }}>*</span></label>
+            <select
+              style={inputStyle}
+              value={form.documentType}
+              onChange={(e) => setForm((f) => ({ ...f, documentType: e.target.value }))}
+            >
+              <option value="">Select a document type…</option>
+              {DOCUMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <p style={{ fontSize: 12, color: '#8CA4B5', margin: '6px 0 0' }}>
+              This template will be used whenever the team generates this document type for a client.
+            </p>
+          </div>
+        )}
 
         {/* Client ID */}
         <div>
@@ -771,41 +829,31 @@ function ResourceCard({
           <span style={{ fontWeight: 700, fontSize: 14, color: '#1E3347' }}>{resource.title}</span>
 
           {/* Resource type badge */}
-          <span
-            style={{
-              padding: '2px 8px',
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 600,
-              background: '#F0F4F8',
-              color: '#5A7184',
-            }}
-          >
-            {RESOURCE_TYPE_LABELS[resource.resourceType] ?? resource.resourceType}
-          </span>
+          {(() => {
+            const c = RESOURCE_TYPE_COLORS[resource.resourceType] ?? { bg: '#F0F4F8', text: '#5A7184' };
+            return (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: c.bg,
+                  color: c.text,
+                }}
+              >
+                {RESOURCE_TYPE_LABELS[resource.resourceType] ?? resource.resourceType}
+              </span>
+            );
+          })()}
         </div>
 
-        {/* Purpose tags */}
-        {resource.purposes.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-            {resource.purposes.map((p) => {
-              const c = PURPOSE_COLORS[p];
-              return (
-                <span
-                  key={p}
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    background: c.bg,
-                    color: c.text,
-                  }}
-                >
-                  {p}
-                </span>
-              );
-            })}
+        {/* Generation template → which document type it customizes */}
+        {resource.resourceType === 'GENERATION_TEMPLATE' && resource.documentType && (
+          <div style={{ marginBottom: 6 }}>
+            <span style={{ fontSize: 12, color: '#7C3AED', fontWeight: 600 }}>
+              Customizes: {documentTypeLabel(resource.documentType)}
+            </span>
           </div>
         )}
 
@@ -1148,56 +1196,99 @@ function AddPolicyForm({
   );
 }
 
-// ── Classification Tab ────────────────────────────────────────────────────────
+// ── Grounding Tab ─────────────────────────────────────────────────────────────
 
-function ClassificationTab() {
+function GroundingTab({
+  resources, isLoading, onResourceCreated, isAdmin,
+}: {
+  resources: Resource[];
+  isLoading: boolean;
+  onResourceCreated: (r: Resource) => void;
+  isAdmin: boolean;
+}) {
+  const grounding = resources.filter((r) => (r.bucket ?? '') === 'GROUNDING');
+  const [showAdd, setShowAdd] = useState(false);
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', marginTop: 0, marginBottom: 16 }}>
-        Classification Library
-      </h2>
-      <div
-        style={{
-          background: '#FFFFFF',
-          border: '1px solid #DCE7EE',
-          borderRadius: 12,
-          padding: '28px 24px',
-          maxWidth: 560,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-        }}
-      >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: '#F3EEFE',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 14,
-          }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <rect x="3" y="3" width="8" height="8" rx="2" stroke="#7C3AED" strokeWidth="1.8" />
-            <rect x="13" y="3" width="8" height="8" rx="2" stroke="#7C3AED" strokeWidth="1.8" />
-            <rect x="3" y="13" width="8" height="8" rx="2" stroke="#7C3AED" strokeWidth="1.8" />
-            <rect x="13" y="13" width="8" height="8" rx="2" stroke="#7C3AED" strokeWidth="1.8" />
-          </svg>
-        </div>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1E3347', margin: '0 0 8px' }}>
-          Classification Library
-        </h3>
-        <p style={{ fontSize: 14, color: '#5A7184', lineHeight: 1.7, margin: 0 }}>
-          Create your own sensitivity labels for content specific to your agency — on top of the
-          built-in HIPAA protections that already run automatically. Your custom labels would show up
-          alongside the standard ones in the audit log and review queue. <strong>Coming soon.</strong>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Grounding Sources</h2>
+        {isAdmin && (
+          <button
+            onClick={() => setShowAdd((s) => !s)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8,
+              background: showAdd ? '#F8FBFC' : '#3F9B2F', color: showAdd ? '#3F9B2F' : '#FFFFFF',
+              border: showAdd ? '1px solid #3F9B2F' : 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            <FontAwesomeIcon icon={showAdd ? faTimes : faPlus} style={{ fontSize: 12 }} />
+            {showAdd ? 'Cancel' : 'Add Grounding Source'}
+          </button>
+        )}
+      </div>
+
+      {/* Plain-language explanation with examples */}
+      <div style={{ background: '#F0FBF0', border: '1px solid #3F9B2F', borderRadius: 10, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#2E5C22', lineHeight: 1.65 }}>
+        <p style={{ margin: '0 0 8px' }}>
+          <strong>Grounding sources</strong> are your agency's trusted reference material — the facts the AI must
+          stay true to. They are a way to <strong>prevent hallucinations</strong>: when the AI writes, it draws from
+          these instead of guessing, and anything it can't support from a grounding source shows up as a warning so
+          you can catch it. Grounding is its own bucket, separate from the Agency Library and Policies, but usable in
+          any chat.
         </p>
-        <p style={{ fontSize: 12.5, color: '#7C3AED', lineHeight: 1.6, margin: '10px 0 0' }}>
-          Not the same as a Library item tagged "Classification" — those are example documents that
-          teach the system; this tab defines the labels themselves.
+        <p style={{ margin: '0 0 4px', fontWeight: 600 }}>Good examples to add here:</p>
+        <ul style={{ margin: '0 0 0 18px', padding: 0 }}>
+          <li>Your agency's clinical standards and treatment protocols (e.g. your reinforcement or crisis-management procedures)</li>
+          <li>Payer / insurance requirements for documentation (what Medicaid or a specific plan requires in a progress note)</li>
+          <li>Assessment tools and scoring guides your BCBAs use (VB-MAPP, ABLLS-R reference material)</li>
+          <li>Approved goal banks or program descriptions the AI should pull wording from</li>
+        </ul>
+        <p style={{ margin: '8px 0 0', color: '#3F6B2C' }}>
+          Rule of thumb: if you'd want the AI to <em>quote it or follow it exactly</em>, it's a grounding source.
+          If it's just a writing example or starting template, keep it in the <strong>Agency Library</strong> instead.
         </p>
       </div>
+
+      {showAdd && isAdmin && (
+        <AddResourceForm
+          bucket="GROUNDING"
+          onSaved={(r) => { onResourceCreated(r); setShowAdd(false); }}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
+
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 160, color: '#5A7184' }}>
+          <FontAwesomeIcon icon={faSpinner} style={{ fontSize: 24, animation: 'spin 1s linear infinite' }} />
+        </div>
+      ) : grounding.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', color: '#5A7184', textAlign: 'center' }}>
+          <FontAwesomeIcon icon={faBook} style={{ fontSize: 40, color: '#DCE7EE', marginBottom: 12 }} />
+          <p style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>No grounding sources yet</p>
+          <p style={{ fontSize: 13, margin: 0, color: '#8CA4B5' }}>
+            {isAdmin ? 'Add a source and tag it "Grounding" so the AI can reference it.' : 'No grounding sources have been published yet.'}
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {grounding.map((r) => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: '#FFFFFF', border: '1px solid #DCE7EE', borderRadius: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#F0FBF0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FontAwesomeIcon icon={faBook} style={{ color: '#3F9B2F', fontSize: 15 }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: '#1E3347', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</p>
+                <p style={{ fontSize: 12, color: '#8CA4B5', margin: '2px 0 0' }}>
+                  {RESOURCE_TYPE_LABELS[r.resourceType] ?? r.resourceType}
+                  {!r.isActive && ' · inactive'}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+

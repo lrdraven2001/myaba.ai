@@ -31,18 +31,11 @@ export type DocumentTab = 'resources' | 'templates';
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
 const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   'Clinical Director',
+  ORG_SUPER_ADMIN:   'Practice Administrator',
   CLINICAL_DIRECTOR: 'Clinical Director',
-  ORG_ADMIN:         'Practice Administrator',
-  TREATING_BCBA:     'Treating BCBA',
-  SUPERVISING_BCBA:  'Supervising BCBA',
-  BCBA_STUDENT:      'BCBA Student',
-  RBT:               'RBT',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
+  RBT:               'Behavior Technician',
   GENERAL_STAFF:     'General Staff',
-  SCHEDULING_ADMIN:  'Scheduling Admin',
-  BILLING_ADMIN:     'Billing Admin',
-  PARENT_GUARDIAN:   'Parent / Guardian',
-  VIEWER:            'Viewer',
 };
 
 // ── Global footer ──────────────────────────────────────────────────────────────
@@ -167,7 +160,7 @@ function AppShell() {
       .catch(() => setBaaAccepted(true)); // fail-open: don't lock out on network error
   }, [currentUser?.orgId]);
 
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const handleNavigateToChat = (chatId: string) => {
     setPendingChatId(chatId);

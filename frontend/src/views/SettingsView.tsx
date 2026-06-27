@@ -5,10 +5,11 @@ import {
   faSlidersH, faToggleOn, faToggleOff, faMinus, faCheck, faLock,
   faMobileAlt, faPlus, faTimes, faPen, faFileContract, faPlug,
   faSearch, faLink, faUnlink, faCheckCircle, faExclamationCircle,
-  faUpload, faExclamationTriangle,
+  faUpload, faExclamationTriangle, faTag, faDownload,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import { OrgPolicyTab } from './ReviewQueueView';
 import { BAA_TEXT } from '../lib/baaText';
 import type { EhrClientRecord, EhrConnectionStatus, OfficePuzzleImportResult, Org, OrgAclxPolicy, UsageSummary } from '../types';
 
@@ -18,14 +19,15 @@ const SENSITIVITY_COLORS: Record<string, { bg: string; text: string }> = {
   LOW:    { bg: '#f0fdf4', text: '#166534' },
 };
 
-type Tab = 'org' | 'roles' | 'security' | 'integrations' | 'billing';
+type Tab = 'org' | 'roles' | 'content_rules' | 'security' | 'integrations' | 'billing';
 
 const TABS: { id: Tab; icon: typeof faBuilding; label: string }[] = [
-  { id: 'org',          icon: faBuilding,   label: 'Organization'        },
-  { id: 'roles',        icon: faSlidersH,   label: 'Roles & Permissions' },
-  { id: 'security',     icon: faShieldAlt,  label: 'Security'            },
-  { id: 'integrations', icon: faPlug,       label: 'Integrations'        },
-  { id: 'billing',      icon: faCreditCard, label: 'Billing'             },
+  { id: 'org',           icon: faBuilding,   label: 'Organization'        },
+  { id: 'roles',         icon: faSlidersH,   label: 'Roles & Permissions' },
+  { id: 'content_rules', icon: faTag,        label: 'Content Rules'       },
+  { id: 'security',      icon: faShieldAlt,  label: 'Security'            },
+  { id: 'integrations',  icon: faPlug,       label: 'Integrations'        },
+  { id: 'billing',       icon: faCreditCard, label: 'Billing'             },
 ];
 
 export default function SettingsView() {
@@ -64,8 +66,9 @@ export default function SettingsView() {
         ? <OrgTab orgId={orgId} isAdmin={isAdmin} />
         : (
           <div className="flex-1 overflow-y-auto p-8">
-            {activeTab === 'roles'        && <RolesTab isAdmin={isAdmin} orgId={orgId} />}
-            {activeTab === 'security'     && <SecurityTab orgId={orgId} isAdmin={isAdmin} />}
+            {activeTab === 'roles'         && <RolesTab isAdmin={isAdmin} orgId={orgId} />}
+            {activeTab === 'content_rules' && <OrgPolicyTab orgId={orgId} />}
+            {activeTab === 'security'      && <SecurityTab orgId={orgId} isAdmin={isAdmin} />}
             {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} isAdmin={isAdmin} />}
             {activeTab === 'billing'      && <BillingTab orgId={orgId} isAdmin={isAdmin} />}
           </div>
@@ -337,6 +340,16 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
                   : '—'}
               </p>
               <p className="text-gray-500">BAA version {baaStatus.version ?? '1.0'}</p>
+            </div>
+            <div className="col-span-2 mt-2">
+              <button
+                onClick={() => api.downloadBaa(orgId).catch(() => {})}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
+              >
+                <FontAwesomeIcon icon={faDownload} />
+                Download signed BAA
+              </button>
             </div>
           </div>
         )}

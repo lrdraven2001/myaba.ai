@@ -43,6 +43,32 @@ public class PolicyRequest {
     private String resourceType;
 
     /**
+     * The bucket this resource belongs to — a clean, non-overlapping classification used
+     * by the Resources screen tabs. Each bucket can be used in any chat.
+     * <ul>
+     *   <li>{@code LIBRARY} — the Agency Library: Standard Templates, Generation Templates,
+     *       and Knowledge References.</li>
+     *   <li>{@code GROUNDING} — trusted sources the AI's facts are checked against to
+     *       prevent hallucinations.</li>
+     *   <li>{@code POLICY} (default) — the agency's rules and SOPs.</li>
+     * </ul>
+     */
+    private String bucket;
+
+    /**
+     * For a {@code GENERATION_TEMPLATE} library resource, the client document type this
+     * template customizes (e.g. {@code behavior_intervention_plan}). Matches the document
+     * type values on the client "Generate Document" page.
+     */
+    private String documentType;
+
+    /**
+     * For seeded default templates: {@code false} until an agency edits the template, then
+     * {@code true}. Drives the (Default)/(Customized) label on the Generate Document picker.
+     */
+    private Boolean customized;
+
+    /**
      * Optional client identifier that scopes this resource to a specific client.
      * When set, the ACLX Gateway will restrict groundedness checking and output
      * to the context of the identified client, preventing cross-client data leakage.

@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -236,7 +238,10 @@ public class OrgService {
         String now    = Instant.now().toString();
 
         boolean itSetup = "it_setup".equals(req.getSetupMode());
-        String creatorRole = itSetup ? UserRole.ORG_ADMIN : UserRole.CLINICAL_DIRECTOR;
+        // The starting user is ALWAYS the Practice Administrator (super admin) — the
+        // org owner with full permissions who signs the BAA. (setupMode still controls
+        // whether the BAA is signed now or deferred, but not the role.)
+        String creatorRole = UserRole.ORG_SUPER_ADMIN;
 
         Map<String, Object> data = new HashMap<>();
         data.put("id",          orgId);
@@ -416,6 +421,95 @@ public class OrgService {
         }
         log.info("BAA v1.1 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return baaRecord;
+    }
+
+    /**
+     * Render the executed BAA as a self-contained, print-ready HTML document.
+     * Throws IllegalStateException if the BAA has not been signed yet.
+     */
+    @SuppressWarnings("unchecked")
+    public String renderBaaDocument(String orgId) throws Exception {
+        Map<String, Object> org = getOrg(orgId);
+        Object acceptanceObj = org.get("baaAcceptance");
+        if (!(acceptanceObj instanceof Map) || !Boolean.TRUE.equals(org.get("baaAccepted"))) {
+            throw new IllegalStateException("The BAA has not been signed for this organization.");
+        }
+        Map<String, Object> a = (Map<String, Object>) acceptanceObj;
+        String orgName     = esc(String.valueOf(org.getOrDefault("name", orgId)));
+        String signerName  = esc(String.valueOf(a.getOrDefault("signerName", "—")));
+        String signerTitle = esc(String.valueOf(a.getOrDefault("signerTitle", "—")));
+        String version     = esc(String.valueOf(a.getOrDefault("version", "1.0")));
+        String acceptedAt  = String.valueOf(a.getOrDefault("acceptedAt", ""));
+        String acceptedDate = acceptedAt;
+        try {
+            acceptedDate = DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a 'UTC'")
+                    .withZone(ZoneOffset.UTC).format(Instant.parse(acceptedAt));
+        } catch (Exception ignored) {}
+
+        return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\" />"
+            + "<title>Business Associate Agreement — " + orgName + "</title>"
+            + "<style>"
+            + "body{font-family:Georgia,'Times New Roman',serif;max-width:760px;margin:40px auto;padding:0 32px;color:#1a2b3c;line-height:1.6}"
+            + "h1{font-size:22px;border-bottom:2px solid #2a5f6f;padding-bottom:8px}"
+            + "h2{font-size:15px;margin-top:28px;color:#2a5f6f}"
+            + ".meta{background:#f6f9fb;border:1px solid #dce7ee;border-radius:8px;padding:16px 20px;margin:24px 0;font-family:Arial,sans-serif;font-size:13px}"
+            + ".meta b{display:inline-block;width:160px;color:#52616b}"
+            + ".sig{margin-top:40px;border-top:1px solid #ccc;padding-top:20px;font-family:Arial,sans-serif}"
+            + "@media print{body{margin:0}}"
+            + "</style></head><body>"
+            + "<h1>Business Associate Agreement</h1>"
+            + "<div class=\"meta\">"
+            + "<div><b>Covered Entity / Client</b> " + orgName + "</div>"
+            + "<div><b>Business Associate</b> MyABA.ai</div>"
+            + "<div><b>Agreement Version</b> v" + version + "</div>"
+            + "<div><b>Executed By</b> " + signerName + " (" + signerTitle + ")</div>"
+            + "<div><b>Date Executed</b> " + esc(acceptedDate) + "</div>"
+            + "</div>"
+            + "<p>This Business Associate Agreement (\"Agreement\") is entered into pursuant to the Health "
+            + "Insurance Portability and Accountability Act of 1996 (HIPAA), the HITECH Act, and 45 C.F.R. "
+            + "Parts 160 and 164, between the Covered Entity identified above and MyABA.ai (\"Business Associate\").</p>"
+            + "<h2>1. Permitted Uses and Disclosures</h2><p>Business Associate may use or disclose Protected "
+            + "Health Information (PHI) only as permitted or required by this Agreement or as required by law, "
+            + "and shall not use or disclose PHI in a manner that would violate Subpart E of 45 C.F.R. Part 164.</p>"
+            + "<h2>2. Safeguards</h2><p>Business Associate shall implement administrative, physical, and technical "
+            + "safeguards that reasonably and appropriately protect the confidentiality, integrity, and availability "
+            + "of electronic PHI, as required by the Security Rule (45 C.F.R. §§ 164.308, 164.310, 164.312).</p>"
+            + "<h2>3. Minimum Necessary</h2><p>Business Associate shall limit its uses and disclosures of, and "
+            + "requests for, PHI to the minimum necessary to accomplish the intended purpose, except where the "
+            + "minimum-necessary standard does not apply under 45 C.F.R. § 164.502(b)(2).</p>"
+            + "<h2>4. Reporting</h2><p>Business Associate shall report to the Covered Entity any use or disclosure "
+            + "of PHI not provided for by this Agreement, including breaches of unsecured PHI as required by "
+            + "45 C.F.R. § 164.410, without unreasonable delay.</p>"
+            + "<h2>5. Subcontractors</h2><p>Business Associate shall ensure that any subcontractors that create, "
+            + "receive, maintain, or transmit PHI on its behalf agree in writing to the same restrictions and "
+            + "conditions that apply to Business Associate.</p>"
+            + "<h2>6. Termination</h2><p>Upon termination, Business Associate shall return or destroy all PHI "
+            + "received from, or created or received on behalf of, the Covered Entity, where feasible.</p>"
+            + "<div class=\"sig\"><p><b>Electronically executed</b> by " + signerName + ", " + signerTitle
+            + ", on behalf of " + orgName + " on " + esc(acceptedDate) + ".</p>"
+            + "<p style=\"font-size:12px;color:#888\">This document is a record of the agreement accepted "
+            + "electronically within the MyABA.ai platform (Agreement version v" + version + ").</p></div>"
+            + "</body></html>";
+    }
+
+    /** Render the executed BAA as a PDF (via the XHTML document above). */
+    public byte[] renderBaaPdf(String orgId) throws Exception {
+        String html = renderBaaDocument(orgId);
+        try (java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream()) {
+            com.openhtmltopdf.pdfboxout.PdfRendererBuilder builder =
+                    new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
+            builder.useFastMode();
+            builder.withHtmlContent(html, null);
+            builder.toStream(os);
+            builder.run();
+            return os.toByteArray();
+        }
+    }
+
+    /** Minimal HTML escape for interpolated values. */
+    private static String esc(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     /**

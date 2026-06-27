@@ -194,7 +194,25 @@ public class PolicyService {
      * @param clientId if non-null, includes both client-scoped and org-wide resources
      * @return active resources whose purposes array contains the given purpose
      */
+    /** Back-compat overload — filter by purpose only. */
     public List<Map<String, Object>> getResourcesByPurpose(String orgId, String purpose, String clientId) throws Exception {
+        return getResources(orgId, null, purpose, clientId);
+    }
+
+    /**
+     * List active resources for an org, optionally filtered by bucket (LIBRARY|GROUNDING|POLICY)
+     * and/or purpose tag, and scoped to a client. Bucket filtering is done in memory so legacy
+     * resources without a {@code bucket} field still resolve sensibly (treated as POLICY).
+     */
+    public List<Map<String, Object>> getResources(String orgId, String bucket, String purpose, String clientId) throws Exception {
+        List<Map<String, Object>> all = getResourcesRaw(orgId, purpose, clientId);
+        if (bucket == null || bucket.isBlank()) return all;
+        return all.stream()
+                .filter(p -> bucket.equals(p.getOrDefault("bucket", "POLICY")))
+                .collect(Collectors.toList());
+    }
+
+    private List<Map<String, Object>> getResourcesRaw(String orgId, String purpose, String clientId) throws Exception {
         if (devMode) {
             return devPolicies.values().stream()
                 .filter(p -> Boolean.TRUE.equals(p.get("isActive")))
@@ -244,6 +262,9 @@ public class PolicyService {
         data.put("isActive",    req.getIsActive() != null ? req.getIsActive() : true);
         data.put("purposes",      req.getPurposes() != null ? req.getPurposes() : List.of());
         data.put("resourceType",  req.getResourceType() != null ? req.getResourceType() : "POLICY");
+        data.put("bucket",        req.getBucket() != null ? req.getBucket() : "POLICY");
+        if (req.getDocumentType() != null) data.put("documentType", req.getDocumentType());
+        data.put("customized",    req.getCustomized() != null ? req.getCustomized() : false);
         if (req.getClientId() != null) data.put("clientId", req.getClientId());
         data.put("orgId",       user.getOrgId());
         data.put("createdBy",   user.getUid());

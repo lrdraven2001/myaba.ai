@@ -1156,11 +1156,11 @@ function ConnectedResourcesTab({ clientId, clientName }: { clientId: string; cli
 
 const TEAM_ROLE_LABEL: Record<string, string> = {
   TREATING_BCBA:    'Treating BCBA',
-  SUPERVISING_BCBA: 'Supervising BCBA',
+  SUPERVISING_BCBA: 'Clinical Supervisor',
   BCBA_STUDENT:     'BCBA Student',
   RBT:              'Behavior Technician',
   ORG_ADMIN:        'Practice Administrator',
-  ORG_SUPER_ADMIN:  'Clinical Director',
+  ORG_SUPER_ADMIN:  'Practice Administrator',
 };
 
 const TEAM_ROLE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -1205,7 +1205,7 @@ function TreatmentTeamTab({
   }, [orgId]);
 
   const supervisorOpts = members.filter((m) => m.role === 'SUPERVISING_BCBA');
-  const rbtOptions     = members.filter((m) => ['RBT', 'BCBA_STUDENT'].includes(m.role));
+  const rbtOptions     = members.filter((m) => ['RBT'].includes(m.role));
 
   // Toggle a supervisor on/off the roster; if removed and was current, clear current
   const toggleSupervisor = (id: string) => {

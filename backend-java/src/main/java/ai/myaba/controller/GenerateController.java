@@ -151,11 +151,27 @@ public class GenerateController {
                 Treatment history: [Retrieved from session notes]
                 """.formatted(preferredName);
 
-        // Generate with Claude
+        // If the agency has customized a Generation Template for this document type in the
+        // Agency Library, use it; otherwise the built-in default prompt is used.
+        String customTemplate = null;
+        try {
+            for (Map<String, Object> r : policyService.getResources(user.getOrgId(), "LIBRARY", null, null)) {
+                if ("GENERATION_TEMPLATE".equals(r.get("resourceType"))
+                        && req.getDocumentType().equals(r.get("documentType"))
+                        && Boolean.TRUE.equals(r.get("customized"))) {
+                    customTemplate = (String) r.get("textContent");
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not load customized template for {}: {}", req.getDocumentType(), e.getMessage());
+        }
+
+        // Generate with the configured AI provider
         String rawOutput;
         try {
             rawOutput = aiService.generateDocument(
-                    req.getDocumentType(), context, req.getAdditionalContext());
+                    req.getDocumentType(), context, req.getAdditionalContext(), customTemplate);
         } catch (Exception e) {
             log.error("AI document generation failed: {}", e.getMessage());
             return ResponseEntity.internalServerError()

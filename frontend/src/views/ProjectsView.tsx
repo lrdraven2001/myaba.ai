@@ -12,7 +12,7 @@ import { isAdminRole } from '../types';
 import type { Project, ProjectKnowledgeDoc, Chat } from '../types';
 
 // Roles that cannot access PHI projects
-const NON_CLINICAL_ROLES = new Set(['GENERAL_STAFF', 'SCHEDULING_ADMIN', 'BILLING_ADMIN']);
+const NON_CLINICAL_ROLES = new Set(['GENERAL_STAFF']);
 
 function canAccessPhiProject(role: string): boolean {
   return !NON_CLINICAL_ROLES.has(role);
@@ -41,6 +41,8 @@ export default function ProjectsView({ onNavigateToChat }: Props) {
   const [view, setView]         = useState<'list' | 'detail'>('list');
   const [selected, setSelected] = useState<Project | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showTrash, setShowTrash]   = useState(false);
+  const isSuperAdmin = currentUser?.role === 'ORG_SUPER_ADMIN';
 
   useEffect(() => {
     api.getProjects()
@@ -80,6 +82,8 @@ export default function ProjectsView({ onNavigateToChat }: Props) {
           loading={loading}
           onOpen={openProject}
           onNew={() => setShowCreate(true)}
+          isSuperAdmin={isSuperAdmin}
+          onShowTrash={() => setShowTrash(true)}
         />
       )}
       {view === 'detail' && selected && (
@@ -101,6 +105,12 @@ export default function ProjectsView({ onNavigateToChat }: Props) {
           onCreated={handleCreated}
         />
       )}
+      {showTrash && (
+        <TrashModal
+          onClose={() => setShowTrash(false)}
+          onRestored={(p) => setProjects((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
+        />
+      )}
     </div>
   );
 }
@@ -108,12 +118,14 @@ export default function ProjectsView({ onNavigateToChat }: Props) {
 // ── Project list (card grid) ──────────────────────────────────────────────────
 
 function ProjectListView({
-  projects, loading, onOpen, onNew,
+  projects, loading, onOpen, onNew, isSuperAdmin, onShowTrash,
 }: {
   projects: Project[];
   loading: boolean;
   onOpen: (p: Project) => void;
   onNew: () => void;
+  isSuperAdmin?: boolean;
+  onShowTrash?: () => void;
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -121,14 +133,27 @@ function ProjectListView({
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold text-gray-900">Projects</h2>
-          <button
-            onClick={onNew}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-            style={{ background: '#2a5f6f' }}
-          >
-            <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
-            New project
-          </button>
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && (
+              <button
+                onClick={onShowTrash}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors"
+                style={{ borderColor: '#e5e7eb', color: '#6b7280', background: 'white' }}
+                title="Recently deleted projects (restorable for 48 hours)"
+              >
+                <FontAwesomeIcon icon={faTrash} style={{ fontSize: 11 }} />
+                Trash
+              </button>
+            )}
+            <button
+              onClick={onNew}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold"
+              style={{ background: '#2a5f6f' }}
+            >
+              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
+              New project
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -166,6 +191,99 @@ function ProjectListView({
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Trash modal (super admin: restore within 48h) ─────────────────────────────
+
+function TrashModal({
+  onClose, onRestored,
+}: {
+  onClose: () => void;
+  onRestored: (p: Project) => void;
+}) {
+  const [trashed, setTrashed] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getTrashedProjects()
+      .then(setTrashed)
+      .catch(() => setTrashed([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const hoursLeft = (deletedAt?: string) => {
+    if (!deletedAt) return 0;
+    const elapsedMs = Date.now() - new Date(deletedAt).getTime();
+    return Math.max(0, Math.ceil(48 - elapsedMs / 3_600_000));
+  };
+
+  const handleRestore = async (p: Project) => {
+    setRestoringId(p.id);
+    try {
+      await api.restoreProject(p.id);
+      setTrashed((prev) => prev.filter((x) => x.id !== p.id));
+      onRestored({ ...p, deletedAt: undefined, deletedBy: undefined });
+    } catch {
+      /* leave it in the list so the admin can retry */
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Recently Deleted</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Projects are restorable for 48 hours after deletion.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <FontAwesomeIcon icon={faTimes} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {loading ? (
+            <div className="flex items-center justify-center h-32">
+              <FontAwesomeIcon icon={faSpinner} className="animate-spin text-gray-300 text-2xl" />
+            </div>
+          ) : trashed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-gray-400">
+              <FontAwesomeIcon icon={faTrash} className="text-3xl text-gray-200" />
+              <p className="text-sm">No deleted projects in the last 48 hours.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {trashed.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 rounded-xl border border-gray-150 bg-gray-50 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{p.title}</p>
+                    <p className="text-xs text-gray-400">
+                      Deleted {relativeDate(p.deletedAt ?? '')} · {hoursLeft(p.deletedAt)}h left to restore
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(p)}
+                    disabled={restoringId === p.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-white shrink-0"
+                    style={{ background: '#2a5f6f', opacity: restoringId === p.id ? 0.6 : 1 }}
+                  >
+                    <FontAwesomeIcon icon={restoringId === p.id ? faSpinner : faArrowLeft} className={restoringId === p.id ? 'animate-spin' : ''} style={{ fontSize: 11 }} />
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -695,9 +813,9 @@ function ProjectAccessModal({
 
   const getRoleLabel = (role: string) => {
     const labels: Record<string, string> = {
-      ORG_SUPER_ADMIN: 'Clinical Director', ORG_ADMIN: 'Practice Administrator',
-      TREATING_BCBA: 'Treating BCBA', SUPERVISING_BCBA: 'Supervising BCBA',
-      BCBA_STUDENT: 'BCBA Student', RBT: 'RBT',
+      ORG_SUPER_ADMIN: 'Practice Administrator', ORG_ADMIN: 'Practice Administrator',
+      TREATING_BCBA: 'Treating BCBA', SUPERVISING_BCBA: 'Clinical Supervisor',
+      BCBA_STUDENT: 'BCBA Student', RBT: 'Behavior Technician',
       GENERAL_STAFF: 'General Staff', SCHEDULING_ADMIN: 'Scheduling Admin',
       BILLING_ADMIN: 'Billing Admin',
     };

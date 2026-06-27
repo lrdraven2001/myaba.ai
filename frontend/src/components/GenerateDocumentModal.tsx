@@ -1,23 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTimes, faRobot, faSpinner, faShieldAlt, faCheckCircle,
   faExclamationTriangle, faChevronDown, faChevronUp, faCopy, faCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
-
-// ── Document types ────────────────────────────────────────────────────────────
-
-const DOCUMENT_TYPES = [
-  { value: 'behavior_intervention_plan',  label: 'Behavior Intervention Plan (BIP)' },
-  { value: 'functional_behavior_assessment', label: 'Functional Behavior Assessment (FBA)' },
-  { value: 'session_note',                label: 'Session Note' },
-  { value: 'progress_report',             label: 'Progress Report' },
-  { value: 'treatment_plan',              label: 'Treatment Plan' },
-  { value: 'discharge_summary',           label: 'Discharge Summary' },
-  { value: 'parent_training_note',        label: 'Parent Training Note' },
-  { value: 'supervision_log',             label: 'Supervision Log' },
-];
+import { DOCUMENT_TYPES } from '../lib/documentTypes';
 
 // ── Detector label map ────────────────────────────────────────────────────────
 
@@ -76,6 +64,22 @@ export default function GenerateDocumentModal({
   const [result,    setResult]      = useState<GenerateResult | null>(null);
   const [showFindings, setShowFindings] = useState(false);
   const [copied,    setCopied]      = useState(false);
+  // Document types that have a customized agency Generation Template.
+  const [customizedTypes, setCustomizedTypes] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api.getResources()
+      .then((res) => {
+        const list = (res as Array<{ resourceType?: string; documentType?: string; customized?: boolean }>) ?? [];
+        const customized = new Set(
+          list
+            .filter((r) => r.resourceType === 'GENERATION_TEMPLATE' && r.customized && r.documentType)
+            .map((r) => r.documentType as string),
+        );
+        setCustomizedTypes(customized);
+      })
+      .catch(() => {});
+  }, []);
 
   const generate = async () => {
     setLoading(true);
@@ -164,9 +168,16 @@ export default function GenerateDocumentModal({
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
                 >
                   {DOCUMENT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
+                    <option key={t.value} value={t.value}>
+                      {t.label} {customizedTypes.has(t.value) ? '(Customized)' : '(Default)'}
+                    </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {customizedTypes.has(docType)
+                    ? 'Uses your agency’s customized template from the Agency Library.'
+                    : 'Uses the built-in default template. Customize it in Resources → Agency Library.'}
+                </p>
               </div>
 
               <div>

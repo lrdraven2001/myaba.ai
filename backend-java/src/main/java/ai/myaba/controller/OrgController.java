@@ -331,6 +331,35 @@ public class OrgController {
         }
     }
 
+    /**
+     * GET /api/orgs/{orgId}/baa/document
+     * Download the executed BAA as a self-contained HTML document (print-to-PDF ready).
+     * Only available once the BAA has been signed. Org-scoped admin access.
+     */
+    @GetMapping(value = "/api/orgs/{orgId}/baa/document")
+    public ResponseEntity<?> downloadBaaDocument(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+        try {
+            byte[] pdf = orgService.renderBaaPdf(orgId);
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"BAA-" + orgId + ".pdf\"")
+                    .header("Content-Type", "application/pdf")
+                    .body(pdf);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("downloadBaaDocument failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to render BAA document"));
+        }
+    }
+
     // ── Generate invite token ─────────────────────────────────────────────────
 
     /**
@@ -492,7 +521,10 @@ public class OrgController {
     private boolean isAdminOf(AppUser user, String orgId) {
         return orgId.equals(user.getOrgId())
                 && (UserRole.ORG_ADMIN.equals(user.getRole())
-                    || UserRole.ORG_SUPER_ADMIN.equals(user.getRole()));
+                    || UserRole.ORG_SUPER_ADMIN.equals(user.getRole())
+                    // CLINICAL_DIRECTOR is the org creator / primary practice admin — must
+                    // have the same org-admin access (members, invites, activity, role changes).
+                    || UserRole.CLINICAL_DIRECTOR.equals(user.getRole()));
     }
 
     // ── Exception handlers ────────────────────────────────────────────────────

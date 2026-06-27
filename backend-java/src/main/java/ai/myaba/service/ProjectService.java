@@ -2,6 +2,7 @@ package ai.myaba.service;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ProjectRequest;
+import ai.myaba.model.dto.UserRole;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -90,6 +91,7 @@ public class ProjectService {
     public List<Map<String, Object>> getProjects(AppUser user) throws Exception {
         if (devMode) {
             return devProjects.values().stream()
+                    .filter(p -> p.get("deletedAt") == null)   // hide soft-deleted
                     .filter(p -> canAccessProject(user, p))
                     .sorted(Comparator.comparing(
                         (Map<String, Object> p) -> (String) p.getOrDefault("updatedAt", ""),
@@ -104,7 +106,10 @@ public class ProjectService {
                  .collection("projects")
                  .whereArrayContains("memberIds", user.getUid())
                  .orderBy("updatedAt", Query.Direction.DESCENDING);
-        return toList(query.get().get().getDocuments());
+        // Exclude soft-deleted in memory (avoids a composite index on deletedAt + updatedAt).
+        return toList(query.get().get().getDocuments()).stream()
+                .filter(p -> p.get("deletedAt") == null)
+                .collect(Collectors.toList());
     }
 
     public Map<String, Object> getProject(AppUser user, String projectId) throws Exception {
@@ -207,24 +212,82 @@ public class ProjectService {
           .update(Map.of("members", members, "memberIds", memberIds, "updatedAt", now)).get();
     }
 
+    /** Soft-delete: marks the project deleted (recoverable for 48h by a super admin). */
     public void deleteProject(AppUser user, String projectId) throws Exception {
         Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
         if (!canManageProject(user, project))
             throw new SecurityException("Cannot delete project: " + projectId);
 
+        String now = Instant.now().toString();
         if (devMode) {
-            devProjects.remove(projectId);
-            devKnowledgeDocs.remove(projectId);
+            Map<String, Object> p = devProjects.get(projectId);
+            if (p != null) { p.put("deletedAt", now); p.put("deletedBy", user.getUid()); }
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        // Delete knowledge docs sub-collection first
-        var kdSnap = db.collection("organizations").document(user.getOrgId())
-                       .collection("projects").document(projectId)
-                       .collection("knowledgeDocs").get().get();
-        for (var doc : kdSnap.getDocuments()) doc.getReference().delete().get();
         db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId).delete().get();
+          .collection("projects").document(projectId)
+          .update(Map.of("deletedAt", now, "deletedBy", user.getUid())).get();
+    }
+
+    /**
+     * Restore a soft-deleted project — super admin (Practice Administrator) only,
+     * within the 48-hour window. Lets the owner's org recover work deleted on the
+     * way out the door.
+     */
+    public void restoreProject(AppUser user, String projectId) throws Exception {
+        if (!UserRole.ORG_SUPER_ADMIN.equals(user.getRole()))
+            throw new SecurityException("Only a Practice Administrator can restore projects.");
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        Object deletedAt = project.get("deletedAt");
+        if (deletedAt == null)
+            throw new IllegalStateException("Project is not deleted.");
+        if (!withinRestoreWindow(String.valueOf(deletedAt)))
+            throw new IllegalStateException("The 48-hour restore window has passed.");
+
+        if (devMode) {
+            Map<String, Object> p = devProjects.get(projectId);
+            if (p != null) { p.remove("deletedAt"); p.remove("deletedBy"); }
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(user.getOrgId())
+          .collection("projects").document(projectId)
+          .update("deletedAt", com.google.cloud.firestore.FieldValue.delete(),
+                  "deletedBy", com.google.cloud.firestore.FieldValue.delete()).get();
+    }
+
+    /**
+     * Trashed projects still within the 48-hour restore window. Super admin only —
+     * shows ALL deleted projects in the org so nothing is lost silently.
+     */
+    public List<Map<String, Object>> getTrashedProjects(AppUser user) throws Exception {
+        if (!UserRole.ORG_SUPER_ADMIN.equals(user.getRole()))
+            throw new SecurityException("Only a Practice Administrator can view trashed projects.");
+        java.util.stream.Stream<Map<String, Object>> all;
+        if (devMode) {
+            all = devProjects.values().stream();
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            all = toList(db.collection("organizations").document(user.getOrgId())
+                    .collection("projects").get().get().getDocuments()).stream();
+        }
+        return all
+                .filter(p -> p.get("deletedAt") != null)
+                .filter(p -> withinRestoreWindow(String.valueOf(p.get("deletedAt"))))
+                .sorted(Comparator.comparing(
+                        (Map<String, Object> p) -> (String) p.getOrDefault("deletedAt", ""),
+                        Comparator.reverseOrder()))
+                .collect(Collectors.toList());
+    }
+
+    /** True if the given ISO timestamp is within the last 48 hours. */
+    private boolean withinRestoreWindow(String deletedAtIso) {
+        try {
+            return Instant.parse(deletedAtIso).isAfter(Instant.now().minus(java.time.Duration.ofHours(48)));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ── Knowledge docs ────────────────────────────────────────────────────

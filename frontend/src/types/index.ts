@@ -1,16 +1,33 @@
 // ── Roles & purposes ──────────────────────────────────────────────────────────
 
+// The five canonical roles. Internal constant strings are kept stable so existing
+// member records / claims keep working; the user-facing names are in ROLE_LABELS.
+//   ORG_SUPER_ADMIN  → Practice Administrator (super admin, org creator, signs BAA)
+//   CLINICAL_DIRECTOR→ Clinical Director (clinical + full central library + delete)
+//   SUPERVISING_BCBA → Clinical Supervisor (clinical; library-add is toggle-able)
+//   RBT              → Behavior Technician (projects + chat; no clients/library)
+//   GENERAL_STAFF    → General Staff (restricted / non-HIPAA guest)
 export type UserRole =
-  | 'TREATING_BCBA'
-  | 'SUPERVISING_BCBA'
-  | 'BCBA_STUDENT'
-  | 'RBT'
-  | 'SCHEDULING_ADMIN'
-  | 'BILLING_ADMIN'
-  | 'GENERAL_STAFF'
+  | 'ORG_SUPER_ADMIN'
   | 'CLINICAL_DIRECTOR'
-  | 'ORG_ADMIN'
-  | 'ORG_SUPER_ADMIN';
+  | 'SUPERVISING_BCBA'
+  | 'RBT'
+  | 'GENERAL_STAFF';
+
+/** Canonical display names for the five roles. Single source of truth — UI should use this. */
+export const ROLE_LABELS: Record<UserRole, string> = {
+  ORG_SUPER_ADMIN:   'Practice Administrator',
+  CLINICAL_DIRECTOR: 'Clinical Director',
+  SUPERVISING_BCBA:  'Clinical Supervisor',
+  RBT:               'Behavior Technician',
+  GENERAL_STAFF:     'General Staff',
+};
+
+/** The four core roles that can be renamed but never deleted. (Clinical Director is optional/addable.) */
+export const CORE_ROLES: UserRole[] = ['ORG_SUPER_ADMIN', 'SUPERVISING_BCBA', 'RBT', 'GENERAL_STAFF'];
+
+/** Roles available to assign when inviting a member (Practice Administrator is the creator only). */
+export const ASSIGNABLE_ROLES: UserRole[] = ['CLINICAL_DIRECTOR', 'SUPERVISING_BCBA', 'RBT', 'GENERAL_STAFF'];
 
 export type UserPurpose = 'treatment' | 'assessment' | 'scheduling' | 'payment' | 'oversight';
 
@@ -36,16 +53,19 @@ export interface AppUser {
   phiAccess?: boolean;
 }
 
+/** Roles with clinical / PHI access (can be involved in client work). */
 export function isClinicalRole(role: UserRole): boolean {
-  return ['TREATING_BCBA', 'SUPERVISING_BCBA', 'BCBA_STUDENT', 'RBT', 'CLINICAL_DIRECTOR'].includes(role);
+  return ['CLINICAL_DIRECTOR', 'SUPERVISING_BCBA', 'RBT', 'ORG_SUPER_ADMIN'].includes(role);
 }
 
-export function isBcbaRole(role: UserRole): boolean {
-  return ['TREATING_BCBA', 'SUPERVISING_BCBA', 'BCBA_STUDENT'].includes(role);
-}
-
+/** Org administration (members, invites, settings, role config) — Practice Administrator. */
 export function isAdminRole(role: UserRole): boolean {
-  return ['CLINICAL_DIRECTOR', 'ORG_ADMIN', 'ORG_SUPER_ADMIN'].includes(role);
+  return ['ORG_SUPER_ADMIN', 'CLINICAL_DIRECTOR'].includes(role);
+}
+
+/** Roles that can create/manage clients (not Behavior Technician). */
+export function canManageClients(role: UserRole): boolean {
+  return ['ORG_SUPER_ADMIN', 'CLINICAL_DIRECTOR', 'SUPERVISING_BCBA'].includes(role);
 }
 
 /**
@@ -64,7 +84,7 @@ export function canInitiateChat(role: UserRole): boolean {
 }
 
 export function canUseGeneralChat(role: UserRole): boolean {
-  return role === 'GENERAL_STAFF' || role === 'SCHEDULING_ADMIN' || role === 'BILLING_ADMIN';
+  return role === 'GENERAL_STAFF';
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -263,6 +283,9 @@ export interface Project {
   memberIds: string[];
   createdAt: string;
   updatedAt: string;
+  /** Set when soft-deleted; restorable by a super admin for 48h. */
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export interface ProjectKnowledgeDoc {

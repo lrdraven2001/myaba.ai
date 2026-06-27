@@ -31,7 +31,7 @@ const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as PolicyCategory[];
 
 export default function PoliciesView({ embedded = false }: { embedded?: boolean }) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
   const [policies, setPolicies]       = useState<PolicyDocument[]>([]);
   const [loading, setLoading]         = useState(true);

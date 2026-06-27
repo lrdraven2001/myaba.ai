@@ -4,7 +4,7 @@ import {
   faUserPlus, faEnvelope, faToggleOn, faToggleOff,
   faArrowLeft, faChevronRight, faTimes, faMailBulk,
   faUsers, faHistory, faUserCog, faCommentDots, faFileAlt,
-  faLink, faCheck, faCopy,
+  faLink, faCheck, faCopy, faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -23,7 +23,7 @@ interface TeamMember {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   'Clinical Director',
+  ORG_SUPER_ADMIN:   'Practice Administrator',
   CLINICAL_DIRECTOR: 'Clinical Director',
   ORG_ADMIN:         'Practice Administrator',
   TREATING_BCBA:     'Treating BCBA',
@@ -50,8 +50,8 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
 
 const AVATAR_COLORS = ['#3F9B2F', '#1E88FF', '#F5A623', '#9c27b0', '#e91e63'];
 
-function toInitials(name: string) {
-  return name.split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 2);
+function toInitials(name: string | undefined | null) {
+  return (name ?? '').split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 2) || '?';
 }
 
 // ── Main view ─────────────────────────────────────────────────────────────────
@@ -67,6 +67,7 @@ export default function TeamView() {
   const [showInvite, setShowInvite]       = useState(false);
   const [showManageInvites, setShowManageInvites] = useState(false);
   const [inviteRole, setInviteRole]       = useState('RBT');
+  const [inviteEmail, setInviteEmail]     = useState('');
   const [inviteUrl, setInviteUrl]         = useState('');
   const [inviteGenerating, setInviteGenerating] = useState(false);
   const [inviteError, setInviteError]     = useState('');
@@ -92,10 +93,22 @@ export default function TeamView() {
 
   const handleOpenInvite = () => {
     setInviteRole('RBT');
+    setInviteEmail('');
     setInviteUrl('');
     setInviteError('');
     setInviteCopied(false);
     setShowInvite(true);
+  };
+
+  const handleEmailInvite = () => {
+    const roleLabel = ROLE_LABELS[inviteRole] ?? inviteRole;
+    const subject = encodeURIComponent('Your invitation to MyABA.ai');
+    const body = encodeURIComponent(
+      `You've been invited to join your organization on MyABA.ai as a ${roleLabel}.\n\n` +
+      `Click this single-use link to set up your account:\n${inviteUrl}\n\n` +
+      `This link can only be used once and expires in 7 days.`,
+    );
+    window.location.href = `mailto:${inviteEmail.trim()}?subject=${subject}&body=${body}`;
   };
 
   const handleGenerateInviteLink = async () => {
@@ -121,6 +134,7 @@ export default function TeamView() {
 
   const handleCloseInvite = () => {
     setShowInvite(false);
+    setInviteEmail('');
     setInviteUrl('');
     setInviteError('');
     setInviteCopied(false);
@@ -302,18 +316,31 @@ export default function TeamView() {
                   disabled={!!inviteUrl}
                 >
                   {Object.entries(ROLE_LABELS)
-                    .filter(([v]) => v !== 'ORG_SUPER_ADMIN')
+                    .filter(([v]) => ['CLINICAL_DIRECTOR', 'SUPERVISING_BCBA', 'RBT', 'GENERAL_STAFF'].includes(v))
                     .map(([val, label]) => (
                       <option key={val} value={val}>{label}</option>
                     ))}
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Recipient Email <span className="text-gray-400 normal-case font-normal">(optional — for emailing the link)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="name@example.com"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+              </div>
+
               {/* Generated link */}
               {inviteUrl && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    Invite Link — copy &amp; share
+                    Invite Link — copy, share, or email
                   </p>
                   <div className="flex items-center gap-2">
                     <input
@@ -330,6 +357,14 @@ export default function TeamView() {
                       {inviteCopied ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
+                  <button
+                    onClick={handleEmailInvite}
+                    className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-colors"
+                    style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
+                  >
+                    <FontAwesomeIcon icon={faEnvelope} />
+                    {inviteEmail.trim() ? `Email link to ${inviteEmail.trim()}` : 'Open email draft with link'}
+                  </button>
                 </div>
               )}
 

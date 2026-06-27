@@ -106,9 +106,10 @@ public class PolicyController {
     public ResponseEntity<List<Map<String, Object>>> getResources(
             @AuthenticationPrincipal AppUser user,
             @RequestParam(required = false) String purpose,
+            @RequestParam(required = false) String bucket,
             @RequestParam(required = false) String clientId) throws Exception {
         List<Map<String, Object>> resources =
-                policyService.getResourcesByPurpose(user.getOrgId(), purpose, clientId);
+                policyService.getResources(user.getOrgId(), bucket, purpose, clientId);
         return ResponseEntity.ok(resources);
     }
 
