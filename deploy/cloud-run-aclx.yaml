@@ -1,8 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Cloud Run service: aclx-gateway  (governance gateway + OPA sidecar) for myABA
 #
-# PRIVATE: ingress=internal — only reachable from inside the VPC (the myaba-api
-# service via its Serverless VPC connector), never from the public internet.
+# PRIVATE via IAM: ingress=all but invoker-restricted — only callers granted
+# roles/run.invoker (the myaba-api service account) can reach it; the API sends a
+# Google ID token. No VPC connector required (keeps idle cost at zero).
 #
 # Deploy:
 #   gcloud run services replace deploy/cloud-run-aclx.yaml --region us-central1
@@ -20,12 +21,15 @@ metadata:
   labels:
     cloud.googleapis.com/location: us-central1
   annotations:
-    run.googleapis.com/ingress: internal
+    # Reachable over its URL but IAM-gated: only callers granted run.invoker
+    # (the myaba-api service account) can invoke it. No VPC required.
+    run.googleapis.com/ingress: all
 spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/minScale: "1"
+        # Scale to zero when idle; cold start ~2-5s on first request after idle.
+        autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "2"
         run.googleapis.com/container-dependencies: '{"gateway-api":["opa"]}'
     spec:

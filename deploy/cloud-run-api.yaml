@@ -12,8 +12,9 @@
 #       roles/firebaseauth.admin     (verify ID tokens / set custom claims)
 #       roles/dlp.user               (Cloud DLP scrubbing)
 #       roles/logging.logWriter
-#   • Serverless VPC connector  myaba-connector  (to reach private ACLX)
-#   • ACLX deployed first, so ACLX_GATEWAY_URL below points at its URL
+#       roles/run.invoker  ON the aclx-gateway service  (call the IAM-gated ACLX)
+#   • ACLX deployed first, so ACLX_GATEWAY_URL below points at its URL.
+#     The API authenticates to ACLX with a Google ID token (no VPC connector).
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -25,11 +26,10 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/minScale: "1"
+        # Scale to zero when idle (no always-on cost); cold start ~2-5s on first
+        # request after idle. Raise minScale to 1 once traffic justifies it.
+        autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "4"
-        # Route egress to ACLX (internal ingress) through the VPC connector.
-        run.googleapis.com/vpc-access-connector: myaba-connector
-        run.googleapis.com/vpc-access-egress: private-ranges-only
     spec:
       serviceAccountName: myaba-api@myapaai.iam.gserviceaccount.com
       containers:

@@ -4,10 +4,14 @@ import ai.myaba.model.dto.AclxRequest;
 import ai.myaba.model.dto.AclxResponse;
 import ai.myaba.model.dto.AppUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.IdTokenCredentials;
+import com.google.auth.oauth2.IdTokenProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -37,6 +41,14 @@ public class AclxService {
      */
     private final String domain;
 
+    /**
+     * Cloud Run service-to-service auth. The ACLX gateway is deployed private
+     * (IAM-gated, {@code ingress=all} + no public invoker), so the API must present
+     * a Google-signed ID token whose audience is the gateway URL. Built lazily and
+     * reused; refreshed automatically before expiry.
+     */
+    private volatile IdTokenCredentials idTokenCredentials;
+
     public AclxService(
             ObjectMapper mapper,
             OrgAclxPolicyService orgPolicyService,
@@ -52,6 +64,42 @@ public class AclxService {
         this.gatewayUrl         = gatewayUrl;
         this.enabled            = enabled;
         this.domain             = domain;
+    }
+
+    /**
+     * Attach a Cloud Run service-to-service ID token to the request.
+     *
+     * <p>The gateway is private (IAM-gated) in production, so calls must carry a
+     * Google-signed ID token whose audience is the gateway URL. For a local/dev
+     * gateway (non-HTTPS, e.g. {@code http://localhost:8080}) no token is needed
+     * and this is a no-op. If ADC cannot mint an ID token, the request is sent
+     * unauthenticated — the gateway then 401s and the caller fail-safes.
+     */
+    private void applyServiceAuth(HttpURLConnection conn) {
+        if (gatewayUrl == null || !gatewayUrl.startsWith("https://")) return; // local/dev: no auth
+        try {
+            if (idTokenCredentials == null) {
+                synchronized (this) {
+                    if (idTokenCredentials == null) {
+                        GoogleCredentials base = GoogleCredentials.getApplicationDefault();
+                        if (!(base instanceof IdTokenProvider provider)) {
+                            log.warn("ADC cannot mint ID tokens ({}); calling ACLX unauthenticated",
+                                    base.getClass().getSimpleName());
+                            return;
+                        }
+                        idTokenCredentials = IdTokenCredentials.newBuilder()
+                                .setIdTokenProvider(provider)
+                                .setTargetAudience(gatewayUrl)
+                                .build();
+                    }
+                }
+            }
+            idTokenCredentials.refreshIfExpired();
+            conn.setRequestProperty("Authorization",
+                    "Bearer " + idTokenCredentials.getIdToken().getTokenValue());
+        } catch (IOException e) {
+            log.error("Failed to mint ACLX ID token: {}", e.getMessage());
+        }
     }
 
     /** Backward-compatible overload — no grounding sources, ACLX groundedness check skipped. */
@@ -130,6 +178,7 @@ public class AclxService {
             conn.setReadTimeout(30_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
+            applyServiceAuth(conn);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload);
@@ -216,6 +265,7 @@ public class AclxService {
             conn.setReadTimeout(5_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
+            applyServiceAuth(conn);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload);
@@ -390,6 +440,7 @@ public class AclxService {
             conn.setReadTimeout(20_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
+            applyServiceAuth(conn);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload);

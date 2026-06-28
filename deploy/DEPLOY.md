@@ -67,10 +67,14 @@ for ROLE in roles/aiplatform.user roles/secretmanager.secretAccessor roles/loggi
 done
 ```
 
-### VPC connector (so the API can reach private ACLX)
+### Let the API invoke the IAM-gated ACLX (run *after* ACLX is deployed in §2)
+ACLX is private via IAM (`ingress=all`, no public invoker); the API authenticates
+with a Google ID token. Grant the API's runtime SA invoker on the ACLX service —
+no VPC connector needed (that keeps idle networking cost at zero).
 ```bash
-gcloud compute networks vpc-access connectors create myaba-connector \
-  --region us-central1 --range 10.8.0.0/28
+gcloud run services add-iam-policy-binding aclx-gateway --region us-central1 \
+  --member="serviceAccount:myaba-api@myapaai.iam.gserviceaccount.com" \
+  --role=roles/run.invoker
 ```
 
 ### ACLX label-signing key (Secret Manager)
