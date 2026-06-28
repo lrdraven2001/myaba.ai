@@ -1,5 +1,17 @@
 {
   "projects": {
-    "default": "YOUR-FIREBASE-PROJECT-ID"
+    "default": "myapaai"
+  },
+  "targets": {
+    "myapaai": {
+      "hosting": {
+        "homepage": [
+          "myaba-ai"
+        ],
+        "app": [
+          "myaba-app"
+        ]
+      }
+    }
   }
 }

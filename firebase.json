@@ -6,6 +6,39 @@
   "functions": {
     "source": "functions"
   },
+  "hosting": [
+    {
+      "target": "homepage",
+      "public": "homepage/dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        { "source": "**", "destination": "/index.html" }
+      ]
+    },
+    {
+      "target": "app",
+      "public": "frontend/dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "/api/**",
+          "run": {
+            "serviceId": "myaba-api",
+            "region": "us-central1"
+          }
+        },
+        { "source": "**", "destination": "/index.html" }
+      ]
+    }
+  ],
   "emulators": {
     "auth": {
       "port": 9099,

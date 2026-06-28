@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloud Run service: aclx-gateway  (governance gateway + OPA sidecar) for myABA
+#
+# PRIVATE: ingress=internal — only reachable from inside the VPC (the myaba-api
+# service via its Serverless VPC connector), never from the public internet.
+#
+# Deploy:
+#   gcloud run services replace deploy/cloud-run-aclx.yaml --region us-central1
+#
+# Prereqs (see deploy/DEPLOY.md):
+#   • Images pushed:  us-docker.pkg.dev/myapaai/aclx/{gateway-api,opa}:latest
+#   • Secret  aclx-signing-key  in Secret Manager (persistent label-signing key)
+#   • Runtime SA  aclx-gateway@myapaai.iam  with roles/aiplatform.user
+#     (Gemini), roles/secretmanager.secretAccessor, roles/logging.logWriter
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: aclx-gateway
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: internal
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/container-dependencies: '{"gateway-api":["opa"]}'
+    spec:
+      serviceAccountName: aclx-gateway@myapaai.iam.gserviceaccount.com
+      containers:
+
+        # ── Ingress container: the ACLX gateway ──────────────────────────────
+        - name: gateway-api
+          image: us-docker.pkg.dev/myapaai/aclx/gateway-api:latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: APP_NAME
+              value: "ACLX Gateway API"
+            - name: OPA_URL
+              value: "http://localhost:8181"
+            - name: OPA_FAIL_CLOSED
+              value: "true"
+            - name: AUDIT_MODE
+              value: "cloud_logging"
+            - name: SEMANTIC_DETECTOR_ENABLED
+              value: "true"
+            - name: NARRATIVE_RENDERER_ENABLED
+              value: "true"
+            - name: LABEL_SIGNING_ENABLED
+              value: "true"
+
+            # ── LLM: Gemini 3.1 Flash-Lite on Vertex (ADC = runtime SA) ──────
+            - name: LLM_PROVIDER
+              value: "gemini"
+            - name: VERTEX_PROJECT
+              value: "myapaai"
+            - name: GCP_PROJECT_ID
+              value: "myapaai"
+            - name: GEMINI_LOCATION
+              value: "global"
+            - name: GEMINI_MODEL
+              value: "gemini-3.1-flash-lite"
+
+            # Cloud DLP optional (myABA's own API already scrubs); off here.
+            - name: ENABLE_CLOUD_DLP
+              value: "false"
+
+            # Persistent signing key — required so labels signed by one instance
+            # verify on another (mandatory when maxScale > 1).
+            - name: SIGNING_PRIVATE_KEY_B64
+              valueFrom:
+                secretKeyRef:
+                  name: aclx-signing-key
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            failureThreshold: 10
+            periodSeconds: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 2
+
+        # ── Sidecar: OPA with policies baked into the image ──────────────────
+        - name: opa
+          image: us-docker.pkg.dev/myapaai/aclx/opa:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "256Mi"
+          startupProbe:
+            tcpSocket:
+              port: 8181
+            failureThreshold: 10
+            periodSeconds: 3
+            timeoutSeconds: 2
+  traffic:
+    - percent: 100
+      latestRevision: true
