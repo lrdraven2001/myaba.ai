@@ -175,30 +175,6 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
           })()}
 
         </div>
-
-        {/* ── Divider ── */}
-        <div style={{ height: 1, background: '#DCE7EE', margin: '4px 14px' }} />
-
-        {/* ── Bottom: wave ── */}
-        <div className="mt-auto flex flex-col" style={{ position: 'relative', zIndex: 1 }}>
-          {/* Decorative wave */}
-          <svg
-            viewBox="0 0 195 44"
-            width="195"
-            style={{ display: 'block', marginTop: 4 }}
-            preserveAspectRatio="none"
-          >
-            <path
-              d="M0,22 C35,4 70,40 105,22 C140,4 168,34 195,20 L195,44 L0,44 Z"
-              fill="#D9EEFF"
-            />
-            <path
-              d="M0,30 C28,14 62,44 98,30 C132,16 162,38 195,28 L195,44 L0,44 Z"
-              fill="#BFE1FF"
-              opacity="0.75"
-            />
-          </svg>
-        </div>
       </div>
 
     </>

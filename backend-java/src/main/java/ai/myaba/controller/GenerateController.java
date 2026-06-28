@@ -6,6 +6,7 @@ import ai.myaba.service.AuditService;
 import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.AiService;
+import ai.myaba.service.ContentNormalizationService;
 import ai.myaba.service.ClientService;
 import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.InputGuardService;
@@ -43,6 +44,7 @@ import java.util.Optional;
 public class GenerateController {
 
     private final AiService aiService;
+    private final ContentNormalizationService contentNormalizationService;
     private final AclxService aclxService;
     private final AuditService auditService;
     private final ReviewQueueService reviewQueueService;
@@ -176,6 +178,11 @@ public class GenerateController {
             log.error("AI document generation failed: {}", e.getMessage());
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "AI generation failed"));
+        }
+
+        // Content rule: rewrite the client's legal name to their preferred/display name.
+        if (orgService.isPreferClientDisplayName(user.getOrgId())) {
+            rawOutput = contentNormalizationService.preferDisplayNames(rawOutput, List.of(client), true);
         }
 
         // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
@@ -352,7 +359,7 @@ public class GenerateController {
 
             String generalRaw;
             try {
-                generalRaw = aiService.chat(buildGeneralChatSystemPrompt(), generalMessages);
+                generalRaw = aiService.chat(buildGeneralChatSystemPrompt(user.getOrgId()), generalMessages);
             } catch (Exception e) {
                 log.error("AI general chat failed: {}", e.getMessage());
                 return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
@@ -501,6 +508,12 @@ public class GenerateController {
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
         }
 
+        // Content rule: rewrite client legal names to preferred/display names (deterministic
+        // backstop to the prompt instruction). Applied before ACLX so governance sees final text.
+        if (orgService.isPreferClientDisplayName(user.getOrgId())) {
+            rawReply = contentNormalizationService.preferDisplayNames(rawReply, clientsById.values(), true);
+        }
+
         // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
         usageService.recordRequest(user.getOrgId(), "chat");
 
@@ -562,9 +575,10 @@ public class GenerateController {
         // Build reply — BLOCK always withholds, ESCALATE withholds only when reviewRequired
         String reply;
         if ("BLOCK".equals(decision)) {
-            reply = "I cannot share that information based on your current access level.";
+            reply = softBlockMessage(aclxResult, chatIsQuarantine);
         } else if ("ESCALATE".equals(decision) && reviewRequired) {
-            reply = "This response has been flagged for compliance review and will be available once approved.";
+            reply = "This response has been flagged for a quick compliance review and will be available once approved. "
+                  + "This is a routine safeguard, not necessarily a problem with your request.";
         } else {
             // ALLOW, REDACT, or non-blocking ESCALATE
             reply = aclxResult.getDecision().getFinalText();
@@ -676,10 +690,123 @@ public class GenerateController {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
+     * Shared instruction telling the model it CAN produce downloadable Word/Excel files
+     * (the platform converts the reply) and exactly how to fence the document body so only
+     * the document — not the chat chatter — ends up in the file.
+     */
+    private static final String DOCUMENT_GENERATION_GUIDANCE = """
+
+            DOCUMENT & FILE GENERATION (important — overrides any default behaviour):
+            - This platform CAN turn your reply into a downloadable Microsoft Word (.docx) or \
+            Excel (.xlsx) file: the user clicks a Word or Excel button on your message. You must \
+            NEVER claim you are unable to create, generate, or attach files, and NEVER tell the \
+            user to copy and paste your text into a word processor — that is wrong and unhelpful here.
+            - When the user asks you to create, write, draft, or generate a document, put the \
+            COMPLETE document body — and nothing else — between a line containing only <document> \
+            and a line containing only </document>. The text between those tags is EXACTLY what \
+            becomes the downloaded file, so it must contain only the document itself: no \
+            "Here is..." preamble, no closing remarks, no explanations, and no markdown code \
+            fences (```). Any short framing for the chat goes OUTSIDE the tags.
+            - Example: if asked for a document that just says Hello World, reply with at most a \
+            brief lead-in, then exactly:
+            <document>
+            Hello World
+            </document>
+            - For a table, spreadsheet, or Excel request, put a Markdown pipe table (a header row \
+            like | Goal | Status | Date |, a separator row | --- | --- | --- |, then one row per \
+            record) INSIDE the <document> … </document> tags.
+            """;
+
+    /** Built-in starter document types every org has (key → display label). */
+    private static final java.util.Map<String, String> BUILTIN_TEMPLATES = new java.util.LinkedHashMap<>() {{
+        put("behavior_intervention_plan",     "Behavior Intervention Plan (BIP)");
+        put("functional_behavior_assessment", "Functional Behavior Assessment (FBA)");
+        put("session_note",                   "Session Note");
+        put("progress_report",                "Progress Report");
+        put("treatment_plan",                 "Treatment Plan");
+        put("discharge_summary",              "Discharge Summary");
+        put("parent_training_note",           "Parent Training Note");
+        put("supervision_log",                "Supervision Log");
+    }};
+
+    /**
+     * Lists the document templates available to this org (built-in starters minus any the
+     * agency hid, plus their custom templates) so the chat can answer "what templates are
+     * available?" — non-sensitive platform metadata, never PHI.
+     */
+    private String buildTemplatesContext(String orgId) {
+        java.util.Set<String> hidden = new java.util.HashSet<>();
+        java.util.List<String> custom = new java.util.ArrayList<>();
+        try {
+            for (Map<String, Object> r : policyService.getResources(orgId, "LIBRARY", null, null)) {
+                if (!"GENERATION_TEMPLATE".equals(r.get("resourceType"))) continue;
+                String dt = (String) r.get("documentType");
+                if (dt == null) continue;
+                if (Boolean.TRUE.equals(r.get("archived"))) { hidden.add(dt); continue; }
+                if (!BUILTIN_TEMPLATES.containsKey(dt)) custom.add(String.valueOf(r.getOrDefault("title", dt)));
+            }
+        } catch (Exception e) {
+            log.warn("Could not load templates for org {}: {}", orgId, e.getMessage());
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(
+            "\nAVAILABLE DOCUMENT TEMPLATES (non-sensitive platform information — this is NOT patient data, "
+            + "and you should freely tell the user about these when asked what templates are available):\n");
+        for (var e : BUILTIN_TEMPLATES.entrySet()) {
+            if (!hidden.contains(e.getKey())) sb.append("- ").append(e.getValue()).append("\n");
+        }
+        for (String c : custom) sb.append("- ").append(c).append(" (custom agency template)\n");
+        sb.append("Any of these can be generated as a Word document. Listing them is always permitted.\n");
+        return sb.toString();
+    }
+
+    /**
+     * Build a soft, non-alarming message for a BLOCK decision. Frames it as a precautionary
+     * compliance hold (often a configuration or minimum-necessary nuance, not a real
+     * violation) and, where safe, names the high-level reason in plain language.
+     */
+    private String softBlockMessage(AclxResponse aclxResult, boolean quarantine) {
+        if (quarantine) {
+            return "I couldn't share that response as a safety precaution. Please try rephrasing your "
+                 + "request, or reach out to your compliance lead if this seems off.";
+        }
+        String reason = (aclxResult != null && aclxResult.getDecision() != null)
+                ? aclxResult.getDecision().getReason() : null;
+        String detail = describeBlockReason(reason);
+        StringBuilder sb = new StringBuilder(
+            "I held this response back as a precaution under your organization's compliance safeguards");
+        if (detail != null) sb.append(" — ").append(detail);
+        sb.append(". This is often a configuration or data nuance rather than an actual HIPAA violation. ")
+          .append("You can try rephrasing your request, or ask an administrator to review the compliance ")
+          .append("settings if it keeps happening.");
+        return sb.toString();
+    }
+
+    /** Map an ACLX deny reason to a plain-language, non-accusatory phrase (or null if unknown). */
+    private String describeBlockReason(String reason) {
+        if (reason == null) return null;
+        String r = reason.toLowerCase();
+        if (r.contains("minimum_necessary") || r.contains("minimum necessary"))
+            return "the content was judged to be more than the minimum necessary for this request";
+        if (r.contains("treatment_only") || r.contains("treatment relationship") || r.contains("role does not qualify"))
+            return "this type of content is limited to a direct treating role";
+        if (r.contains("cross") && (r.contains("subject") || r.contains("client")))
+            return "it looked like it might reference more than one client";
+        if (r.contains("ground") || r.contains("hallucin") || r.contains("unsupported"))
+            return "some of it couldn't be verified against your reference documents";
+        if (r.contains("psychotherapy") || r.contains("sud") || r.contains("part 2")
+                || r.contains("hiv") || r.contains("super_phi"))
+            return "it touched on a specially protected category of health information";
+        if (r.contains("unauthenticated") || r.contains("access level") || r.contains("authoriz"))
+            return "the current access context didn't cover this content";
+        return null;
+    }
+
+    /**
      * System prompt for general (non-clinical) chat sessions.
      * PHI access is prohibited at the model layer. ACLX provides a second defence.
      */
-    private String buildGeneralChatSystemPrompt() {
+    private String buildGeneralChatSystemPrompt(String orgId) {
         return """
                 You are a general business and administrative assistant embedded in myABA.ai, \
                 an Applied Behavior Analysis (ABA) therapy practice management platform.
@@ -707,24 +834,16 @@ public class GenerateController {
 
                 Keep responses professional, concise, and relevant to an ABA practice. \
                 Do not use emoji characters.\
-                """;
+                """ + buildTemplatesContext(orgId) + DOCUMENT_GENERATION_GUIDANCE;
     }
 
     /**
-     * Returns true if an ORG_ADMIN has been granted clinical access via org settings.
-     * All other roles are unaffected — only ORG_ADMIN needs this check.
+     * Legacy hook for granting clinical chat to an admin role that lacks inherent PHI access.
+     * Under the current 5-role model the admin roles (Practice Administrator, Clinical Director)
+     * already carry PHI access via {@code canInitiateChat()}, and the only non-PHI role
+     * (General Staff) is intentionally HIPAA-gated. So this grant no longer applies to any role.
      */
     private boolean orgAdminHasClinicalAccess(AppUser user) {
-        if (!UserRole.ORG_ADMIN.equals(user.getRole())) return false;
-        try {
-            Map<String, Object> org = orgService.getOrg(user.getOrgId());
-            Object settings = org.get("settings");
-            if (settings instanceof Map<?, ?> m) {
-                return Boolean.TRUE.equals(m.get("adminClinicalAccess"));
-            }
-        } catch (Exception e) {
-            log.warn("Could not check adminClinicalAccess for org {}: {}", user.getOrgId(), e.getMessage());
-        }
         return false;
     }
 
@@ -756,6 +875,8 @@ public class GenerateController {
                 Do not use emoji characters in any response. This is a professional clinical platform \
                 and emoji are inappropriate in clinical documentation and communication.
                 """);
+        sb.append(buildTemplatesContext(user.getOrgId()));
+        sb.append(DOCUMENT_GENERATION_GUIDANCE);
 
         // ── Layer 1: client context ───────────────────────────────────────────────
         if (req.getClientId() != null && !req.getClientId().isBlank() && !clientsById.isEmpty()) {
@@ -766,6 +887,11 @@ public class GenerateController {
             }
             if (primaryClient != null) {
                 sb.append("\n").append(buildClientContextBlock(primaryClient));
+            }
+            // Content rule (soft layer): instruct the model to use preferred/display names.
+            if (orgService.isPreferClientDisplayName(user.getOrgId())) {
+                sb.append("\nNAME RULE: Always refer to the client by their preferred/display name. ")
+                  .append("Do NOT use the client's legal name in your output, even if it is shown above.\n");
             }
         }
 

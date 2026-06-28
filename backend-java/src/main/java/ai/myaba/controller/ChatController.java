@@ -96,14 +96,16 @@ public class ChatController {
      * Body: { title }
      */
     @PatchMapping("/{chatId}")
-    public ResponseEntity<Void> updateChatTitle(
+    public ResponseEntity<Void> updateChat(
             @AuthenticationPrincipal AppUser user,
             @PathVariable String chatId,
             @RequestBody Map<String, String> body) throws Exception {
+        boolean changed = false;
         String title = body.get("title");
-        if (title == null || title.isBlank())
-            return ResponseEntity.badRequest().build();
-        chatService.updateChatTitle(user, chatId, title);
+        if (title != null && !title.isBlank()) { chatService.updateChatTitle(user, chatId, title); changed = true; }
+        // clientId present (even empty string) means attach/detach a client.
+        if (body.containsKey("clientId")) { chatService.setChatClient(user, chatId, body.get("clientId")); changed = true; }
+        if (!changed) return ResponseEntity.badRequest().build();
         return ResponseEntity.noContent().build();
     }
 

@@ -266,6 +266,16 @@ public class PolicyService {
         if (req.getDocumentType() != null) data.put("documentType", req.getDocumentType());
         data.put("customized",    req.getCustomized() != null ? req.getCustomized() : false);
         if (req.getClientId() != null) data.put("clientId", req.getClientId());
+        // Resource-manager metadata (additive)
+        data.put("description",   req.getDescription()   != null ? req.getDescription()   : "");
+        data.put("topicCategory", req.getTopicCategory() != null ? req.getTopicCategory() : "");
+        data.put("fileType",      req.getFileType()      != null ? req.getFileType()      : "TEXT");
+        data.put("source",        req.getSource()        != null ? req.getSource()        : "MANUAL");
+        if (req.getUrl()    != null) data.put("url", req.getUrl());
+        if (req.getFolder() != null) data.put("folder", req.getFolder());
+        data.put("shared",        req.getShared()   != null ? req.getShared()   : true);
+        data.put("archived",      req.getArchived() != null ? req.getArchived() : false);
+        data.put("linkedIds",     req.getLinkedIds() != null ? req.getLinkedIds() : List.of());
         data.put("orgId",       user.getOrgId());
         data.put("createdBy",   user.getUid());
         data.put("createdAt",   now);
@@ -299,6 +309,18 @@ public class PolicyService {
         if (req.getPurposes() != null)     updates.put("purposes", req.getPurposes());
         if (req.getResourceType() != null) updates.put("resourceType", req.getResourceType());
         if (req.getClientId() != null)     updates.put("clientId", req.getClientId());
+        if (req.getBucket() != null)        updates.put("bucket", req.getBucket());
+        if (req.getDocumentType() != null)  updates.put("documentType", req.getDocumentType());
+        if (req.getCustomized() != null)    updates.put("customized", req.getCustomized());
+        if (req.getDescription() != null)   updates.put("description", req.getDescription());
+        if (req.getTopicCategory() != null) updates.put("topicCategory", req.getTopicCategory());
+        if (req.getFileType() != null)      updates.put("fileType", req.getFileType());
+        if (req.getSource() != null)        updates.put("source", req.getSource());
+        if (req.getUrl() != null)           updates.put("url", req.getUrl());
+        if (req.getFolder() != null)        updates.put("folder", req.getFolder());
+        if (req.getShared() != null)        updates.put("shared", req.getShared());
+        if (req.getArchived() != null)      updates.put("archived", req.getArchived());
+        if (req.getLinkedIds() != null)     updates.put("linkedIds", req.getLinkedIds());
         updates.put("updatedAt", Instant.now().toString());
 
         if (devMode) {

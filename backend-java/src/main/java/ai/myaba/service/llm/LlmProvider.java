@@ -28,6 +28,15 @@ public interface LlmProvider {
      */
     String complete(String system, List<Map<String, String>> messages);
 
+    /**
+     * Tier-aware completion. {@code reasoning=true} requests the higher-reasoning model
+     * (for long, interdependent clinical documents); {@code false} uses the fast/cheap model.
+     * Providers that don't tier simply ignore the flag.
+     */
+    default String complete(String system, List<Map<String, String>> messages, boolean reasoning) {
+        return complete(system, messages);
+    }
+
     /** Identifier used in logs, e.g. {@code "claude"} or {@code "gemini"}. */
     String name();
 }

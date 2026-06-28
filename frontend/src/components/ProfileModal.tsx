@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTimes, faSignOutAlt, faUserCircle, faBuilding, faIdBadge } from '@fortawesome/free-solid-svg-icons';
+import { faTimes, faSignOutAlt, faUserCircle, faBuilding, faIdBadge, faUserGear } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import AccountSettingsModal from './AccountSettingsModal';
 
 const ROLE_LABELS: Record<string, string> = {
   CLINICAL_DIRECTOR: 'Clinical Director',
@@ -21,6 +23,7 @@ interface Props {
 
 export default function ProfileModal({ onClose }: Props) {
   const { currentUser, logout } = useAuth();
+  const [showAccount, setShowAccount] = useState(false);
   if (!currentUser) return null;
 
   const initials = currentUser.displayName
@@ -37,10 +40,10 @@ export default function ProfileModal({ onClose }: Props) {
       {/* Backdrop */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
-      {/* Panel — anchored to bottom-left, above sidebar */}
+      {/* Panel — anchored to top-right, below the profile menu */}
       <div
         className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-gray-200 w-72 p-5"
-        style={{ bottom: 72, left: 128 }}
+        style={{ top: 60, right: 20 }}
       >
         {/* Close */}
         <button
@@ -78,6 +81,15 @@ export default function ProfileModal({ onClose }: Props) {
         {/* Divider */}
         <div className="border-t border-gray-100 mb-4" />
 
+        {/* Account & Security */}
+        <button
+          onClick={() => setShowAccount(true)}
+          className="w-full flex items-center justify-center gap-2 py-2.5 mb-2 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+        >
+          <FontAwesomeIcon icon={faUserGear} />
+          Account &amp; Security
+        </button>
+
         {/* Sign out */}
         <button
           onClick={handleSignOut}
@@ -87,6 +99,7 @@ export default function ProfileModal({ onClose }: Props) {
           Sign Out
         </button>
       </div>
+      {showAccount && <AccountSettingsModal onClose={() => setShowAccount(false)} />}
     </>
   );
 }

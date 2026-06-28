@@ -96,7 +96,8 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     .uid(decoded.getUid())
                     .email(decoded.getEmail())
                     .displayName(decoded.getName())
-                    .role(str(claims, "role", UserRole.TREATING_BCBA))
+                    // Least-privilege fallback when a token has no role claim.
+                    .role(str(claims, "role", UserRole.GENERAL_STAFF))
                     .purpose(str(claims, "purpose", "treatment"))
                     .orgId(str(claims, "orgId", ""))
                     .supervisorId(str(claims, "supervisorId", null))

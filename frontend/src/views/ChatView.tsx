@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
@@ -112,12 +112,38 @@ function MarkdownContent({ text }: { text: string }) {
 
 /** Derive a short chat title from the first user message. */
 function deriveTitleFromMessage(text: string): string {
-  const clean = text.trim().replace(/\s+/g, ' ');
+  const clean = extractDocumentBody(text).trim().replace(/\s+/g, ' ');
   if (clean.length <= 48) return clean.charAt(0).toUpperCase() + clean.slice(1);
   const cut = clean.slice(0, 48);
   const lastSpace = cut.lastIndexOf(' ');
   const trimmed = lastSpace > 20 ? cut.slice(0, lastSpace) : cut;
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1) + '…';
+}
+
+const DOC_TAG_RE  = /<document>\s*([\s\S]*?)\s*<\/document>/i;
+const CODE_FENCE_RE = /```[a-z]*\n?([\s\S]*?)```/i;
+
+/**
+ * Returns ONLY the document body the AI produced — preferring an explicit
+ * <document>…</document> fence, then a single ``` code fence (some models use that),
+ * else the whole text.
+ */
+function extractDocumentBody(text: string): string {
+  const tag = text.match(DOC_TAG_RE);
+  if (tag) return tag[1];
+  const fence = text.match(CODE_FENCE_RE);
+  if (fence) return fence[1].trim();
+  return text;
+}
+
+/** True when the message contains a fenced document body (so export = just that). */
+function hasDocumentBody(text: string): boolean {
+  return DOC_TAG_RE.test(text) || CODE_FENCE_RE.test(text);
+}
+
+/** Removes the <document> fence tags for display so the chat reads cleanly. */
+function stripDocumentTags(text: string): string {
+  return text.replace(/<\/?document>/gi, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Derive initials from a name string. */
@@ -167,6 +193,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const [templateSourceContent, setTemplateSourceContent] = useState<string | null>(null);
   const [editingTitle, setEditingTitle]                   = useState(false);
   const [titleDraft, setTitleDraft]                       = useState('');
+  const [showClientPicker, setShowClientPicker]           = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -175,6 +202,15 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
     ? sidebarClients.find((c) => c.id === activeChat.clientId)
     : null;
   const messages = activeChatId ? (messagesByChat[activeChatId] ?? []) : [];
+
+  /** Attach (clientId) or detach ('') a client on the active chat. */
+  const attachClient = async (clientId: string) => {
+    if (!activeChatId) return;
+    setShowClientPicker(false);
+    setChats((prev) => prev.map((c) => (c.id === activeChatId ? { ...c, clientId } : c)));
+    try { await api.setChatClient(activeChatId, clientId); }
+    catch { setChats((prev) => prev.map((c) => (c.id === activeChatId ? { ...c, clientId: activeChat?.clientId ?? '' } : c))); }
+  };
 
   // ── Auto-create chat when arriving from ClientsView ──────────────────────
   // When initialClientId is set, skip the modal and create the chat immediately.
@@ -622,19 +658,57 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
           {/* Chat header */}
           <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
-            {activeClient && (
-              <span
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border"
-                style={{ background: '#e8f4f8', borderColor: '#5fb3d0', color: '#1e4d5c' }}
-              >
-                <span
-                  className="w-5 h-5 rounded-full text-white text-xs flex items-center justify-center font-bold"
-                  style={{ background: '#2a5f6f' }}
+            {/* Client attach / picker */}
+            {!isGeneralChatOnly && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowClientPicker((s) => !s)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border"
+                  style={activeClient
+                    ? { background: '#e8f4f8', borderColor: '#5fb3d0', color: '#1e4d5c' }
+                    : { background: '#fff', borderColor: '#C7D2DC', color: '#6B7B88', borderStyle: 'dashed' }}
+                  title="Attach a client to this chat"
                 >
-                  {activeClient.initials}
-                </span>
-                {activeClient.preferredName}
-              </span>
+                  {activeClient ? (
+                    <>
+                      <span className="w-5 h-5 rounded-full text-white text-xs flex items-center justify-center font-bold" style={{ background: '#2a5f6f' }}>
+                        {activeClient.initials}
+                      </span>
+                      {activeClient.preferredName}
+                    </>
+                  ) : (
+                    <><FontAwesomeIcon icon={faUsers} className="text-xs" /> Attach client</>
+                  )}
+                  <FontAwesomeIcon icon={faChevronDown} style={{ fontSize: 9, marginLeft: 1 }} />
+                </button>
+                {showClientPicker && (
+                  <div
+                    className="absolute left-0 top-9 z-30 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-1 max-h-72 overflow-y-auto"
+                    onMouseLeave={() => setShowClientPicker(false)}
+                  >
+                    <p className="px-3 py-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Attach a client</p>
+                    {activeClient && (
+                      <button onClick={() => attachClient('')} className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-gray-50">
+                        Detach current client
+                      </button>
+                    )}
+                    {sidebarClients.length === 0 ? (
+                      <p className="px-3 py-3 text-xs text-gray-400">No clients yet — create one under Clients.</p>
+                    ) : sidebarClients.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => attachClient(c.id)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50"
+                        style={{ background: activeChat.clientId === c.id ? '#F5F9FF' : undefined }}
+                      >
+                        <span className="w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold shrink-0" style={{ background: '#2a5f6f' }}>{c.initials}</span>
+                        <span className="truncate">{c.preferredName}</span>
+                        {activeChat.clientId === c.id && <FontAwesomeIcon icon={faCheck} className="ml-auto text-teal-600 text-xs" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {activeChat.projectLabel && (
               <span className="px-3 py-1 bg-purple-50 border border-purple-200 rounded-full text-sm text-purple-700 font-medium">
@@ -728,24 +802,40 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                         style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
                       >
                         {msg.role === 'assistant'
-                          ? <MarkdownContent text={msg.content} />
+                          ? <MarkdownContent text={stripDocumentTags(msg.content)} />
                           : <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
                         }
                         {msg.aclxDecision && msg.aclxDecision !== 'ALLOW' && (
                           <AclxBadge decision={msg.aclxDecision} />
                         )}
                       </div>
-                      {/* Save as Template — only on genuine allowed AI responses */}
+                      {/* Document actions — only on genuine allowed AI responses */}
                       {msg.role === 'assistant' &&
                         msg.aclxDecision === 'ALLOW' && (
-                        <button
-                          onClick={() => setTemplateSourceContent(msg.content)}
-                          className="mt-1 flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors px-1"
-                          title="Save de-identified version as a reusable template"
-                        >
-                          <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
-                          Save as Template
-                        </button>
+                        <div className="mt-1 flex items-center gap-3 px-1">
+                          <button
+                            onClick={() => api.exportDocx(deriveTitleFromMessage(msg.content), extractDocumentBody(msg.content)).catch(() => {})}
+                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                            title={hasDocumentBody(msg.content) ? 'Download the generated document as Word' : 'Download this response as a Word document'}
+                          >
+                            <FontAwesomeIcon icon={faFileWord} style={{ fontSize: 11 }} /> Word
+                          </button>
+                          <button
+                            onClick={() => api.exportXlsx(deriveTitleFromMessage(msg.content), extractDocumentBody(msg.content)).catch(() => {})}
+                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-green-700 transition-colors"
+                            title="Download as an Excel spreadsheet (tables become a grid)"
+                          >
+                            <FontAwesomeIcon icon={faFileExcel} style={{ fontSize: 11 }} /> Excel
+                          </button>
+                          <button
+                            onClick={() => setTemplateSourceContent(extractDocumentBody(msg.content))}
+                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors"
+                            title="Save de-identified version as a reusable template"
+                          >
+                            <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
+                            Save as Template
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -869,9 +959,9 @@ const INPUT_GUARD_CODES = new Set([
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const ACLX_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  REDACT:   { bg: '#e0f2fe', text: '#0369a1', label: 'REDACTED by ACLX' },
-  BLOCK:    { bg: '#fee2e2', text: '#dc2626', label: 'BLOCKED by ACLX' },
-  ESCALATE: { bg: '#fef3c7', text: '#d97706', label: 'ESCALATED — Pending Review' },
+  REDACT:   { bg: '#e0f2fe', text: '#0369a1', label: 'Some details redacted' },
+  BLOCK:    { bg: '#FBF3E6', text: '#9A6A1C', label: 'Held by compliance safeguards' },
+  ESCALATE: { bg: '#fef3c7', text: '#d97706', label: 'Flagged for review' },
 };
 
 function AclxBadge({ decision }: { decision: string }) {

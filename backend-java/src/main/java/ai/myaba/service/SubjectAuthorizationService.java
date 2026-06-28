@@ -342,7 +342,7 @@ public class SubjectAuthorizationService {
 
     private void requireAdmin(AppUser user) {
         if (!UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("Authorization management requires ORG_ADMIN role");
+            throw new SecurityException("Authorization management requires an administrator role");
         }
     }
 

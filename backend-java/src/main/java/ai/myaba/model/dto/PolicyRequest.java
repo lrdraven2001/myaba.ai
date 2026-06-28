@@ -75,4 +75,33 @@ public class PolicyRequest {
      * Leave {@code null} for org-wide resources that are not client-specific.
      */
     private String clientId;
+
+    // ── Resource-manager metadata (Library / Templates redesign) ────────────
+
+    /** Short human description / subtitle shown in the table and details panel. */
+    private String description;
+
+    /** Topical category pill, e.g. Billing | Clinical | Supervision | Parent Training | Intake | Reports | Discharge | Training | Other. */
+    private String topicCategory;
+
+    /** File format: PDF | DOCX | PPTX | XLSX | LINK | TEXT. */
+    private String fileType;
+
+    /** Where the resource originates: DRIVE | ONEDRIVE | WEB | UPLOAD | MANUAL. */
+    private String source;
+
+    /** External URL for LINK / DRIVE / ONEDRIVE / WEB sources. */
+    private String url;
+
+    /** Folder path for organization, e.g. "/Resources/Billing/2025/". */
+    private String folder;
+
+    /** When true, shared with the whole org; when false, private to the creator. */
+    private Boolean shared;
+
+    /** When true, the resource is archived (hidden from active lists, kept for restore). */
+    private Boolean archived;
+
+    /** IDs of templates/clients this resource is linked to (drives the "Linked to" count). */
+    private List<String> linkedIds;
 }

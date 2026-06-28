@@ -214,6 +214,18 @@ public class OrgService {
         return true; // safe default
     }
 
+    /** Whether the org wants client preferred/display names enforced in generated output. */
+    public boolean isPreferClientDisplayName(String orgId) {
+        try {
+            Map<String, Object> org = getOrg(orgId);
+            Object settings = org.get("settings");
+            if (settings instanceof Map<?,?> m && m.get("preferClientDisplayName") instanceof Boolean b) return b;
+        } catch (Exception e) {
+            log.warn("isPreferClientDisplayName: failed to read org {}: {}", orgId, e.getMessage());
+        }
+        return false; // default off — opt-in
+    }
+
     // ── Create org ────────────────────────────────────────────────────────────
 
     /**
@@ -379,6 +391,57 @@ public class OrgService {
                 : Map.of("accepted", false);
     }
 
+    // ── Service Contract (master service agreement) ──────────────────────────
+
+    /** Acceptance record for the agency's Service Contract, or {@code {accepted:false}}. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getServiceContractStatus(String orgId) throws Exception {
+        if (devMode) {
+            Map<String, Object> org = devOrgs.get(orgId);
+            if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
+            Object sc = org.get("serviceContractAcceptance");
+            return sc instanceof Map<?,?> m ? new HashMap<>((Map<String, Object>) m) : Map.of("accepted", false);
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var snap = db.collection("organizations").document(orgId).get().get();
+        if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
+        Object sc = snap.getData().get("serviceContractAcceptance");
+        return sc instanceof Map<?,?> m
+                ? new HashMap<>((Map<String, Object>) m)
+                : Map.of("accepted", false);
+    }
+
+    /** Record Service Contract acceptance for the org. */
+    public Map<String, Object> acceptServiceContract(String orgId, String uid,
+                                                     String signerName, String signerTitle) throws Exception {
+        String now = Instant.now().toString();
+        Map<String, Object> record = new HashMap<>();
+        record.put("accepted",    true);
+        record.put("acceptedAt",  now);
+        record.put("acceptedBy",  uid);
+        record.put("signerName",  signerName);
+        record.put("signerTitle", signerTitle);
+        record.put("version",     "1.0");
+
+        if (devMode) {
+            Map<String, Object> org = devOrgs.get(orgId);
+            if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
+            org.put("serviceContractAcceptance", record);
+            org.put("serviceContractAccepted",   true);
+            org.put("updatedAt",                 now);
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            db.collection("organizations").document(orgId)
+              .update(Map.of(
+                  "serviceContractAcceptance", record,
+                  "serviceContractAccepted",   true,
+                  "updatedAt",                 now
+              )).get();
+        }
+        log.info("Service Contract v1.0 accepted for org {} by {} (uid={})", orgId, signerName, uid);
+        return record;
+    }
+
     /**
      * Record BAA acceptance for the org.
      * Writes {@code baaAcceptance} into the org document and returns the
@@ -414,10 +477,6 @@ public class OrgService {
                   "baaAccepted",   true,
                   "updatedAt",     now
               )).get();
-
-            // If the signer is currently ORG_ADMIN (IT-setup flow), promote them to
-            // CLINICAL_DIRECTOR now that they are taking clinical responsibility by signing.
-            promoteToClinicaDirectorIfNeeded(uid, orgId);
         }
         log.info("BAA v1.1 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return baaRecord;
@@ -494,7 +553,16 @@ public class OrgService {
 
     /** Render the executed BAA as a PDF (via the XHTML document above). */
     public byte[] renderBaaPdf(String orgId) throws Exception {
-        String html = renderBaaDocument(orgId);
+        return htmlToPdf(renderBaaDocument(orgId));
+    }
+
+    /** Render the executed Service Contract as a PDF. */
+    public byte[] renderServiceContractPdf(String orgId) throws Exception {
+        return htmlToPdf(renderServiceContractDocument(orgId));
+    }
+
+    /** Shared XHTML → PDF renderer. */
+    private byte[] htmlToPdf(String html) throws Exception {
         try (java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream()) {
             com.openhtmltopdf.pdfboxout.PdfRendererBuilder builder =
                     new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
@@ -506,35 +574,82 @@ public class OrgService {
         }
     }
 
+    /**
+     * Render the executed Service Contract as a self-contained, print-ready XHTML document.
+     * Throws IllegalStateException if it has not been signed yet.
+     */
+    @SuppressWarnings("unchecked")
+    public String renderServiceContractDocument(String orgId) throws Exception {
+        Map<String, Object> org = getOrg(orgId);
+        Object acceptanceObj = org.get("serviceContractAcceptance");
+        if (!(acceptanceObj instanceof Map) || !Boolean.TRUE.equals(org.get("serviceContractAccepted"))) {
+            throw new IllegalStateException("The Service Contract has not been signed for this organization.");
+        }
+        Map<String, Object> a = (Map<String, Object>) acceptanceObj;
+        String orgName     = esc(String.valueOf(org.getOrDefault("name", orgId)));
+        String signerName  = esc(String.valueOf(a.getOrDefault("signerName", "—")));
+        String signerTitle = esc(String.valueOf(a.getOrDefault("signerTitle", "—")));
+        String version     = esc(String.valueOf(a.getOrDefault("version", "1.0")));
+        String acceptedAt  = String.valueOf(a.getOrDefault("acceptedAt", ""));
+        String acceptedDate = acceptedAt;
+        try {
+            acceptedDate = DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a 'UTC'")
+                    .withZone(ZoneOffset.UTC).format(Instant.parse(acceptedAt));
+        } catch (Exception ignored) {}
+
+        return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\" />"
+            + "<title>Service Contract — " + orgName + "</title>"
+            + "<style>"
+            + "body{font-family:Georgia,'Times New Roman',serif;max-width:760px;margin:40px auto;padding:0 32px;color:#1a2b3c;line-height:1.6}"
+            + "h1{font-size:22px;border-bottom:2px solid #2a5f6f;padding-bottom:8px}"
+            + "h2{font-size:15px;margin-top:28px;color:#2a5f6f}"
+            + ".meta{background:#f6f9fb;border:1px solid #dce7ee;border-radius:8px;padding:16px 20px;margin:24px 0;font-family:Arial,sans-serif;font-size:13px}"
+            + ".meta b{display:inline-block;width:160px;color:#52616b}"
+            + ".sig{margin-top:40px;border-top:1px solid #ccc;padding-top:20px;font-family:Arial,sans-serif}"
+            + "@media print{body{margin:0}}"
+            + "</style></head><body>"
+            + "<h1>Service Contract</h1>"
+            + "<div class=\"meta\">"
+            + "<div><b>Client / Agency</b> " + orgName + "</div>"
+            + "<div><b>Service Provider</b> MyABA.ai</div>"
+            + "<div><b>Agreement Version</b> v" + version + "</div>"
+            + "<div><b>Executed By</b> " + signerName + " (" + signerTitle + ")</div>"
+            + "<div><b>Date Executed</b> " + esc(acceptedDate) + "</div>"
+            + "</div>"
+            + "<p>This Service Contract (\"Agreement\") governs the provision of the MyABA.ai software platform "
+            + "and related services (\"Services\") by MyABA.ai (\"Provider\") to the agency identified above (\"Client\").</p>"
+            + "<h2>1. Services</h2><p>Provider will make the MyABA.ai platform available to Client for the creation, "
+            + "management, and AI-assisted drafting of ABA clinical documentation, subject to the applicable plan and "
+            + "usage limits.</p>"
+            + "<h2>2. Term &amp; Renewal</h2><p>This Agreement begins on the date executed above and continues on a "
+            + "subscription basis until terminated. Subscription terms renew automatically unless cancelled in "
+            + "accordance with Section 6.</p>"
+            + "<h2>3. Fees</h2><p>Client agrees to pay the subscription fees for its selected plan. Fees are billed in "
+            + "advance and are non-refundable except as required by law.</p>"
+            + "<h2>4. Client Responsibilities</h2><p>Client is responsible for the accuracy of information it enters, "
+            + "for maintaining appropriate professional oversight of all generated documentation, and for ensuring its "
+            + "users comply with this Agreement.</p>"
+            + "<h2>5. Data Ownership &amp; Confidentiality</h2><p>Client retains ownership of its data. Provider will "
+            + "handle Protected Health Information in accordance with the separately executed Business Associate "
+            + "Agreement (BAA) and will maintain the confidentiality of Client's data.</p>"
+            + "<h2>6. Termination</h2><p>Either party may terminate this Agreement on written notice. Upon termination, "
+            + "Client may export its data for a reasonable period, after which Provider may delete it.</p>"
+            + "<h2>7. Limitation of Liability</h2><p>The Services are professional support tools and do not constitute "
+            + "clinical, legal, or billing advice. Client remains solely responsible for clinical decisions and the "
+            + "final content of all documentation.</p>"
+            + "<div class=\"sig\"><p><b>Electronically executed</b> by " + signerName + ", " + signerTitle
+            + ", on behalf of " + orgName + " on " + esc(acceptedDate) + ".</p>"
+            + "<p style=\"font-size:12px;color:#888\">This document is a record of the agreement accepted "
+            + "electronically within the MyABA.ai platform (Agreement version v" + version + ").</p></div>"
+            + "</body></html>";
+    }
+
     /** Minimal HTML escape for interpolated values. */
     private static String esc(String s) {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
-    /**
-     * If the given user currently holds ORG_ADMIN in this org, upgrade their Firebase
-     * custom claims and member record to CLINICAL_DIRECTOR.  Safe to call when the
-     * signer already has CLINICAL_DIRECTOR or higher — those cases are skipped.
-     */
-    private void promoteToClinicaDirectorIfNeeded(String uid, String orgId) {
-        try {
-            Firestore db = FirestoreClient.getFirestore();
-            var memberSnap = db.collection("organizations").document(orgId)
-                    .collection("members").document(uid).get().get();
-            if (!memberSnap.exists()) return;
-            String currentRole = (String) memberSnap.getData().getOrDefault("role", "");
-            if (!UserRole.ORG_ADMIN.equals(currentRole)) return; // already CLINICAL_DIRECTOR or higher
-            setUserClaims(uid, orgId, UserRole.CLINICAL_DIRECTOR, "oversight");
-            db.collection("organizations").document(orgId)
-              .collection("members").document(uid)
-              .update(Map.of("role", UserRole.CLINICAL_DIRECTOR,
-                             "updatedAt", Instant.now().toString())).get();
-            log.info("Promoted user {} from ORG_ADMIN to CLINICAL_DIRECTOR after BAA sign (org={})", uid, orgId);
-        } catch (Exception e) {
-            log.warn("Could not promote user {} to CLINICAL_DIRECTOR: {}", uid, e.getMessage());
-        }
-    }
 
     // ── Invite tokens ─────────────────────────────────────────────────────────
 
@@ -696,6 +811,39 @@ public class OrgService {
      * Team view can render them without a separate Auth lookup.
      * Called from {@link #createOrg}, {@link #claimInviteToken}.
      */
+    /**
+     * Update the current user's own profile: display name (Firebase Auth + member record)
+     * and, if the email has already changed in Firebase Auth, sync the member record copy.
+     * Display name is not a sensitive credential, so no re-authentication is required.
+     */
+    public void updateMyProfile(String uid, String orgId, String displayName, String email) throws Exception {
+        Map<String, Object> updates = new HashMap<>();
+        if (displayName != null && !displayName.isBlank()) updates.put("displayName", displayName.trim());
+        if (email != null && !email.isBlank())             updates.put("email", email.trim());
+        if (updates.isEmpty()) return;
+        updates.put("updatedAt", Instant.now().toString());
+
+        if (devMode) {
+            for (Map<String, Object> m : devOrgMembers.getOrDefault(orgId, java.util.List.of())) {
+                if (uid.equals(m.get("uid"))) m.putAll(updates);
+            }
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(orgId).collection("members").document(uid)
+          .set(updates, com.google.cloud.firestore.SetOptions.merge()).get();
+
+        // Keep Firebase Auth display name authoritative for the token's name claim.
+        if (displayName != null && !displayName.isBlank()) {
+            try {
+                FirebaseAuth.getInstance().updateUser(
+                        new com.google.firebase.auth.UserRecord.UpdateRequest(uid).setDisplayName(displayName.trim()));
+            } catch (Exception e) {
+                log.warn("Could not update Firebase display name for {}: {}", uid, e.getMessage());
+            }
+        }
+    }
+
     private void writeMemberRecord(Firestore db, String orgId,
                                    String uid, String role, String purpose) {
         try {
@@ -768,13 +916,10 @@ public class OrgService {
 
     private String defaultPurpose(String role) {
         return switch (role) {
-            case UserRole.TREATING_BCBA, UserRole.SUPERVISING_BCBA,
-                 UserRole.BCBA_STUDENT, UserRole.RBT,
-                 UserRole.CLINICAL_DIRECTOR               -> "treatment";
-            case UserRole.SCHEDULING_ADMIN                -> "scheduling";
-            case UserRole.BILLING_ADMIN                   -> "payment";
-            case UserRole.ORG_ADMIN, UserRole.ORG_SUPER_ADMIN -> "oversight";
-            default                                        -> "treatment";
+            case UserRole.SUPERVISING_BCBA, UserRole.RBT,
+                 UserRole.CLINICAL_DIRECTOR   -> "treatment";
+            case UserRole.ORG_SUPER_ADMIN     -> "oversight";
+            default                           -> "treatment";
         };
     }
 }

@@ -3,6 +3,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faShieldAlt, faLock, faFileContract } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProfileModal from './components/ProfileModal';
+import NotificationBell from './components/NotificationBell';
+import HelpMenu from './components/HelpMenu';
 import Sidebar from './components/Sidebar';
 import ChatView from './views/ChatView';
 import SearchView from './views/SearchView';
@@ -38,9 +40,9 @@ const ROLE_LABELS: Record<string, string> = {
   GENERAL_STAFF:     'General Staff',
 };
 
-// ── Global footer ──────────────────────────────────────────────────────────────
+// ── Top-right profile menu ───────────────────────────────────────────────────────
 
-function AppFooter() {
+function ProfileMenu() {
   const { currentUser } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
 
@@ -53,18 +55,6 @@ function AppFooter() {
 
   return (
     <>
-    <div
-      style={{
-        height: 44,
-        flexShrink: 0,
-        background: 'white',
-        borderTop: '1px solid #DCE7EE',
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: 18,
-        paddingRight: 24,
-      }}
-    >
       {/* Profile — clickable to open modal */}
       <button
         onClick={() => setShowProfile(true)}
@@ -82,6 +72,10 @@ function AppFooter() {
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         title="My Profile"
       >
+        <div style={{ lineHeight: 1.25, textAlign: 'right' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3347' }}>{displayName}</div>
+          <div style={{ fontSize: 11, color: '#6B7B88' }}>{roleLabel}</div>
+        </div>
         <div
           style={{
             width: 32,
@@ -100,33 +94,9 @@ function AppFooter() {
         >
           {initials}
         </div>
-        <div style={{ lineHeight: 1.25 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3347' }}>{displayName}</div>
-          <div style={{ fontSize: 11, color: '#6B7B88' }}>{roleLabel}</div>
-        </div>
-        <FontAwesomeIcon icon={faChevronDown} style={{ color: '#A8B4BF', fontSize: 10, marginLeft: 2 }} />
+        <FontAwesomeIcon icon={faChevronDown} style={{ color: '#A8B4BF', fontSize: 10 }} />
       </button>
-
-      {/* Divider */}
-      <div style={{ width: 1, height: 24, background: '#DCE7EE', margin: '0 16px' }} />
-
-      {/* HIPAA note */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#3F9B2F', fontSize: 13 }} />
-        <span style={{ fontSize: 12, color: '#6B7B88' }}>
-          All data is HIPAA compliant and role-permissioned.
-        </span>
-        <a
-          href="#"
-          style={{ fontSize: 12, color: '#1E88FF', textDecoration: 'none', fontWeight: 500 }}
-          onMouseEnter={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'underline')}
-          onMouseLeave={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'none')}
-        >
-          Learn more
-        </a>
-      </div>
-    </div>
-    {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
     </>
   );
 }
@@ -215,6 +185,36 @@ function AppShell() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar activeView={activeView} onViewChange={setActiveView} />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Top bar — HIPAA banner (left) · help, notifications, profile (right) */}
+          <div
+            style={{
+              height: 52, flexShrink: 0, background: 'white', borderBottom: '1px solid #DCE7EE',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 24, paddingRight: 20,
+            }}
+          >
+            {/* HIPAA note */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#3F9B2F', fontSize: 13 }} />
+              <span style={{ fontSize: 12, color: '#6B7B88' }}>
+                All data is HIPAA compliant and role-permissioned.
+              </span>
+              <a
+                href="#"
+                style={{ fontSize: 12, color: '#1E88FF', textDecoration: 'none', fontWeight: 500 }}
+                onMouseEnter={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'underline')}
+                onMouseLeave={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'none')}
+              >
+                Learn more
+              </a>
+            </div>
+            {/* Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <HelpMenu />
+              <NotificationBell />
+              <div style={{ width: 1, height: 24, background: '#DCE7EE', margin: '0 8px' }} />
+              <ProfileMenu />
+            </div>
+          </div>
           {/* Brand accent bar */}
           <div style={{ height: 3, flexShrink: 0, background: 'linear-gradient(90deg, #1E88FF 0%, #3F9B2F 55%, #7ED957 100%)' }} />
           {activeView === 'chat'      && (
@@ -229,11 +229,18 @@ function AppShell() {
           {activeView === 'documents' && <ResourcesView />}
           {activeView === 'clients'   && (
             baaAccepted
-              ? <ClientsView onStartChat={(clientId) => {
-                  setPendingChatId(null);
-                  setPendingClientId(clientId);
-                  setActiveView('chat');
-                }} />
+              ? <ClientsView
+                  onStartChat={(clientId) => {
+                    setPendingChatId(null);
+                    setPendingClientId(clientId);
+                    setActiveView('chat');
+                  }}
+                  onOpenChat={(chatId) => {
+                    setPendingClientId(null);
+                    setPendingChatId(chatId);
+                    setActiveView('chat');
+                  }}
+                />
               : <BaaRequiredWall onGoToSettings={() => setActiveView('settings')} />
           )}
           {activeView === 'projects'  && (
@@ -244,8 +251,6 @@ function AppShell() {
           {activeView === 'team'      && <TeamView />}
         </div>
       </div>
-      {/* Global footer */}
-      <AppFooter />
     </div>
   );
 }

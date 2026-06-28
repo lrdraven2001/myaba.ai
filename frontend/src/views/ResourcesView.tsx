@@ -1,1294 +1,928 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faPlus, faTrash, faSpinner, faTimes, faBook,
-  faExternalLinkAlt, faShieldAlt, faFolderOpen,
+  faPlus, faTimes, faSpinner, faSearch, faChevronDown, faEllipsisH,
+  faFilePdf, faFileWord, faFilePowerpoint, faFileExcel, faFileLines, faLink, faGlobe,
+  faEye, faPen, faBoxArchive, faRotateLeft, faTrash, faShareNodes, faCopy, faUpload,
+  faUsers, faUser, faStar, faFolderOpen, faFileWord as faWordUpload,
 } from '@fortawesome/free-solid-svg-icons';
-import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
+import { faGoogleDrive, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
-import type { PolicyDocument, PolicyCategory, DriveConnection } from '../types';
+import type { ResourceInput } from '../lib/api';
+import type { DriveConnection } from '../types';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { useAuth } from '../contexts/AuthContext';
-import { DOCUMENT_TYPES, documentTypeLabel, defaultTemplateFor } from '../lib/documentTypes';
+import { DOCUMENT_TYPES, documentTypeLabel, defaultTemplateFor, categoryFor } from '../lib/documentTypes';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/** Bucket each tab writes to. */
+const TAB_BUCKET: Record<Tab, string> = { templates: 'LIBRARY', library: 'LIBRARY', policies: 'POLICY', grounding: 'GROUNDING' };
+/** Marker placed on documentType for cloud folders linked from the Templates tab. */
+const TEMPLATE_LINK_MARKER = '__templates_link__';
 
-type ResourceTab = 'library' | 'policies' | 'grounding';
+// (Resources are agency-wide; tabs are simply Active / Archived — no per-user sharing split.)
 
-// The three Agency Library resource types.
-type ResourceType =
-  | 'STANDARD_TEMPLATE'
-  | 'GENERATION_TEMPLATE'
-  | 'KNOWLEDGE_REFERENCE';
+// ── Types ───────────────────────────────────────────────────────────────────────
+
+type Tab = 'templates' | 'policies' | 'grounding' | 'library';
 
 interface Resource {
   id: string;
   title: string;
-  resourceType: ResourceType;
-  /** Bucket: LIBRARY | GROUNDING | POLICY */
+  description?: string;
+  resourceType?: string;
   bucket?: string;
-  /** For GENERATION_TEMPLATE — the client document type this template customizes. */
   documentType?: string;
-  /** false for seeded defaults; true once the agency edits the template. */
   customized?: boolean;
+  topicCategory?: string;
+  fileType?: string;
+  source?: string;
+  url?: string;
+  folder?: string;
+  shared?: boolean;
+  archived?: boolean;
+  linkedIds?: string[];
   clientId?: string;
-  content: string;
-  isActive: boolean;
-  orgId: string;
-  createdAt: string;
-  updatedAt: string;
+  textContent?: string;
+  isActive?: boolean;
+  orgId?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────────
 
-const TABS: { key: ResourceTab; label: string }[] = [
-  { key: 'library',        label: 'Agency Library' },
-  { key: 'policies',       label: 'Policies'       },
-  { key: 'grounding',      label: 'Grounding'      },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'templates', label: 'Templates'      },
+  { key: 'policies',  label: 'Policies'       },
+  { key: 'library',   label: 'Agency Library' },
+  { key: 'grounding', label: 'Grounding'      },
 ];
 
-const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
+const FILE_TYPES: Record<string, { icon: typeof faFilePdf; color: string; label: string }> = {
+  PDF:  { icon: faFilePdf,         color: '#E03E2D', label: 'PDF'  },
+  DOCX: { icon: faFileWord,        color: '#2B7CD3', label: 'DOCX' },
+  PPTX: { icon: faFilePowerpoint,  color: '#D24726', label: 'PPTX' },
+  XLSX: { icon: faFileExcel,       color: '#1D7044', label: 'XLSX' },
+  LINK: { icon: faLink,            color: '#6B7B88', label: 'Link' },
+  TEXT: { icon: faFileLines,       color: '#6B7B88', label: 'Text' },
+};
+const FILE_TYPE_OPTIONS = ['PDF', 'DOCX', 'PPTX', 'XLSX', 'LINK', 'TEXT'];
+
+const TOPIC_CATEGORIES = ['Billing', 'Clinical', 'Supervision', 'Parent Training', 'Intake', 'Reports', 'Discharge', 'Training', 'Other'];
+const TOPIC_COLORS: Record<string, { bg: string; text: string }> = {
+  Billing:           { bg: '#E6F4EA', text: '#1E7E34' },
+  Clinical:          { bg: '#E6F0FF', text: '#1E5FBF' },
+  Supervision:       { bg: '#F3EAFE', text: '#7C3AED' },
+  'Parent Training': { bg: '#FEEFE3', text: '#C2410C' },
+  Intake:            { bg: '#FFF7E0', text: '#A16207' },
+  Reports:           { bg: '#FCE7F0', text: '#BE185D' },
+  Discharge:         { bg: '#FEE2E2', text: '#B91C1C' },
+  Training:          { bg: '#E0F2FE', text: '#0369A1' },
+  Other:             { bg: '#F0F4F8', text: '#5A7184' },
+};
+
+const SOURCES: Record<string, { icon: typeof faGlobe; brand?: boolean; color: string; label: string }> = {
+  DRIVE:    { icon: faGoogleDrive, brand: true, color: '#1A73E8', label: 'Google Drive' },
+  ONEDRIVE: { icon: faMicrosoft,   brand: true, color: '#0364B8', label: 'OneDrive'     },
+  WEB:      { icon: faGlobe,       color: '#5A7184', label: 'Web Link' },
+  UPLOAD:   { icon: faUpload,      color: '#5A7184', label: 'Upload'   },
+  MANUAL:   { icon: faFileLines,   color: '#5A7184', label: 'Manual'   },
+};
+
+const LIBRARY_TYPES: Record<string, string> = {
   STANDARD_TEMPLATE:   'Standard Template',
-  GENERATION_TEMPLATE: 'Generation Template',
   KNOWLEDGE_REFERENCE: 'Knowledge Reference',
 };
 
-const RESOURCE_TYPE_HELP: Record<ResourceType, string> = {
-  STANDARD_TEMPLATE:   'A reusable document template the team can start from.',
-  GENERATION_TEMPLATE: 'Customizes how the AI drafts a specific client document type (BIP, FBA, etc.).',
-  KNOWLEDGE_REFERENCE: 'Reference material the AI can draw on during any chat.',
-};
+function relDate(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-const ALL_RESOURCE_TYPES: ResourceType[] = [
-  'STANDARD_TEMPLATE', 'GENERATION_TEMPLATE', 'KNOWLEDGE_REFERENCE',
-];
+function slug(name: string): string {
+  return 'custom_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
 
-const RESOURCE_TYPE_COLORS: Record<ResourceType, { bg: string; text: string }> = {
-  STANDARD_TEMPLATE:   { bg: '#EEF4FF', text: '#1E88FF' },
-  GENERATION_TEMPLATE: { bg: '#F3EEFE', text: '#7C3AED' },
-  KNOWLEDGE_REFERENCE: { bg: '#F0FBF0', text: '#3F9B2F' },
-};
-
-const CATEGORY_LABELS: Record<PolicyCategory, string> = {
-  policy_manual: 'Policy Manual',
-  sop:           'SOP',
-  handbook:      'Handbook',
-  clinical_sop:  'Clinical SOP',
-  template:      'Template',
-};
-
-const CATEGORY_COLORS: Record<PolicyCategory, { bg: string; text: string }> = {
-  policy_manual: { bg: '#f3f4f6', text: '#374151' },
-  sop:           { bg: '#fdf4e7', text: '#92400e' },
-  handbook:      { bg: '#f0fdf4', text: '#166534' },
-  clinical_sop:  { bg: '#e8f4f8', text: '#1e4d5c' },
-  template:      { bg: '#EEF4FF', text: '#1E88FF' },
-};
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  border: '1px solid #DCE7EE',
-  borderRadius: 8,
-  padding: '8px 12px',
-  fontSize: 14,
-  color: '#1E3347',
-  outline: 'none',
-  background: '#fff',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 12,
-  fontWeight: 600,
-  color: '#5A7184',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  marginBottom: 4,
-};
-
-// ── Main view ─────────────────────────────────────────────────────────────────
+// ── Root ─────────────────────────────────────────────────────────────────────────
 
 export default function ResourcesView() {
   const { currentUser } = useAuth();
+  const orgId = currentUser?.orgId ?? '';
   const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
-  const [activeTab, setActiveTab]     = useState<ResourceTab>('library');
-  const [resources, setResources]     = useState<Resource[]>([]);
-  const [policies, setPolicies]       = useState<PolicyDocument[]>([]);
-  const [isLoading, setIsLoading]     = useState(true);
-  const [error, setError]             = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('templates');
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [members, setMembers]     = useState<Record<string, string>>({});
+  const [loading, setLoading]     = useState(true);
 
-  // Load data
+  const load = () => {
+    setLoading(true);
+    api.getResources()
+      .then((r) => setResources(((r as Resource[]) ?? [])))
+      .catch(() => setResources([]))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    setIsLoading(true);
-    setError('');
-    Promise.all([
-      api.getResources().catch(() => []),
-      api.getPolicies().catch(() => []),
-    ])
-      .then(([res, pols]) => {
-        setResources((res as Resource[]) ?? []);
-        setPolicies(pols ?? []);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load resources.'))
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  const handleResourceToggleActive = async (resource: Resource) => {
-    try {
-      await api.updatePolicy(resource.id, { isActive: !resource.isActive });
-      setResources((prev) =>
-        prev.map((r) => r.id === resource.id ? { ...r, isActive: !r.isActive } : r)
-      );
-    } catch { /* ignore */ }
-  };
-
-  const handleResourceDelete = async (resource: Resource) => {
-    if (!window.confirm(`Delete "${resource.title}"? This cannot be undone.`)) return;
-    try {
-      await api.deletePolicy(resource.id);
-      setResources((prev) => prev.filter((r) => r.id !== resource.id));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to delete resource.');
+    load();
+    if (orgId) {
+      api.getOrgMembers(orgId)
+        .then((ms) => setMembers(Object.fromEntries(ms.map((m) => [m.id, m.displayName]))))
+        .catch(() => {});
     }
-  };
-
-  const handleResourceCreated = (resource: Resource) => {
-    setResources((prev) => [resource, ...prev]);
-    setShowAddForm(false);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        background: '#F8FBFC',
-      }}
-    >
-      {/* Tab bar */}
-      <div
-        style={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #DCE7EE',
-          paddingLeft: 32,
-          paddingRight: 32,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0,
-        }}
-      >
-        {TABS.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => { setActiveTab(key); setShowAddForm(false); }}
-            style={{
-              padding: '12px 20px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: activeTab === key ? '#1E88FF' : '#5A7184',
-              borderBottom: `2px solid ${activeTab === key ? '#1E88FF' : 'transparent'}`,
-              background: 'transparent',
-              border: 'none',
-              borderBottomStyle: 'solid',
-              borderBottomWidth: 2,
-              borderBottomColor: activeTab === key ? '#1E88FF' : 'transparent',
-              cursor: 'pointer',
-              transition: 'color 0.15s',
-            }}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+      {/* Sub-navigation */}
+      <div className="bg-white border-b border-gray-200 px-8">
+        <div className="flex gap-7">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className="relative py-4 text-sm font-semibold transition-colors"
+              style={{ color: activeTab === t.key ? '#1E88FF' : '#6B7B88' }}
+            >
+              {t.label}
+              {activeTab === t.key && (
+                <span className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full" style={{ background: '#1E88FF' }} />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {activeTab === 'library' && (
-          <LibraryTab
-            resources={resources}
-            isLoading={isLoading}
-            error={error}
-            isAdmin={isAdmin}
-            showAddForm={showAddForm}
-            onToggleAddForm={() => setShowAddForm((v) => !v)}
-            onCancelAddForm={() => setShowAddForm(false)}
-            onResourceCreated={handleResourceCreated}
-            onToggleActive={handleResourceToggleActive}
-            onDelete={handleResourceDelete}
-          />
-        )}
-        {activeTab === 'grounding' && (
-          <GroundingTab resources={resources} isLoading={isLoading} onResourceCreated={handleResourceCreated} isAdmin={isAdmin} />
-        )}
-        {activeTab === 'policies' && (
-          <PoliciesTab
-            policies={policies}
-            isLoading={isLoading}
-            error={error}
-            isAdmin={isAdmin}
-            onPolicyCreated={(p) => setPolicies((prev) => [p, ...prev])}
-          />
-        )}
-      </div>
+      <ResourceManager
+        key={activeTab}
+        tab={activeTab}
+        allResources={resources}
+        members={members}
+        currentUid={currentUser?.uid ?? ''}
+        isAdmin={isAdmin}
+        loading={loading}
+        onChanged={load}
+      />
     </div>
   );
 }
 
-// ── Cloud-linked documents (org-wide) ──────────────────────────────────────────
+// ── Manager (per tab) ──────────────────────────────────────────────────────────
 
-function OrgDriveResourcesSection({ isAdmin }: { isAdmin: boolean }) {
-  const [connections, setConnections] = useState<DriveConnection[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [showPicker, setShowPicker] = useState(false);
-  const [showDrive, setShowDrive]   = useState<'google' | 'microsoft' | null>(null);
-  const [removing, setRemoving]     = useState<string | null>(null);
+const TAB_META: Record<Tab, { title: string; subtitle: string; addLabel: string }> = {
+  templates: { title: 'Templates', subtitle: 'Create, customize, and manage the document templates your team uses to generate client documents.', addLabel: 'New Template' },
+  policies:  { title: 'Policies',  subtitle: "Your agency's rules, SOPs, and handbooks — usable as context in any chat.", addLabel: 'Add Policy' },
+  grounding: { title: 'Grounding', subtitle: "Trusted sources the AI is checked against to prevent hallucinations.", addLabel: 'Add Source' },
+  library:   { title: 'Resources', subtitle: 'Store, organize, and manage reference materials your AI can draw from.', addLabel: 'Add Resource' },
+};
 
-  // Org-wide reference docs = drive connections NOT scoped to a specific client.
-  useEffect(() => {
-    setLoading(true);
-    api.getDriveConnections()
-      .then((all) => setConnections(all.filter((c) => !c.clientId)))
-      .catch(() => setConnections([]))
-      .finally(() => setLoading(false));
-  }, []);
+function ResourceManager({
+  tab, allResources, members, currentUid, isAdmin, loading, onChanged,
+}: {
+  tab: Tab;
+  allResources: Resource[];
+  members: Record<string, string>;
+  currentUid: string;
+  isAdmin: boolean;
+  loading: boolean;
+  onChanged: () => void;
+}) {
+  const meta = TAB_META[tab];
+  const builtinKeys = useMemo(() => new Set(DOCUMENT_TYPES.map((d) => d.value)), []);
 
-  const handleRemove = async (id: string) => {
-    setRemoving(id);
-    try {
-      await api.deleteDriveConnection(id);
-      setConnections((prev) => prev.filter((c) => c.id !== id));
-    } catch { /* row stays on failure */ }
-    finally { setRemoving(null); }
+  // Filter the global list down to this tab's bucket.
+  const tabResources = useMemo(() => allResources.filter((r) => {
+    if (tab === 'templates') return r.resourceType === 'GENERATION_TEMPLATE'
+      || (r.resourceType === 'LINKED_FOLDER' && r.documentType === TEMPLATE_LINK_MARKER);
+    if (tab === 'library')   return (r.bucket ?? 'LIBRARY') === 'LIBRARY'
+      && r.resourceType !== 'GENERATION_TEMPLATE' && r.documentType !== TEMPLATE_LINK_MARKER;
+    if (tab === 'policies')  return (r.bucket ?? 'POLICY') === 'POLICY';
+    return (r.bucket ?? '') === 'GROUNDING';
+  }), [allResources, tab]);
+
+  const [countTab, setCountTab] = useState<'active' | 'archived'>('active');
+  const [search, setSearch]     = useState('');
+  const [fType, setFType]       = useState('');
+  const [fCat, setFCat]         = useState('');
+  const [fSource, setFSource]   = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [starterSel, setStarterSel] = useState<string | null>(null);
+  const [form, setForm]         = useState<{ open: boolean; editing?: Resource; presetDoc?: string; custom?: boolean }>({ open: false });
+  const [driveProvider, setDriveProvider] = useState<'google' | 'microsoft' | null>(null);
+  const [addMenuOpen, setAddMenuOpen]     = useState(false);
+
+  // ── Templates: synthetic "Starter" rows from the 8 built-in document types ──
+  const starterRows = useMemo(() => DOCUMENT_TYPES.map((d) => {
+    const customResource   = tabResources.find((r) => r.documentType === d.value && r.customized && !r.archived);
+    const archivedResource = tabResources.find((r) => r.documentType === d.value && r.archived);
+    return { value: d.value, label: d.label, category: categoryFor(d.value), customized: !!customResource, archived: !!archivedResource, resource: customResource ?? archivedResource };
+  }), [tabResources]);
+
+  const tabBucket = TAB_BUCKET[tab];
+
+  const handleDriveLinked = async (conn: DriveConnection) => {
+    await api.createPolicy({
+      title: conn.driveItemName || 'Linked folder',
+      category: 'linked_folder',
+      description: `Linked ${conn.driveSource === 'google' ? 'Google Drive' : 'OneDrive'} folder`,
+      bucket: tabBucket,
+      resourceType: 'LINKED_FOLDER',
+      documentType: tab === 'templates' ? TEMPLATE_LINK_MARKER : undefined,
+      fileType: 'LINK',
+      source: conn.driveSource === 'google' ? 'DRIVE' : 'ONEDRIVE',
+      url: conn.driveItemUrl,
+      isActive: true,
+    }).catch(() => {});
+    setDriveProvider(null);
+    onChanged();
+  };
+
+  // Hide a starter template (so it disappears from the client Generate Document pulldown).
+  const archiveStarter = async (docValue: string) => {
+    const existing = tabResources.find((r) => r.documentType === docValue);
+    if (existing) await api.setResourceArchived(existing.id, true).catch(() => {});
+    else await api.createPolicy({
+      title: documentTypeLabel(docValue), category: 'generation_template',
+      bucket: 'LIBRARY', resourceType: 'GENERATION_TEMPLATE',
+      documentType: docValue, customized: false, archived: true, isActive: true,
+    }).catch(() => {});
+    setStarterSel(null); onChanged();
+  };
+  const restoreStarter = async (docValue: string) => {
+    const existing = tabResources.find((r) => r.documentType === docValue && r.archived);
+    if (existing) await api.setResourceArchived(existing.id, false).catch(() => {});
+    setStarterSel(null); onChanged();
+  };
+
+  // ── Resource rows for the table (custom templates for Templates; bucket resources otherwise) ──
+  const rows = useMemo(() => {
+    const base = tab === 'templates'
+      ? tabResources.filter((r) => !builtinKeys.has(r.documentType ?? ''))   // custom templates + linked folders
+      : tabResources;
+    const wantArchived = countTab === 'archived';
+    const q = search.trim().toLowerCase();
+    return base
+      .filter((r) => !!r.archived === wantArchived)
+      .filter((r) =>
+        (!q || r.title.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q)) &&
+        (!fType   || (r.fileType ?? 'TEXT') === fType) &&
+        (!fCat    || (r.topicCategory ?? '') === fCat) &&
+        (!fSource || (r.source ?? 'MANUAL') === fSource),
+      );
+  }, [tabResources, countTab, search, fType, fCat, fSource, tab, builtinKeys]);
+
+  // ── Starter templates shown in the current (Active/Archived) tab ──
+  const shownStarters = useMemo(() => {
+    if (tab !== 'templates') return [];
+    const q = search.trim().toLowerCase();
+    return starterRows
+      .filter((s) => (countTab === 'archived' ? s.archived : !s.archived))
+      .filter((s) => !q || s.label.toLowerCase().includes(q));
+  }, [starterRows, countTab, search, tab]);
+
+  const counts = useMemo(() => {
+    if (tab === 'templates') {
+      const customActive   = tabResources.filter((r) => !builtinKeys.has(r.documentType ?? '') && !r.archived).length;
+      const customArchived = tabResources.filter((r) => !builtinKeys.has(r.documentType ?? '') && r.archived).length;
+      const starterActive   = starterRows.filter((s) => !s.archived).length;
+      const starterArchived = starterRows.filter((s) => s.archived).length;
+      return { active: starterActive + customActive, archived: starterArchived + customArchived };
+    }
+    return {
+      active:   tabResources.filter((r) => !r.archived).length,
+      archived: tabResources.filter((r) => r.archived).length,
+    };
+  }, [tabResources, tab, builtinKeys, starterRows]);
+
+  const countTabDefs = [
+    { key: 'active',   label: 'Active',   sub: 'In active use',           icon: faFolderOpen, count: counts.active },
+    { key: 'archived', label: 'Archived', sub: 'No longer in active use', icon: faBoxArchive, count: counts.archived },
+  ];
+
+  const selected = selectedId ? rows.find((r) => r.id === selectedId) ?? tabResources.find((r) => r.id === selectedId) : undefined;
+  const starterSelected = tab === 'templates' && starterSel ? starterRows.find((s) => s.value === starterSel) : undefined;
+
+  // ── Actions ──
+  const archive = async (r: Resource, val: boolean) => { await api.setResourceArchived(r.id, val).catch(() => {}); setSelectedId(null); onChanged(); };
+  const del     = async (r: Resource) => { await api.deletePolicy(r.id).catch(() => {}); setSelectedId(null); onChanged(); };
+
+  const openAdd = () => {
+    if (tab === 'templates') setForm({ open: true, custom: true });
+    else setForm({ open: true });
   };
 
   return (
-    <div style={{ marginBottom: 24, border: '1px solid #DCE7EE', borderRadius: 12, background: '#FFFFFF', overflow: 'visible' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '14px 16px', borderBottom: connections.length || loading ? '1px solid #EEF2F5' : 'none' }}>
-        <div>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1E3347', margin: '0 0 2px' }}>Linked cloud documents</h3>
-          <p style={{ fontSize: 12.5, color: '#5A7184', margin: 0, lineHeight: 1.5, maxWidth: 540 }}>
-            Link reference documents or folders from Google Drive or OneDrive. Files stay in your cloud
-            under your own sharing controls — myABA stores only the link.
-          </p>
-        </div>
-        {isAdmin && (
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              onClick={() => setShowPicker((v) => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 8, background: '#2a5f6f', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-            >
-              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
-              Link Drive
-            </button>
-            {showPicker && (
-              <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 210, background: '#FFFFFF', borderRadius: 12, border: '1px solid #DCE7EE', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 20, overflow: 'hidden' }}>
-                <button
-                  onClick={() => { setShowPicker(false); setShowDrive('google'); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'white', border: 'none', fontSize: 13, color: '#374151', cursor: 'pointer' }}
-                >
-                  <FontAwesomeIcon icon={faGoogle} style={{ color: '#ea4335' }} /> Link from Google Drive
-                </button>
-                <button
-                  onClick={() => { setShowPicker(false); setShowDrive('microsoft'); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', background: 'white', border: 'none', borderTop: '1px solid #F0F3F5', fontSize: 13, color: '#374151', cursor: 'pointer' }}
-                >
-                  <FontAwesomeIcon icon={faMicrosoft} style={{ color: '#0078d4' }} /> Link from OneDrive
-                </button>
+    <div className="flex-1 flex overflow-hidden">
+      {/* Main column */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4 mb-1">
+            <h1 className="text-2xl font-bold text-gray-900">{meta.title}</h1>
+            {isAdmin && (
+              <div className="relative shrink-0">
+                <div className="flex">
+                  <button
+                    onClick={openAdd}
+                    className="flex items-center gap-2 px-4 py-2 rounded-l-lg text-white text-sm font-semibold"
+                    style={{ background: '#1E88FF' }}
+                  >
+                    <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} /> {meta.addLabel}
+                  </button>
+                  <button
+                    onClick={() => setAddMenuOpen((o) => !o)}
+                    className="px-2.5 py-2 rounded-r-lg text-white text-sm border-l"
+                    style={{ background: '#1E88FF', borderColor: 'rgba(255,255,255,0.3)' }}
+                    aria-label="More add options"
+                  >
+                    <FontAwesomeIcon icon={faChevronDown} style={{ fontSize: 11 }} />
+                  </button>
+                </div>
+                {addMenuOpen && (
+                  <div className="absolute right-0 mt-1 z-30 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-56 text-left" onMouseLeave={() => setAddMenuOpen(false)}>
+                    <button onClick={() => { setAddMenuOpen(false); openAdd(); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                      <FontAwesomeIcon icon={faPlus} style={{ fontSize: 12, width: 16 }} /> {meta.addLabel} manually
+                    </button>
+                    <div className="my-1 border-t border-gray-100" />
+                    <p className="px-3 pt-1 pb-0.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Link a cloud folder</p>
+                    <button onClick={() => { setAddMenuOpen(false); setDriveProvider('google'); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                      <FontAwesomeIcon icon={faGoogleDrive as any} style={{ fontSize: 13, width: 16, color: '#1A73E8' }} /> Google Drive folder
+                    </button>
+                    <button onClick={() => { setAddMenuOpen(false); setDriveProvider('microsoft'); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                      <FontAwesomeIcon icon={faMicrosoft as any} style={{ fontSize: 13, width: 16, color: '#0364B8' }} /> OneDrive folder
+                    </button>
+                  </div>
+                )}
               </div>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mb-5">{meta.subtitle}</p>
+
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-center gap-3 mb-5">
+            <div className="relative flex-1 min-w-[220px]">
+              <FontAwesomeIcon icon={faSearch} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" style={{ fontSize: 13 }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search ${meta.title.toLowerCase()}…`}
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+              />
+            </div>
+            {tab === 'library' && (
+              <>
+                <FilterSelect label="Type"     value={fType}   onChange={setFType}   options={FILE_TYPE_OPTIONS.map((t) => ({ value: t, label: FILE_TYPES[t].label }))} />
+                <FilterSelect label="Category" value={fCat}    onChange={setFCat}    options={TOPIC_CATEGORIES.map((c) => ({ value: c, label: c }))} />
+                <FilterSelect label="Source"   value={fSource} onChange={setFSource} options={Object.entries(SOURCES).map(([k, v]) => ({ value: k, label: v.label }))} />
+              </>
+            )}
+            {tab !== 'library' && (
+              <FilterSelect label="Category" value={fCat} onChange={setFCat} options={TOPIC_CATEGORIES.map((c) => ({ value: c, label: c }))} />
+            )}
+          </div>
+
+          {/* Count tabs */}
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: `repeat(${countTabDefs.length}, minmax(0, 1fr))` }}>
+            {countTabDefs.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => { setCountTab(c.key); setSelectedId(null); setStarterSel(null); }}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors"
+                style={{
+                  borderColor: countTab === c.key ? '#1E88FF' : '#E5EAF0',
+                  background: countTab === c.key ? '#F5F9FF' : 'white',
+                }}
+              >
+                <FontAwesomeIcon icon={c.icon} style={{ fontSize: 15, color: countTab === c.key ? '#1E88FF' : '#9AA7B2' }} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-800 truncate">{c.label}</span>
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: '#EEF2F6', color: '#52616B' }}>{c.count}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 truncate">{c.sub}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          {loading ? (
+            <div className="flex justify-center py-20"><FontAwesomeIcon icon={faSpinner} className="animate-spin text-gray-300 text-2xl" /></div>
+          ) : tab === 'templates' ? (
+            (shownStarters.length === 0 && rows.length === 0) ? (
+              <EmptyState tab={tab} isAdmin={isAdmin} />
+            ) : (
+              <div className="space-y-5">
+                {shownStarters.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <FontAwesomeIcon icon={faStar} style={{ fontSize: 10 }} /> Starter Templates · Provided by myABA
+                    </p>
+                    <StarterTable rows={shownStarters} selected={starterSel} onSelect={setStarterSel} isAdmin={isAdmin} onArchive={archiveStarter} onRestore={restoreStarter} />
+                  </div>
+                )}
+                {rows.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <FontAwesomeIcon icon={faUser} style={{ fontSize: 10 }} /> Your Templates
+                    </p>
+                    <ResourceTable
+                      tab={tab} rows={rows} members={members} selectedId={selectedId}
+                      onSelect={setSelectedId} onArchive={(r) => archive(r, !r.archived)} onDelete={del}
+                      onEdit={(r) => setForm({ open: true, editing: r })} isAdmin={isAdmin}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          ) : rows.length === 0 ? (
+            <EmptyState tab={tab} isAdmin={isAdmin} />
+          ) : (
+            <ResourceTable
+              tab={tab} rows={rows} members={members} selectedId={selectedId}
+              onSelect={setSelectedId}
+              onArchive={(r) => archive(r, !r.archived)}
+              onDelete={del}
+              onEdit={(r) => setForm({ open: true, editing: r })}
+              isAdmin={isAdmin}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Details panel */}
+      {(selected || starterSelected) && (
+        <DetailsPanel
+          tab={tab}
+          resource={selected}
+          starter={starterSelected}
+          members={members}
+          isAdmin={isAdmin}
+          onClose={() => { setSelectedId(null); setStarterSel(null); }}
+          onEdit={(r) => setForm({ open: true, editing: r })}
+          onCustomizeStarter={(docValue) => setForm({ open: true, presetDoc: docValue })}
+          onArchive={(r) => archive(r, !r.archived)}
+          onDelete={del}
+        />
+      )}
+
+      {/* Add / Edit modal */}
+      {form.open && (
+        <ResourceFormModal
+          tab={tab}
+          editing={form.editing}
+          presetDoc={form.presetDoc}
+          custom={form.custom}
+          onClose={() => setForm({ open: false })}
+          onSaved={() => { setForm({ open: false }); onChanged(); }}
+        />
+      )}
+
+      {/* Cloud folder linking */}
+      {driveProvider && (
+        <DriveConnectWizard
+          provider={driveProvider}
+          onClose={() => setDriveProvider(null)}
+          onLinked={handleDriveLinked}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Filter select ──────────────────────────────────────────────────────────────
+
+function FilterSelect({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="appearance-none pl-3 pr-8 py-2 rounded-lg border border-gray-200 text-sm bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        <option value="">{label}: All</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <FontAwesomeIcon icon={faChevronDown} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" style={{ fontSize: 10 }} />
+    </div>
+  );
+}
+
+// ── Table ───────────────────────────────────────────────────────────────────────
+
+function fileMeta(r: Resource) { return FILE_TYPES[r.fileType ?? 'TEXT'] ?? FILE_TYPES.TEXT; }
+
+function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, onDelete, onEdit, isAdmin }: {
+  tab: Tab; rows: Resource[]; members: Record<string, string>; selectedId: string | null;
+  onSelect: (id: string) => void; onArchive: (r: Resource) => void; onDelete: (r: Resource) => void;
+  onEdit: (r: Resource) => void; isAdmin: boolean;
+}) {
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const showSourceType = tab === 'library';
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide" style={{ borderBottom: '1px solid #EEF2F6' }}>
+            <th className="px-5 py-3">{tab === 'templates' ? 'Template Name' : 'Resource Name'}</th>
+            {showSourceType && <th className="px-3 py-3">Type</th>}
+            <th className="px-3 py-3">Category</th>
+            {showSourceType && <th className="px-3 py-3">Source</th>}
+            <th className="px-3 py-3">Last Modified</th>
+            <th className="px-3 py-3">{tab === 'templates' ? 'Used By' : 'Linked To'}</th>
+            <th className="px-3 py-3 w-10"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const fm = fileMeta(r);
+            const sm = SOURCES[r.source ?? 'MANUAL'] ?? SOURCES.MANUAL;
+            const cat = r.topicCategory || 'Other';
+            const cc = TOPIC_COLORS[cat] ?? TOPIC_COLORS.Other;
+            const isCustom = tab === 'templates' && !!r.documentType && r.documentType.startsWith('custom_');
+            return (
+              <tr
+                key={r.id}
+                onClick={() => onSelect(r.id)}
+                className="cursor-pointer transition-colors"
+                style={{ borderBottom: '1px solid #F3F6F9', background: selectedId === r.id ? '#F5F9FF' : undefined }}
+              >
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-3">
+                    <FontAwesomeIcon icon={fm.icon} style={{ color: fm.color, fontSize: 16 }} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-800 truncate">{r.title}</span>
+                        {tab === 'templates' && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={isCustom ? { background: '#E6F4FF', color: '#1E88FF' } : { background: '#F3EEFE', color: '#7C3AED' }}>
+                            {isCustom ? 'Custom' : 'Customized'}
+                          </span>
+                        )}
+                      </div>
+                      {r.description && <p className="text-xs text-gray-400 truncate">{r.description}</p>}
+                    </div>
+                  </div>
+                </td>
+                {showSourceType && <td className="px-3 py-3 text-gray-500 text-xs font-medium">{fm.label}</td>}
+                <td className="px-3 py-3">
+                  {r.topicCategory && <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cc.bg, color: cc.text }}>{cat}</span>}
+                </td>
+                {showSourceType && (
+                  <td className="px-3 py-3">
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                      {sm.brand
+                        ? <FontAwesomeIcon icon={sm.icon as any} style={{ color: sm.color, fontSize: 13 }} />
+                        : <FontAwesomeIcon icon={sm.icon} style={{ color: sm.color, fontSize: 12 }} />}
+                      {sm.label}
+                    </span>
+                  </td>
+                )}
+                <td className="px-3 py-3 text-gray-500">
+                  <div className="text-xs">{relDate(r.updatedAt)}</div>
+                  <div className="text-[11px] text-gray-400">by {members[r.createdBy ?? ''] ?? '—'}</div>
+                </td>
+                <td className="px-3 py-3 text-gray-500">
+                  <span className="flex items-center gap-1.5 text-xs"><FontAwesomeIcon icon={faUsers} style={{ fontSize: 11, color: '#9AA7B2' }} />{(r.linkedIds ?? []).length}</span>
+                </td>
+                <td className="px-3 py-3 text-right relative" onClick={(e) => e.stopPropagation()}>
+                  {isAdmin && (
+                    <button onClick={() => setMenuId(menuId === r.id ? null : r.id)} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-400">
+                      <FontAwesomeIcon icon={faEllipsisH} style={{ fontSize: 13 }} />
+                    </button>
+                  )}
+                  {menuId === r.id && (
+                    <div className="absolute right-3 top-10 z-20 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-40 text-left" onMouseLeave={() => setMenuId(null)}>
+                      <MenuItem icon={faPen} label="Edit" onClick={() => { setMenuId(null); onEdit(r); }} />
+                      <MenuItem icon={r.archived ? faRotateLeft : faBoxArchive} label={r.archived ? 'Restore' : 'Archive'} onClick={() => { setMenuId(null); onArchive(r); }} />
+                      <MenuItem icon={faTrash} label="Delete" danger onClick={() => { setMenuId(null); onDelete(r); }} />
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MenuItem({ icon, label, onClick, danger }: { icon: typeof faPen; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-gray-50" style={{ color: danger ? '#DC2626' : '#374151' }}>
+      <FontAwesomeIcon icon={icon} style={{ fontSize: 12, width: 14 }} /> {label}
+    </button>
+  );
+}
+
+// ── Starter templates table ──────────────────────────────────────────────────────
+
+function StarterTable({ rows, selected, onSelect, isAdmin, onArchive, onRestore }: {
+  rows: { value: string; label: string; category: string; customized: boolean; archived: boolean }[];
+  selected: string | null; onSelect: (v: string) => void;
+  isAdmin: boolean; onArchive: (v: string) => void; onRestore: (v: string) => void;
+}) {
+  const status = (r: { customized: boolean; archived: boolean }) =>
+    r.archived ? { label: 'Hidden', bg: '#FEE2E2', text: '#B91C1C' }
+    : r.customized ? { label: 'Customized', bg: '#F3EEFE', text: '#7C3AED' }
+    : { label: 'Default', bg: '#F0F4F8', text: '#8CA4B5' };
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide" style={{ borderBottom: '1px solid #EEF2F6' }}>
+            <th className="px-5 py-3">Template Name</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Provided By</th><th className="px-3 py-3 text-right">In Pulldown</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const s = status(r);
+            const cc = TOPIC_COLORS[r.category] ?? TOPIC_COLORS.Other;
+            return (
+              <tr key={r.value} onClick={() => onSelect(r.value)} className="cursor-pointer" style={{ borderBottom: '1px solid #F3F6F9', background: selected === r.value ? '#F5F9FF' : undefined, opacity: r.archived ? 0.6 : 1 }}>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-3">
+                    <FontAwesomeIcon icon={faFileLines} style={{ color: '#1E88FF', fontSize: 16 }} />
+                    <span className="font-semibold text-gray-800">{r.label}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-3">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: cc.bg, color: cc.text }}>{r.category}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.text }}>{s.label}</span>
+                </td>
+                <td className="px-3 py-3 text-xs text-gray-400">myABA</td>
+                <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  {isAdmin && (
+                    <button
+                      onClick={() => (r.archived ? onRestore(r.value) : onArchive(r.value))}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-md border"
+                      style={r.archived ? { borderColor: '#1E88FF', color: '#1E88FF' } : { borderColor: '#E5EAF0', color: '#6B7B88' }}
+                      title={r.archived ? 'Show in client Generate Document pulldown' : 'Hide from client Generate Document pulldown'}
+                    >
+                      <FontAwesomeIcon icon={r.archived ? faRotateLeft : faBoxArchive} style={{ fontSize: 10 }} /> {r.archived ? 'Restore' : 'Hide'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Empty state ──────────────────────────────────────────────────────────────────
+
+function EmptyState({ tab, isAdmin }: { tab: Tab; isAdmin: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-16 bg-white rounded-xl border border-dashed border-gray-200 text-center">
+      <FontAwesomeIcon icon={faFolderOpen} style={{ fontSize: 36, color: '#D6DEE6' }} />
+      <p className="text-sm font-semibold text-gray-600">Nothing here yet</p>
+      {isAdmin && <p className="text-xs text-gray-400">Use the <strong>{TAB_META[tab].addLabel}</strong> button above to get started.</p>}
+    </div>
+  );
+}
+
+// ── Details panel ────────────────────────────────────────────────────────────────
+
+function DetailsPanel({ tab, resource, starter, members, isAdmin, onClose, onEdit, onCustomizeStarter, onArchive, onDelete }: {
+  tab: Tab; resource?: Resource; starter?: { value: string; label: string; category?: string; customized: boolean; resource?: Resource };
+  members: Record<string, string>; isAdmin: boolean; onClose: () => void;
+  onEdit: (r: Resource) => void; onCustomizeStarter: (docValue: string) => void;
+  onArchive: (r: Resource) => void; onDelete: (r: Resource) => void;
+}) {
+  const r = resource ?? starter?.resource;
+  const title = resource?.title ?? starter?.label ?? '';
+  const fm = r ? fileMeta(r) : FILE_TYPES.TEXT;
+  return (
+    <div className="w-[340px] shrink-0 bg-white border-l border-gray-200 overflow-y-auto">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-700">{tab === 'templates' ? 'Template Details' : 'Resource Details'}</h3>
+        <button onClick={onClose} className="text-gray-300 hover:text-gray-500"><FontAwesomeIcon icon={faTimes} /></button>
+      </div>
+      <div className="px-5 py-5">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#F4F7FA' }}>
+            <FontAwesomeIcon icon={fm.icon} style={{ color: fm.color, fontSize: 20 }} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-gray-900 leading-tight">{title}</p>
+            {starter && !starter.customized && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: '#F0F4F8', color: '#8CA4B5' }}>Default · myABA</span>}
+            {r?.shared && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: '#E6F4EA', color: '#1E7E34' }}>Shared</span>}
+          </div>
+        </div>
+        {(r?.description) && <p className="text-sm text-gray-500 mb-4">{r.description}</p>}
+
+        <dl className="space-y-2.5 text-sm border-t border-gray-100 pt-4">
+          {tab === 'library' && <Row k="Type"  v={fm.label} />}
+          {(r?.topicCategory || starter?.category) && <Row k="Category" v={r?.topicCategory || starter?.category || ''} />}
+          {tab === 'library' && r && <Row k="Source" v={(SOURCES[r.source ?? 'MANUAL'] ?? SOURCES.MANUAL).label} />}
+          {tab === 'templates' && <Row k="Document Type" v={resource ? documentTypeLabel(resource.documentType ?? '') : starter?.label ?? ''} />}
+          {r?.createdBy && <Row k="Added By" v={members[r.createdBy] ?? '—'} />}
+          {r?.createdAt && <Row k="Added On" v={relDate(r.createdAt)} />}
+          <Row k="Last Modified" v={r ? relDate(r.updatedAt) : 'Built-in'} />
+          <Row k="Linked To" v={`${(r?.linkedIds ?? []).length} item(s)`} />
+          {r?.folder && <Row k="Location" v={r.folder} />}
+        </dl>
+
+        {isAdmin && (
+          <div className="mt-5 space-y-2">
+            {starter && !r ? (
+              <button onClick={() => onCustomizeStarter(starter.value)} className="w-full py-2.5 rounded-lg text-white text-sm font-semibold" style={{ background: '#1E88FF' }}>
+                Customize Template
+              </button>
+            ) : r && (
+              <>
+                <button onClick={() => onEdit(r)} className="w-full py-2.5 rounded-lg text-white text-sm font-semibold" style={{ background: '#1E88FF' }}>
+                  <FontAwesomeIcon icon={faPen} style={{ fontSize: 11 }} /> {tab === 'templates' ? 'Edit Template' : 'Edit Details'}
+                </button>
+                {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="block w-full py-2.5 rounded-lg border border-gray-200 text-sm font-semibold text-center text-gray-600"><FontAwesomeIcon icon={faEye} style={{ fontSize: 11 }} /> View Resource</a>}
+                <div className="pt-2 border-t border-gray-100 mt-2">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">More Actions</p>
+                  {r.url && <PanelAction icon={faCopy} label="Copy Link" onClick={() => navigator.clipboard.writeText(r.url!)} />}
+                  <PanelAction icon={r.archived ? faRotateLeft : faBoxArchive} label={r.archived ? 'Restore' : 'Archive'} onClick={() => onArchive(r)} />
+                  <PanelAction icon={faTrash} label="Delete" danger onClick={() => onDelete(r)} />
+                </div>
+              </>
             )}
           </div>
         )}
       </div>
-
-      {loading ? (
-        <div style={{ padding: '20px 0', textAlign: 'center', color: '#8CA4B5' }}>
-          <FontAwesomeIcon icon={faSpinner} style={{ animation: 'spin 1s linear infinite' }} />
-        </div>
-      ) : connections.length === 0 ? (
-        <div style={{ padding: '20px 16px', display: 'flex', alignItems: 'center', gap: 10, color: '#8CA4B5', fontSize: 13 }}>
-          <FontAwesomeIcon icon={faFolderOpen} style={{ fontSize: 16, color: '#DCE7EE' }} />
-          No cloud documents linked yet.
-        </div>
-      ) : (
-        <div>
-          {connections.map((c) => {
-            const isGoogle = c.driveSource === 'google';
-            return (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid #F4F7F9' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: isGoogle ? '#fdeceb' : '#e8f1fb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <FontAwesomeIcon icon={isGoogle ? faGoogle : faMicrosoft} style={{ color: isGoogle ? '#ea4335' : '#0078d4', fontSize: 14 }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1E3347', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.driveItemName}</span>
-                    {c.hipaaVerified ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: '#EEF7EA', color: '#2E7D22' }}>
-                        <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 9 }} /> HIPAA labeled
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 999, background: '#fef3c7', color: '#92400e' }}>Label unverified</span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: 12, color: '#8CA4B5', margin: '1px 0 0' }}>{isGoogle ? 'Google Drive' : 'OneDrive'} · {c.driveItemType}</p>
-                </div>
-                <a href={c.driveItemUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA4B5', padding: '0 6px' }} title="Open in provider">
-                  <FontAwesomeIcon icon={faExternalLinkAlt} style={{ fontSize: 13 }} />
-                </a>
-                {isAdmin && (
-                  <button onClick={() => handleRemove(c.id)} disabled={removing === c.id}
-                    style={{ background: 'none', border: 'none', color: '#B6C2CC', cursor: 'pointer', padding: '0 4px' }} title="Remove link">
-                    <FontAwesomeIcon icon={removing === c.id ? faSpinner : faTrash} style={{ fontSize: 13, animation: removing === c.id ? 'spin 1s linear infinite' : undefined }} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {showDrive && (
-        <DriveConnectWizard
-          provider={showDrive}
-          onClose={() => setShowDrive(null)}
-          onLinked={(c) => { setConnections((prev) => [c, ...prev]); setShowDrive(null); }}
-        />
-      )}
     </div>
   );
 }
 
-// ── Library Tab ───────────────────────────────────────────────────────────────
+function Row({ k, v }: { k: string; v: string }) {
+  return <div className="flex justify-between gap-3"><dt className="text-gray-400">{k}</dt><dd className="text-gray-700 font-medium text-right truncate">{v}</dd></div>;
+}
+function PanelAction({ icon, label, onClick, danger }: { icon: typeof faPen; label: string; onClick: () => void; danger?: boolean }) {
+  return <button onClick={onClick} className="w-full flex items-center gap-2.5 py-1.5 text-sm hover:opacity-70" style={{ color: danger ? '#DC2626' : '#52616B' }}><FontAwesomeIcon icon={icon} style={{ fontSize: 12, width: 14 }} /> {label}</button>;
+}
 
-function LibraryTab({
-  resources, isLoading, error, isAdmin,
-  showAddForm, onToggleAddForm, onCancelAddForm,
-  onResourceCreated, onToggleActive, onDelete,
-}: {
-  resources: Resource[];
-  isLoading: boolean;
-  error: string;
-  isAdmin: boolean;
-  showAddForm: boolean;
-  onToggleAddForm: () => void;
-  onCancelAddForm: () => void;
-  onResourceCreated: (r: Resource) => void;
-  onToggleActive: (r: Resource) => void;
-  onDelete: (r: Resource) => void;
+// ── Add / Edit modal ─────────────────────────────────────────────────────────────
+
+function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }: {
+  tab: Tab; editing?: Resource; presetDoc?: string; custom?: boolean; onClose: () => void; onSaved: () => void;
 }) {
-  // The Agency Library shows writing material only — grounding sources live in their
-  // own tab and are excluded here.
-  const libraryResources = resources.filter((r) => (r.bucket ?? 'LIBRARY') === 'LIBRARY');
+  const isTemplate = tab === 'templates';
+  const [title, setTitle]       = useState(editing?.title ?? (presetDoc ? `${documentTypeLabel(presetDoc)} Template` : ''));
+  const [description, setDesc]  = useState(editing?.description ?? '');
+  const [resourceType, setRT]   = useState(editing?.resourceType ?? (isTemplate ? 'GENERATION_TEMPLATE' : 'KNOWLEDGE_REFERENCE'));
+  const [topicCategory, setCat] = useState(editing?.topicCategory ?? (presetDoc ? categoryFor(presetDoc) : ''));
+  const [fileType, setFileType] = useState(editing?.fileType ?? 'TEXT');
+  const [source, setSource]     = useState(editing?.source ?? 'MANUAL');
+  const [url, setUrl]           = useState(editing?.url ?? '');
+  const [folder, setFolder]     = useState(editing?.folder ?? '');
+  const [shared] = useState(editing?.shared ?? true);
+  const [content, setContent]   = useState(editing?.textContent ?? (presetDoc ? defaultTemplateFor(presetDoc) : ''));
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
 
-  // Document type the admin is customizing a generation template for (pre-fills the form).
-  const [customizeDoc, setCustomizeDoc] = useState<string | null>(null);
+  const uploadDocx = async (f: File) => {
+    setUploading(true); setError('');
+    try {
+      const text = await api.extractTemplateDocx(f);
+      setContent(text); setFileType('DOCX'); setSource('UPLOAD');
+      if (!title) setTitle(f.name.replace(/\.docx$/i, ''));
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to read Word file.'); }
+    finally { setUploading(false); }
+  };
 
-  // Map each document type → its customized generation template (if any).
-  const genTemplates = libraryResources.filter(
-    (r) => r.resourceType === 'GENERATION_TEMPLATE' && r.documentType,
-  );
-  const customizedFor = (docValue: string) =>
-    genTemplates.find((r) => r.documentType === docValue && r.customized);
+  const save = async () => {
+    if (!title.trim())   { setError('Name is required.'); return; }
+    if (!content.trim() && !url.trim()) { setError('Add content, upload a file, or provide a link.'); return; }
+    setSaving(true); setError('');
+    const bucket = tab === 'templates' || tab === 'library' ? 'LIBRARY' : tab === 'policies' ? 'POLICY' : 'GROUNDING';
+    const documentType = isTemplate
+      ? (editing?.documentType ?? presetDoc ?? slug(title))
+      : undefined;
+    const payload: ResourceInput = {
+      title: title.trim(),
+      category: (isTemplate ? 'generation_template' : resourceType.toLowerCase()),
+      textContent: content,
+      description: description.trim(),
+      bucket,
+      resourceType: isTemplate ? 'GENERATION_TEMPLATE' : resourceType,
+      documentType,
+      customized: isTemplate ? true : undefined,
+      topicCategory: topicCategory || undefined,
+      fileType,
+      source,
+      url: url.trim() || undefined,
+      folder: folder.trim() || undefined,
+      shared,
+      isActive: true,
+    };
+    try {
+      if (editing) await api.updatePolicy(editing.id, payload);
+      else await api.createPolicy({ ...payload, title: title.trim(), category: payload.category! });
+      onSaved();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to save.'); setSaving(false); }
+  };
+
+  const label = isTemplate ? 'Template' : tab === 'policies' ? 'Policy' : tab === 'grounding' ? 'Grounding Source' : 'Resource';
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Agency Resource Library</h2>
-        {isAdmin && (
-          <button
-            onClick={onToggleAddForm}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 16px',
-              borderRadius: 8,
-              background: showAddForm ? '#F8FBFC' : '#1E88FF',
-              color: showAddForm ? '#1E88FF' : '#FFFFFF',
-              border: showAddForm ? '1px solid #1E88FF' : 'none',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            <FontAwesomeIcon icon={showAddForm ? faTimes : faPlus} style={{ fontSize: 12 }} />
-            {showAddForm ? 'Cancel' : 'Add Resource'}
-          </button>
-        )}
-      </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900">{editing ? `Edit ${label}` : `New ${label}`}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><FontAwesomeIcon icon={faTimes} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          <Field label={isTemplate ? 'Template Name' : 'Title'} req>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder={isTemplate ? 'e.g. Monthly Authorization Summary' : 'e.g. Insurance Coverage Guidelines'} />
+            {isTemplate && custom && <p className="text-xs text-gray-400 mt-1">Becomes a new option in the client Generate Document pulldown.</p>}
+          </Field>
+          <Field label="Description">
+            <input value={description} onChange={(e) => setDesc(e.target.value)} className={inputCls} placeholder="Short description" />
+          </Field>
 
-      {/* Plain-language guidance — what this tab is and how the purpose tags work */}
-      <div
-        style={{
-          background: '#F8FBFC',
-          border: '1px solid #DCE7EE',
-          borderRadius: 10,
-          padding: '14px 18px',
-          marginBottom: 20,
-          fontSize: 13,
-          color: '#1E3347',
-          lineHeight: 1.65,
-        }}
-      >
-        <p style={{ margin: '0 0 8px' }}>
-          The <strong>Agency Library</strong> holds your reusable building blocks: <strong>Standard Templates</strong>{' '}
-          (documents to start from), <strong>Generation Templates</strong> (which shape how the AI drafts each client
-          document type), and <strong>Knowledge References</strong> (material the AI can draw on).
-        </p>
-        <p style={{ margin: 0, color: '#5A7184' }}>
-          The Library, <strong>Policies</strong>, and <strong>Grounding</strong> are three separate buckets — they
-          don't overlap, but any of them can be used in any chat. Policies hold your agency's rules and SOPs;
-          Grounding holds trusted sources the AI is checked against. Each lives in its own tab.
-        </p>
-      </div>
-
-      {/* Document Generation Templates — one slot per client document type */}
-      {isAdmin && (
-        <div style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1E3347', margin: '0 0 4px' }}>
-            Document Generation Templates
-          </h3>
-          <p style={{ fontSize: 12, color: '#8CA4B5', margin: '0 0 10px' }}>
-            Each client document type uses a built-in <strong>Default</strong> template until your agency customizes it.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-            {DOCUMENT_TYPES.map((dt) => {
-              const custom = customizedFor(dt.value);
-              return (
-                <div
-                  key={dt.value}
-                  style={{
-                    border: '1px solid #DCE7EE', borderRadius: 10, padding: '12px 14px',
-                    background: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 8,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1E3347' }}>{dt.label}</span>
-                    <span
-                      style={{
-                        padding: '1px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                        background: custom ? '#F3EEFE' : '#F0F4F8',
-                        color: custom ? '#7C3AED' : '#8CA4B5',
-                      }}
-                    >
-                      {custom ? 'Customized' : 'Default'}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => { setCustomizeDoc(dt.value); onCancelAddForm(); }}
-                    style={{
-                      alignSelf: 'flex-start', padding: '4px 10px', borderRadius: 6,
-                      border: '1px solid #1E88FF', background: 'white', color: '#1E88FF',
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    {custom ? 'Replace template' : 'Customize'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          {customizeDoc && (
-            <div style={{ marginTop: 12 }}>
-              <AddResourceForm
-                bucket="LIBRARY"
-                presetResourceType="GENERATION_TEMPLATE"
-                presetDocumentType={customizeDoc}
-                onSaved={(r) => { onResourceCreated(r); setCustomizeDoc(null); }}
-                onCancel={() => setCustomizeDoc(null)}
-              />
+          {!isTemplate && (
+            <div className="grid grid-cols-2 gap-3">
+              {tab === 'library' && (
+                <Field label="Resource Type">
+                  <select value={resourceType} onChange={(e) => setRT(e.target.value)} className={inputCls}>
+                    {Object.entries(LIBRARY_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label="Category">
+                <select value={topicCategory} onChange={(e) => setCat(e.target.value)} className={inputCls}>
+                  <option value="">None</option>
+                  {TOPIC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
             </div>
           )}
-        </div>
-      )}
+          {isTemplate && (
+            <Field label="Category">
+              <select value={topicCategory} onChange={(e) => setCat(e.target.value)} className={inputCls}>
+                <option value="">None</option>
+                {TOPIC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+          )}
 
-      {/* Cloud-linked documents (Google Drive / OneDrive) — org-wide reference material */}
-      <OrgDriveResourcesSection isAdmin={isAdmin} />
-
-      {/* Inline add form */}
-      {showAddForm && isAdmin && (
-        <AddResourceForm
-          bucket="LIBRARY"
-          onSaved={onResourceCreated}
-          onCancel={onCancelAddForm}
-        />
-      )}
-
-      {/* Error */}
-      {error && (
-        <div
-          style={{
-            background: '#FFF0F0',
-            border: '1px solid #FCA5A5',
-            borderRadius: 8,
-            padding: '10px 14px',
-            color: '#B91C1C',
-            fontSize: 13,
-            marginBottom: 16,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Loading */}
-      {isLoading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 160, color: '#5A7184' }}>
-          <FontAwesomeIcon icon={faSpinner} style={{ fontSize: 24, animation: 'spin 1s linear infinite' }} />
-        </div>
-      ) : libraryResources.length === 0 && !showAddForm ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '48px 0',
-            color: '#5A7184',
-            textAlign: 'center',
-          }}
-        >
-          <FontAwesomeIcon icon={faBook} style={{ fontSize: 40, color: '#DCE7EE', marginBottom: 12 }} />
-          <p style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>No resources yet</p>
-          <p style={{ fontSize: 13, margin: 0, color: '#8CA4B5' }}>
-            {isAdmin ? 'Click "Add Resource" to add your first library entry.' : 'No resources have been published yet.'}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {libraryResources.map((resource) => (
-            <ResourceCard
-              key={resource.id}
-              resource={resource}
-              isAdmin={isAdmin}
-              onToggleActive={() => onToggleActive(resource)}
-              onDelete={() => onDelete(resource)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Add Resource Form ─────────────────────────────────────────────────────────
-
-interface ResourceFormData {
-  title: string;
-  resourceType: ResourceType;
-  documentType: string;
-  clientId: string;
-  content: string;
-}
-
-const EMPTY_FORM: ResourceFormData = {
-  title:        '',
-  resourceType: 'KNOWLEDGE_REFERENCE',
-  documentType: '',
-  clientId:     '',
-  content:      '',
-};
-
-function AddResourceForm({
-  onSaved,
-  onCancel,
-  bucket = 'LIBRARY',
-  presetResourceType,
-  presetDocumentType,
-}: {
-  onSaved: (r: Resource) => void;
-  onCancel: () => void;
-  /** Which bucket the new resource belongs to (LIBRARY or GROUNDING). */
-  bucket?: string;
-  presetResourceType?: ResourceType;
-  presetDocumentType?: string;
-}) {
-  const isGrounding = bucket === 'GROUNDING';
-  const [form, setForm]     = useState<ResourceFormData>({
-    ...EMPTY_FORM,
-    resourceType: presetResourceType ?? EMPTY_FORM.resourceType,
-    documentType: presetDocumentType ?? '',
-    // Pre-load the default skeleton when customizing a generation template for a doc type.
-    title:   presetDocumentType ? `${documentTypeLabel(presetDocumentType)} Template` : '',
-    content: presetDocumentType ? defaultTemplateFor(presetDocumentType) : '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
-
-  const handleSave = async () => {
-    if (!form.title.trim())   { setError('Title is required.');   return; }
-    if (!form.content.trim()) { setError('Content is required.'); return; }
-    if (!isGrounding && form.resourceType === 'GENERATION_TEMPLATE' && !form.documentType) {
-      setError('Choose the document type this generation template customizes.'); return;
-    }
-    setSaving(true);
-    setError('');
-    try {
-      const resourceType = isGrounding ? 'KNOWLEDGE_REFERENCE' : form.resourceType;
-      const isGenTemplate = !isGrounding && form.resourceType === 'GENERATION_TEMPLATE';
-      const { policyId } = await api.createPolicy({
-        title:        form.title,
-        category:     resourceType.toLowerCase() as PolicyCategory,
-        textContent:  form.content,
-        isActive:     true,
-        bucket,
-        resourceType,
-        documentType: isGenTemplate ? form.documentType : undefined,
-        customized:   isGenTemplate ? true : undefined,
-        clientId:     form.clientId || undefined,
-      });
-      const newResource: Resource = {
-        id:           policyId,
-        title:        form.title,
-        resourceType,
-        bucket,
-        documentType: isGenTemplate ? form.documentType : undefined,
-        customized:   isGenTemplate ? true : undefined,
-        clientId:     form.clientId || undefined,
-        content:      form.content,
-        isActive:     true,
-        orgId:        '',
-        createdAt:    new Date().toISOString(),
-        updatedAt:    new Date().toISOString(),
-      };
-      onSaved(newResource);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save resource.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        background: '#FFFFFF',
-        border: '1px solid #DCE7EE',
-        borderRadius: 12,
-        padding: 20,
-        marginBottom: 20,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-      }}
-    >
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E3347', marginTop: 0, marginBottom: 16 }}>
-        {isGrounding ? 'New Grounding Source' : 'New Library Resource'}
-      </h3>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* Title */}
-        <div>
-          <label style={labelStyle}>Title <span style={{ color: '#EF4444' }}>*</span></label>
-          <input
-            type="text"
-            style={inputStyle}
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder={isGrounding ? 'e.g. BACB Ethics Code (2022)' : 'e.g. Standard BIP Template'}
-          />
-        </div>
-
-        {/* Resource Type — Agency Library only */}
-        {!isGrounding && (
-          <div>
-            <label style={labelStyle}>Resource Type</label>
-            <select
-              style={inputStyle}
-              value={form.resourceType}
-              onChange={(e) => setForm((f) => ({ ...f, resourceType: e.target.value as ResourceType }))}
-            >
-              {ALL_RESOURCE_TYPES.map((t) => (
-                <option key={t} value={t}>{RESOURCE_TYPE_LABELS[t]}</option>
-              ))}
-            </select>
-            <p style={{ fontSize: 12, color: '#8CA4B5', margin: '6px 0 0' }}>
-              {RESOURCE_TYPE_HELP[form.resourceType]}
-            </p>
-          </div>
-        )}
-
-        {/* Document type — only for Generation Templates */}
-        {!isGrounding && form.resourceType === 'GENERATION_TEMPLATE' && (
-          <div>
-            <label style={labelStyle}>Document Type <span style={{ color: '#EF4444' }}>*</span></label>
-            <select
-              style={inputStyle}
-              value={form.documentType}
-              onChange={(e) => setForm((f) => ({ ...f, documentType: e.target.value }))}
-            >
-              <option value="">Select a document type…</option>
-              {DOCUMENT_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-            <p style={{ fontSize: 12, color: '#8CA4B5', margin: '6px 0 0' }}>
-              This template will be used whenever the team generates this document type for a client.
-            </p>
-          </div>
-        )}
-
-        {/* Client ID */}
-        <div>
-          <label style={labelStyle}>Limit to Client ID <span style={{ color: '#8CA4B5', textTransform: 'none', fontWeight: 400 }}>(optional)</span></label>
-          <input
-            type="text"
-            style={inputStyle}
-            value={form.clientId}
-            onChange={(e) => setForm((f) => ({ ...f, clientId: e.target.value }))}
-            placeholder="Leave blank for org-wide"
-          />
-        </div>
-
-        {/* Content */}
-        <div>
-          <label style={labelStyle}>Content <span style={{ color: '#EF4444' }}>*</span></label>
-          <textarea
-            rows={8}
-            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.6 }}
-            value={form.content}
-            onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-            placeholder="Paste or type the resource content here…"
-          />
-        </div>
-
-        {error && (
-          <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p>
-        )}
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 8,
-              border: '1px solid #DCE7EE',
-              background: '#F8FBFC',
-              color: '#5A7184',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 8,
-              border: 'none',
-              background: saving ? '#7EC8FF' : '#1E88FF',
-              color: '#FFFFFF',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: saving ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save Resource'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Resource Card ─────────────────────────────────────────────────────────────
-
-function ResourceCard({
-  resource, isAdmin, onToggleActive, onDelete,
-}: {
-  resource: Resource;
-  isAdmin: boolean;
-  onToggleActive: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div
-      style={{
-        background: '#FFFFFF',
-        border: '1px solid #DCE7EE',
-        borderRadius: 12,
-        padding: '14px 18px',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 14,
-        opacity: resource.isActive ? 1 : 0.65,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-      }}
-    >
-      {/* Main content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: '#1E3347' }}>{resource.title}</span>
-
-          {/* Resource type badge */}
-          {(() => {
-            const c = RESOURCE_TYPE_COLORS[resource.resourceType] ?? { bg: '#F0F4F8', text: '#5A7184' };
-            return (
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  background: c.bg,
-                  color: c.text,
-                }}
-              >
-                {RESOURCE_TYPE_LABELS[resource.resourceType] ?? resource.resourceType}
-              </span>
-            );
-          })()}
-        </div>
-
-        {/* Generation template → which document type it customizes */}
-        {resource.resourceType === 'GENERATION_TEMPLATE' && resource.documentType && (
-          <div style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 12, color: '#7C3AED', fontWeight: 600 }}>
-              Customizes: {documentTypeLabel(resource.documentType)}
-            </span>
-          </div>
-        )}
-
-        {/* Client scope */}
-        {resource.clientId && (
-          <p style={{ fontSize: 12, color: '#8CA4B5', margin: '2px 0 0', fontStyle: 'italic' }}>
-            Scoped to: {resource.clientId}
-          </p>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        {/* Active toggle */}
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 12,
-            color: '#5A7184',
-            cursor: 'pointer',
-            userSelect: 'none',
-          }}
-          title={resource.isActive ? 'Active' : 'Inactive'}
-        >
-          <input
-            type="checkbox"
-            checked={resource.isActive}
-            onChange={onToggleActive}
-            style={{ accentColor: '#3F9B2F' }}
-          />
-          {resource.isActive ? 'Active' : 'Inactive'}
-        </label>
-
-        {/* Delete */}
-        {isAdmin && (
-          <button
-            onClick={onDelete}
-            style={{
-              width: 30,
-              height: 30,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 8,
-              border: 'none',
-              background: 'transparent',
-              color: '#EF4444',
-              cursor: 'pointer',
-            }}
-            title="Delete resource"
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#FEF2F2')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <FontAwesomeIcon icon={faTrash} style={{ fontSize: 13 }} />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Policies Tab ──────────────────────────────────────────────────────────────
-
-function PoliciesTab({
-  policies, isLoading, error, isAdmin, onPolicyCreated,
-}: {
-  policies: PolicyDocument[];
-  isLoading: boolean;
-  error: string;
-  isAdmin: boolean;
-  onPolicyCreated: (p: PolicyDocument) => void;
-}) {
-  const [showAddForm, setShowAddForm] = useState(false);
-
-  return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Policies</h2>
-        {isAdmin && (
-          <button
-            onClick={() => setShowAddForm((v) => !v)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 16px',
-              borderRadius: 8,
-              background: showAddForm ? '#F8FBFC' : '#3F9B2F',
-              color: showAddForm ? '#3F9B2F' : '#FFFFFF',
-              border: showAddForm ? '1px solid #3F9B2F' : 'none',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            <FontAwesomeIcon icon={showAddForm ? faTimes : faPlus} style={{ fontSize: 12 }} />
-            {showAddForm ? 'Cancel' : 'Add Policy'}
-          </button>
-        )}
-      </div>
-
-      {/* Plain-language guidance */}
-      <div
-        style={{
-          background: '#F8FBFC', border: '1px solid #DCE7EE', borderRadius: 10,
-          padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#1E3347', lineHeight: 1.65,
-        }}
-      >
-        Your agency's <strong>policies and standard operating procedures</strong> — the rules your staff
-        and the AI must follow. Attach a policy to a chat so the AI keeps its guidance in mind while it works.
-        Use the <strong>Library</strong> tab for reference materials and templates; use this tab for the rules themselves.
-      </div>
-
-      {/* Inline add policy form */}
-      {showAddForm && isAdmin && (
-        <AddPolicyForm
-          onSaved={(p) => { onPolicyCreated(p); setShowAddForm(false); }}
-          onCancel={() => setShowAddForm(false)}
-        />
-      )}
-
-      {/* Error */}
-      {error && (
-        <div
-          style={{
-            background: '#FFF0F0',
-            border: '1px solid #FCA5A5',
-            borderRadius: 8,
-            padding: '10px 14px',
-            color: '#B91C1C',
-            fontSize: 13,
-            marginBottom: 16,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Loading */}
-      {isLoading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 160, color: '#5A7184' }}>
-          <FontAwesomeIcon icon={faSpinner} style={{ fontSize: 24, animation: 'spin 1s linear infinite' }} />
-        </div>
-      ) : policies.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '48px 0',
-            color: '#5A7184',
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>No policies yet</p>
-          <p style={{ fontSize: 13, margin: 0, color: '#8CA4B5' }}>
-            {isAdmin ? 'Click "Add Policy" to create your first policy document.' : 'No policies have been published yet.'}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {policies.map((policy) => {
-            const colors = CATEGORY_COLORS[policy.category] ?? { bg: '#f3f4f6', text: '#374151' };
-            return (
-              <div
-                key={policy.id}
-                style={{
-                  background: '#FFFFFF',
-                  border: '1px solid #DCE7EE',
-                  borderRadius: 10,
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  opacity: policy.isActive ? 1 : 0.65,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1E3347' }}>{policy.title}</span>
-                    <span
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: 999,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: colors.bg,
-                        color: colors.text,
-                      }}
-                    >
-                      {CATEGORY_LABELS[policy.category] ?? policy.category}
-                    </span>
-                    {!policy.isActive && (
-                      <span
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 500,
-                          background: '#F3F4F6',
-                          color: '#9CA3AF',
-                        }}
-                      >
-                        Draft
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span style={{ fontSize: 12, color: '#8CA4B5', flexShrink: 0 }}>
-                  {policy.isActive ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Add Policy Form ───────────────────────────────────────────────────────────
-
-const ALL_POLICY_CATEGORIES: PolicyCategory[] = [
-  'policy_manual', 'sop', 'handbook', 'clinical_sop', 'template',
-];
-
-function AddPolicyForm({
-  onSaved,
-  onCancel,
-}: {
-  onSaved: (p: PolicyDocument) => void;
-  onCancel: () => void;
-}) {
-  const [title, setTitle]               = useState('');
-  const [category, setCategory]         = useState<PolicyCategory>('policy_manual');
-  const [textContent, setTextContent]   = useState('');
-  const [saving, setSaving]             = useState(false);
-  const [error, setError]               = useState('');
-
-  const handleSave = async () => {
-    if (!title.trim()) { setError('Title is required.'); return; }
-    setSaving(true);
-    setError('');
-    try {
-      const { policyId } = await api.createPolicy({ title, category, textContent, isActive: true });
-      const newPolicy: PolicyDocument = {
-        id: policyId, title, category, textContent, isActive: true,
-        orgId: '', createdBy: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      };
-      onSaved(newPolicy);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save policy.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        background: '#FFFFFF',
-        border: '1px solid #DCE7EE',
-        borderRadius: 12,
-        padding: 20,
-        marginBottom: 20,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-      }}
-    >
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E3347', marginTop: 0, marginBottom: 16 }}>New Policy</h3>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label style={labelStyle}>Title <span style={{ color: '#EF4444' }}>*</span></label>
-          <input
-            type="text"
-            style={inputStyle}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Client Intake Policy"
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Category</label>
-          <select
-            style={inputStyle}
-            value={category}
-            onChange={(e) => setCategory(e.target.value as PolicyCategory)}
-          >
-            {ALL_POLICY_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label style={labelStyle}>Content</label>
-          <textarea
-            rows={6}
-            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.6 }}
-            value={textContent}
-            onChange={(e) => setTextContent(e.target.value)}
-            placeholder="Paste or type policy text here…"
-          />
-        </div>
-
-        {error && <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p>}
-
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button
-            onClick={onCancel}
-            style={{
-              padding: '8px 20px', borderRadius: 8,
-              border: '1px solid #DCE7EE', background: '#F8FBFC',
-              color: '#5A7184', fontSize: 14, fontWeight: 500, cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '8px 20px', borderRadius: 8, border: 'none',
-              background: saving ? '#86EFAC' : '#3F9B2F',
-              color: '#FFFFFF', fontSize: 14, fontWeight: 600,
-              cursor: saving ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save Policy'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Grounding Tab ─────────────────────────────────────────────────────────────
-
-function GroundingTab({
-  resources, isLoading, onResourceCreated, isAdmin,
-}: {
-  resources: Resource[];
-  isLoading: boolean;
-  onResourceCreated: (r: Resource) => void;
-  isAdmin: boolean;
-}) {
-  const grounding = resources.filter((r) => (r.bucket ?? '') === 'GROUNDING');
-  const [showAdd, setShowAdd] = useState(false);
-
-  return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E3347', margin: 0 }}>Grounding Sources</h2>
-        {isAdmin && (
-          <button
-            onClick={() => setShowAdd((s) => !s)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8,
-              background: showAdd ? '#F8FBFC' : '#3F9B2F', color: showAdd ? '#3F9B2F' : '#FFFFFF',
-              border: showAdd ? '1px solid #3F9B2F' : 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            <FontAwesomeIcon icon={showAdd ? faTimes : faPlus} style={{ fontSize: 12 }} />
-            {showAdd ? 'Cancel' : 'Add Grounding Source'}
-          </button>
-        )}
-      </div>
-
-      {/* Plain-language explanation with examples */}
-      <div style={{ background: '#F0FBF0', border: '1px solid #3F9B2F', borderRadius: 10, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#2E5C22', lineHeight: 1.65 }}>
-        <p style={{ margin: '0 0 8px' }}>
-          <strong>Grounding sources</strong> are your agency's trusted reference material — the facts the AI must
-          stay true to. They are a way to <strong>prevent hallucinations</strong>: when the AI writes, it draws from
-          these instead of guessing, and anything it can't support from a grounding source shows up as a warning so
-          you can catch it. Grounding is its own bucket, separate from the Agency Library and Policies, but usable in
-          any chat.
-        </p>
-        <p style={{ margin: '0 0 4px', fontWeight: 600 }}>Good examples to add here:</p>
-        <ul style={{ margin: '0 0 0 18px', padding: 0 }}>
-          <li>Your agency's clinical standards and treatment protocols (e.g. your reinforcement or crisis-management procedures)</li>
-          <li>Payer / insurance requirements for documentation (what Medicaid or a specific plan requires in a progress note)</li>
-          <li>Assessment tools and scoring guides your BCBAs use (VB-MAPP, ABLLS-R reference material)</li>
-          <li>Approved goal banks or program descriptions the AI should pull wording from</li>
-        </ul>
-        <p style={{ margin: '8px 0 0', color: '#3F6B2C' }}>
-          Rule of thumb: if you'd want the AI to <em>quote it or follow it exactly</em>, it's a grounding source.
-          If it's just a writing example or starting template, keep it in the <strong>Agency Library</strong> instead.
-        </p>
-      </div>
-
-      {showAdd && isAdmin && (
-        <AddResourceForm
-          bucket="GROUNDING"
-          onSaved={(r) => { onResourceCreated(r); setShowAdd(false); }}
-          onCancel={() => setShowAdd(false)}
-        />
-      )}
-
-      {isLoading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 160, color: '#5A7184' }}>
-          <FontAwesomeIcon icon={faSpinner} style={{ fontSize: 24, animation: 'spin 1s linear infinite' }} />
-        </div>
-      ) : grounding.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', color: '#5A7184', textAlign: 'center' }}>
-          <FontAwesomeIcon icon={faBook} style={{ fontSize: 40, color: '#DCE7EE', marginBottom: 12 }} />
-          <p style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>No grounding sources yet</p>
-          <p style={{ fontSize: 13, margin: 0, color: '#8CA4B5' }}>
-            {isAdmin ? 'Add a source and tag it "Grounding" so the AI can reference it.' : 'No grounding sources have been published yet.'}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {grounding.map((r) => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: '#FFFFFF', border: '1px solid #DCE7EE', borderRadius: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#F0FBF0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <FontAwesomeIcon icon={faBook} style={{ color: '#3F9B2F', fontSize: 15 }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#1E3347', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</p>
-                <p style={{ fontSize: 12, color: '#8CA4B5', margin: '2px 0 0' }}>
-                  {RESOURCE_TYPE_LABELS[r.resourceType] ?? r.resourceType}
-                  {!r.isActive && ' · inactive'}
-                </p>
-              </div>
+          {tab === 'library' && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Source">
+                <select value={source} onChange={(e) => setSource(e.target.value)} className={inputCls}>
+                  {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </Field>
+              <Field label="File Type">
+                <select value={fileType} onChange={(e) => setFileType(e.target.value)} className={inputCls}>
+                  {FILE_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{FILE_TYPES[t].label}</option>)}
+                </select>
+              </Field>
             </div>
-          ))}
+          )}
+
+          {tab === 'library' && (source === 'DRIVE' || source === 'ONEDRIVE' || source === 'WEB' || fileType === 'LINK') && (
+            <Field label="Link URL"><input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} placeholder="https://…" /></Field>
+          )}
+
+          {/* Word upload for templates + library docs */}
+          {(isTemplate || tab === 'library') && (
+            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer" style={{ borderColor: '#1E88FF', color: '#1E88FF' }}>
+              <FontAwesomeIcon icon={uploading ? faSpinner : faWordUpload} className={uploading ? 'animate-spin' : ''} />
+              {uploading ? 'Reading…' : 'Upload Word (.docx)'}
+              <input type="file" accept=".docx" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDocx(f); e.target.value = ''; }} />
+            </label>
+          )}
+
+          <Field label="Content">
+            <textarea rows={7} value={content} onChange={(e) => setContent(e.target.value)} className={`${inputCls} font-mono`} style={{ resize: 'vertical', lineHeight: 1.6 }} placeholder="Paste or type the content here…" />
+          </Field>
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
-      )}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600">Cancel</button>
+          <button onClick={save} disabled={saving || uploading} className="px-5 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: saving ? '#7EC8FF' : '#1E88FF' }}>
+            {saving ? 'Saving…' : `Save ${label}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
+const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200';
+function Field({ label, req, children }: { label: string; req?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}{req && <span className="text-red-400"> *</span>}</label>
+      {children}
+    </div>
+  );
+}

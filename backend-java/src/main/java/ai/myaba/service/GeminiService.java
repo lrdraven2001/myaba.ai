@@ -48,10 +48,14 @@ public class GeminiService implements LlmProvider {
      * from Anthropic's {@code us-east5}, which is why region is a per-model setting.
      */
     private final String geminiLocation;
-    /** Gemini model name, e.g. {@code gemini-2.5-flash} (GA) or {@code gemini-3-pro-preview}. */
-    private final String geminiModel;
+    /** Tier 1 — fast/cheap model (chat + lightweight docs), e.g. {@code gemini-3.1-flash-lite}. */
+    private final String geminiModelFast;
+    /** Tier 2 — higher-reasoning model for long clinical documents, e.g. {@code gemini-2.5-pro}. */
+    private final String geminiModelReasoning;
 
     private final int maxTokens;
+    /** Larger output budget for the reasoning tier (long, interdependent documents). */
+    private final int reasoningMaxTokens;
     private final ObjectMapper mapper;
     private final LlmHttpSupport http;
 
@@ -60,14 +64,19 @@ public class GeminiService implements LlmProvider {
             LlmHttpSupport http,
             @Value("${vertex.project-id:}")            String vertexProjectId,
             @Value("${gemini.location:global}")        String geminiLocation,
-            @Value("${gemini.model:gemini-2.5-flash}") String geminiModel,
-            @Value("${anthropic.max-tokens:4000}")     int maxTokens) {
-        this.mapper          = mapper;
-        this.http            = http;
-        this.vertexProjectId = vertexProjectId;
-        this.geminiLocation  = geminiLocation;
-        this.geminiModel     = geminiModel;
-        this.maxTokens       = maxTokens;
+            // Fast tier defaults to gemini.model-fast, then legacy gemini.model, then Flash-Lite.
+            @Value("${gemini.model-fast:${gemini.model:gemini-3.1-flash-lite}}") String geminiModelFast,
+            @Value("${gemini.model-reasoning:gemini-2.5-pro}")                   String geminiModelReasoning,
+            @Value("${anthropic.max-tokens:4000}")            int maxTokens,
+            @Value("${gemini.max-tokens-reasoning:32768}")    int reasoningMaxTokens) {
+        this.mapper               = mapper;
+        this.http                 = http;
+        this.vertexProjectId      = vertexProjectId;
+        this.geminiLocation       = geminiLocation;
+        this.geminiModelFast      = geminiModelFast;
+        this.geminiModelReasoning = geminiModelReasoning;
+        this.maxTokens            = maxTokens;
+        this.reasoningMaxTokens   = reasoningMaxTokens;
     }
 
     @Override
@@ -83,8 +92,33 @@ public class GeminiService implements LlmProvider {
      * <p>Auth is the same short-lived ADC bearer token the Claude Vertex path uses.
      */
     @Override
-    @SuppressWarnings("unchecked")
     public String complete(String system, List<Map<String, String>> messages) {
+        return callGemini(geminiModelFast, fastGenerationConfig(), system, messages);
+    }
+
+    @Override
+    public String complete(String system, List<Map<String, String>> messages, boolean reasoning) {
+        return reasoning
+                ? callGemini(geminiModelReasoning, reasoningGenerationConfig(), system, messages)
+                : callGemini(geminiModelFast, fastGenerationConfig(), system, messages);
+    }
+
+    /** Fast tier (Flash-Lite): thinking disabled for low latency, moderate output budget. */
+    private Map<String, Object> fastGenerationConfig() {
+        return Map.of(
+                "maxOutputTokens", maxTokens,
+                // No extended reasoning — fast/cheap turnaround for chat + lightweight docs.
+                "thinkingConfig", Map.of("thinkingBudget", 0));
+    }
+
+    /** Reasoning tier (Pro): thinking ON (default) and a large budget for long documents. */
+    private Map<String, Object> reasoningGenerationConfig() {
+        return Map.of("maxOutputTokens", reasoningMaxTokens);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String callGemini(String model, Map<String, Object> generationConfig,
+                              String system, List<Map<String, String>> messages) {
         if (vertexProjectId == null || vertexProjectId.isBlank()) {
             throw new IllegalStateException(
                     "ai.provider=gemini but VERTEX_PROJECT_ID is not set. " +
@@ -95,7 +129,7 @@ public class GeminiService implements LlmProvider {
 
             String endpoint = "https://%s/v1/projects/%s/locations/%s"
                     .formatted(http.vertexHost(geminiLocation), vertexProjectId, geminiLocation)
-                    + "/publishers/google/models/%s:generateContent".formatted(geminiModel);
+                    + "/publishers/google/models/%s:generateContent".formatted(model);
 
             // Map Anthropic-style messages → Gemini contents.
             // role: "assistant" → "model"; everything else → "user".
@@ -111,7 +145,7 @@ public class GeminiService implements LlmProvider {
             Map<String, Object> body = Map.of(
                     "systemInstruction", Map.of("parts", List.of(Map.of("text", system))),
                     "contents", contents,
-                    "generationConfig", Map.of("maxOutputTokens", maxTokens)
+                    "generationConfig", generationConfig
             );
 
             HttpURLConnection conn = http.openConnection(endpoint, "Bearer " + token, null);
@@ -121,27 +155,45 @@ public class GeminiService implements LlmProvider {
             String responseBody = http.readResponse(conn, status);
 
             if (status != 200) {
-                log.error("Vertex AI Gemini error {}: {}", status, responseBody);
+                log.error("Vertex AI Gemini ({}) error {}: {}", model, status, responseBody);
                 throw new RuntimeException("Vertex AI returned HTTP " + status + ": " + responseBody);
             }
 
             Map<?, ?> parsed   = mapper.readValue(responseBody, Map.class);
             List<?> candidates = (List<?>) parsed.get("candidates");
             if (candidates == null || candidates.isEmpty()) {
-                // Most commonly a safety block or empty completion — surface the raw body.
-                log.error("Vertex AI Gemini returned no candidates: {}", responseBody);
+                log.error("Vertex AI Gemini ({}) returned no candidates: {}", model, responseBody);
                 throw new RuntimeException("Gemini returned no candidates: " + responseBody);
             }
             Map<?, ?> candidate = (Map<?, ?>) candidates.get(0);
-            Map<?, ?> content   = (Map<?, ?>) candidate.get("content");
-            List<?> parts       = (List<?>) content.get("parts");
-            Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
-            return firstPart.get("text").toString();
+            String text = extractText((Map<?, ?>) candidate.get("content"));
+            if (text == null || text.isBlank()) {
+                // A thinking model can exhaust the output budget on reasoning → no text part.
+                Object finish = candidate.get("finishReason");
+                log.error("Gemini ({}) returned no text (finishReason={}): {}", model, finish, responseBody);
+                throw new RuntimeException("Gemini returned no text (finishReason=" + finish + ")");
+            }
+            return text;
 
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException("Vertex AI Gemini call failed: " + e.getMessage(), e);
         }
+    }
+
+    /** Concatenate text parts, skipping any "thought" parts emitted by reasoning models. */
+    private String extractText(Map<?, ?> content) {
+        if (content == null) return null;
+        Object partsObj = content.get("parts");
+        if (!(partsObj instanceof List<?> parts)) return null;
+        StringBuilder sb = new StringBuilder();
+        for (Object p : parts) {
+            if (!(p instanceof Map<?, ?> part)) continue;
+            if (Boolean.TRUE.equals(part.get("thought"))) continue; // skip reasoning trace
+            Object t = part.get("text");
+            if (t != null) sb.append(t);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 }

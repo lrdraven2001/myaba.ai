@@ -49,6 +49,24 @@ public class AiService {
             - Do NOT use markdown bold (**text**) or italic (*text*) — use plain text labels instead
             - Do NOT use markdown headers (##, ###) — use ALL CAPS labels like "SECTION:" instead
             - Keep responses professional and clinical in tone
+
+            Document generation:
+            - When the user asks you to write, draft, or generate a document (a BIP, FBA, \
+              progress note, letter, assessment, etc.), put the COMPLETE document body — and \
+              nothing else — between a line containing only <document> and a line containing \
+              only </document>. The text between those tags is EXACTLY what gets downloaded as \
+              the Word/Excel file, so it must contain ONLY the document itself: no "Here is..." \
+              preamble, no closing questions, no commentary. Any greeting or follow-up remark \
+              must go OUTSIDE the tags.
+            - If the user asks for the document to contain specific exact text, put ONLY that \
+              exact text between the tags (e.g. a request for a document that just says \
+              "Hello World" yields <document> on its own line, then Hello World, then </document>).
+            - EXCEPTION to the table rule: when the user asks for a table, spreadsheet, or Excel \
+              export (e.g. "make a table of session data", "give me an Excel of goals"), format \
+              that data as a Markdown pipe table — a header row like "| Goal | Status | Date |", \
+              a separator row "| --- | --- | --- |", then one row per record — and place that \
+              table inside the same <document> … </document> tags. Use tables ONLY when tabular \
+              output is requested.
             """;
 
     private static final Map<String, String> DOCUMENT_PROMPTS = Map.of(
@@ -150,10 +168,23 @@ public class AiService {
                 additionalContext != null ? additionalContext : "None provided",
                 typePrompt);
 
+        // Tiered routing: signable, multi-section clinical documents that demand cross-section
+        // consistency go to the higher-reasoning model; everything else uses the fast/cheap tier.
+        boolean reasoning = REASONING_DOC_TYPES.contains(documentType);
         return provider().complete(BCBA_SYSTEM_PROMPT, List.of(
                 Map.of("role", "user", "content", userContent)
-        ));
+        ), reasoning);
     }
+
+    /**
+     * Document types routed to the reasoning tier (Tier 2). These synthesize structured
+     * assessment data into long, interdependent documents a BCBA signs. All other types —
+     * session notes, parent-training notes, supervision logs, custom templates, and chat —
+     * use the fast tier (Tier 1).
+     */
+    private static final java.util.Set<String> REASONING_DOC_TYPES = java.util.Set.of(
+            "behavior_intervention_plan", "functional_behavior_assessment",
+            "treatment_plan", "progress_report", "discharge_summary");
 
     public String chat(String systemPrompt, List<Map<String, String>> messages) {
         return provider().complete(

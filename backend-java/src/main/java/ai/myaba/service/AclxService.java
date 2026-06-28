@@ -426,32 +426,16 @@ public class AclxService {
     private List<String> buildScopes(AppUser user) {
         if (user == null || user.getRole() == null) return List.of();
         return switch (user.getRole()) {
-            case ai.myaba.model.dto.UserRole.TREATING_BCBA ->
-                    List.of("clinical_access", "phi_read", "phi_write", "document_generate");
-
             case ai.myaba.model.dto.UserRole.SUPERVISING_BCBA ->
                     List.of("clinical_access", "phi_read", "phi_write",
                             "document_generate", "document_approve", "caseload_oversight");
 
-            case ai.myaba.model.dto.UserRole.BCBA_STUDENT ->
-                    List.of("clinical_access", "phi_read", "phi_write",
-                            "document_generate", "supervisor_review_required");
-
             case ai.myaba.model.dto.UserRole.RBT ->
                     List.of("session_notes_only", "phi_read_limited", "assigned_clients_only");
-
-            case ai.myaba.model.dto.UserRole.SCHEDULING_ADMIN ->
-                    List.of("scheduling_access", "demographics_read");
-
-            case ai.myaba.model.dto.UserRole.BILLING_ADMIN ->
-                    List.of("billing_access", "insurance_data");
 
             case ai.myaba.model.dto.UserRole.CLINICAL_DIRECTOR ->
                     List.of("org_management", "user_management", "phi_read", "phi_write",
                             "clinical_oversight", "all_clients");
-
-            case ai.myaba.model.dto.UserRole.ORG_ADMIN ->
-                    List.of("org_management", "user_management");
 
             case ai.myaba.model.dto.UserRole.ORG_SUPER_ADMIN ->
                     List.of("org_management", "user_management", "platform_config", "phi_read");

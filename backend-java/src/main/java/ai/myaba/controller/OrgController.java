@@ -257,6 +257,23 @@ public class OrgController {
         }
     }
 
+    // ── Current user's own profile ───────────────────────────────────────────
+
+    /** PUT /api/me/profile — update the signed-in user's display name (and sync email). */
+    @PutMapping("/api/me/profile")
+    public ResponseEntity<?> updateMyProfile(
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+        try {
+            orgService.updateMyProfile(user.getUid(), user.getOrgId(),
+                    body.get("displayName"), body.get("email"));
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception e) {
+            log.error("updateMyProfile failed for {}: {}", user.getUid(), e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update profile"));
+        }
+    }
+
     // ── Business Associate Agreement (BAA) ───────────────────────────────────
 
     /**
@@ -357,6 +374,88 @@ public class OrgController {
         } catch (Exception e) {
             log.error("downloadBaaDocument failed for org {}: {}", orgId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to render BAA document"));
+        }
+    }
+
+    // ── Service Contract (master service agreement) ──────────────────────────
+
+    /** GET /api/orgs/{orgId}/service-contract — acceptance record, or {accepted:false}. */
+    @GetMapping("/api/orgs/{orgId}/service-contract")
+    public ResponseEntity<?> getServiceContractStatus(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.getServiceContractStatus(orgId));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("getServiceContractStatus failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to retrieve Service Contract status"));
+        }
+    }
+
+    /** POST /api/orgs/{orgId}/service-contract — record acceptance. Body: { signerName, signerTitle }. */
+    @PostMapping("/api/orgs/{orgId}/service-contract")
+    public ResponseEntity<?> acceptServiceContract(
+            @PathVariable String orgId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        boolean authorized = isAdminOf(user, orgId);
+        if (!authorized) {
+            try {
+                Map<String, Object> org = orgService.getOrg(orgId);
+                authorized = user.getUid().equals(org.get("adminUid"));
+            } catch (Exception ignored) {}
+        }
+        if (!authorized) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Admin access required"));
+        }
+
+        String signerName  = body.get("signerName");
+        String signerTitle = body.get("signerTitle");
+        if (signerName == null || signerName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "signerName is required"));
+        }
+        if (signerTitle == null || signerTitle.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "signerTitle is required"));
+        }
+        try {
+            Map<String, Object> result = orgService.acceptServiceContract(
+                    orgId, user.getUid(), signerName.trim(), signerTitle.trim());
+            return ResponseEntity.status(HttpStatus.CREATED).body(result);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("acceptServiceContract failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record Service Contract acceptance"));
+        }
+    }
+
+    /** GET /api/orgs/{orgId}/service-contract/document — download the executed contract as PDF. */
+    @GetMapping(value = "/api/orgs/{orgId}/service-contract/document")
+    public ResponseEntity<?> downloadServiceContractDocument(
+            @PathVariable String orgId,
+            @AuthenticationPrincipal AppUser user) {
+        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
+        }
+        try {
+            byte[] pdf = orgService.renderServiceContractPdf(orgId);
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"ServiceContract-" + orgId + ".pdf\"")
+                    .header("Content-Type", "application/pdf")
+                    .body(pdf);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("downloadServiceContractDocument failed for org {}: {}", orgId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to render Service Contract document"));
         }
     }
 
@@ -520,8 +619,7 @@ public class OrgController {
 
     private boolean isAdminOf(AppUser user, String orgId) {
         return orgId.equals(user.getOrgId())
-                && (UserRole.ORG_ADMIN.equals(user.getRole())
-                    || UserRole.ORG_SUPER_ADMIN.equals(user.getRole())
+                && (UserRole.ORG_SUPER_ADMIN.equals(user.getRole())
                     // CLINICAL_DIRECTOR is the org creator / primary practice admin — must
                     // have the same org-admin access (members, invites, activity, role changes).
                     || UserRole.CLINICAL_DIRECTOR.equals(user.getRole()));

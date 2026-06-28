@@ -64,7 +64,7 @@ function displayName(client: { firstName?: string; lastName?: string; legalName?
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
-export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: string) => void }) {
+export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?: (clientId: string) => void; onOpenChat?: (chatId: string) => void }) {
   const { currentUser } = useAuth();
   const [clients, setClients]         = useState<Client[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -279,6 +279,7 @@ export default function ClientsView({ onStartChat }: { onStartChat?: (clientId: 
               <ClientChatsTab
                 clientId={selectedClient.id}
                 onStartChat={onStartChat ? () => onStartChat!(selectedClient.id) : undefined}
+                onOpenChat={onOpenChat}
               />
             )}
             {activeTab === 'treatment_team' && (
@@ -901,7 +902,7 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
 
 // ── Chats tab ─────────────────────────────────────────────────────────────────
 
-function ClientChatsTab({ clientId, onStartChat }: { clientId: string; onStartChat?: () => void }) {
+function ClientChatsTab({ clientId, onStartChat, onOpenChat }: { clientId: string; onStartChat?: () => void; onOpenChat?: (chatId: string) => void }) {
   const [chats, setChats]     = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -958,8 +959,8 @@ function ClientChatsTab({ clientId, onStartChat }: { clientId: string; onStartCh
                   {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                 </p>
               </div>
-              {onStartChat && (
-                <button onClick={onStartChat}
+              {onOpenChat && (
+                <button onClick={() => onOpenChat(chat.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0"
                   style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}>
                   <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />

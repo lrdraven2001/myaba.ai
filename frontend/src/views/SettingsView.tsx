@@ -5,7 +5,7 @@ import {
   faSlidersH, faToggleOn, faToggleOff, faMinus, faCheck, faLock,
   faMobileAlt, faPlus, faTimes, faPen, faFileContract, faPlug,
   faSearch, faLink, faUnlink, faCheckCircle, faExclamationCircle,
-  faUpload, faExclamationTriangle, faTag, faDownload,
+  faUpload, faExclamationTriangle, faTag, faDownload, faArrowRight,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -115,6 +115,15 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [baaSaving,    setBaaSaving]    = useState(false);
   const [baaError,     setBaaError]     = useState('');
 
+  // Service Contract status + sign form (mirrors the BAA)
+  const [scStatus,  setScStatus]  = useState<BaaStatus | null>(null);
+  const [scExpanded, setScExpanded] = useState(false);
+  const [scName,    setScName]    = useState('');
+  const [scTitle,   setScTitle]   = useState('');
+  const [scChecked, setScChecked] = useState(false);
+  const [scSaving,  setScSaving]  = useState(false);
+  const [scError,   setScError]   = useState('');
+
   // "Last saved" snapshots — used by dirty check and Cancel
   const [origName, setOrigName]                   = useState('');
   const [origInsurers, setOrigInsurers]           = useState<string[]>([]);
@@ -134,7 +143,8 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
       api.getOrgAclxPolicy(orgId).catch(() => null),
       api.getInsuranceCompanies(orgId).catch(() => ({ companies: [] as string[] })),
       api.getBaaStatus(orgId).catch(() => null),
-    ]).then(([o, policy, ins, baa]) => {
+      api.getServiceContractStatus(orgId).catch(() => null),
+    ]).then(([o, policy, ins, baa, sc]) => {
       const name      = o.name ?? '';
       const sens      = policy?.escalateAtSensitivity ?? '';
       const companies = ins.companies ?? [];
@@ -152,6 +162,7 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
       setReviewRequired(revReq);
       setAclxEnabled(aclxEn);
       if (baa) setBaaStatus(baa);
+      if (sc) setScStatus(sc);
 
       // Snapshots for dirty check + cancel
       setOrigName(name);
@@ -226,6 +237,27 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
       setBaaError(e instanceof Error ? e.message : 'Failed to record BAA acceptance');
     } finally {
       setBaaSaving(false);
+    }
+  };
+
+  const handleAcceptServiceContract = async () => {
+    if (!scName.trim() || !scTitle.trim() || !scChecked) return;
+    setScSaving(true);
+    setScError('');
+    try {
+      const result = await api.acceptServiceContract(orgId, {
+        signerName:  scName.trim(),
+        signerTitle: scTitle.trim(),
+      });
+      setScStatus(result);
+      setScExpanded(false);
+      setScName('');
+      setScTitle('');
+      setScChecked(false);
+    } catch (e: unknown) {
+      setScError(e instanceof Error ? e.message : 'Failed to record Service Contract acceptance');
+    } finally {
+      setScSaving(false);
     }
   };
 
@@ -452,6 +484,150 @@ function OrgTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
                   </button>
                 </div>
 
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Service Contract ── */}
+      <div className={`bg-white rounded-xl border p-6 ${scStatus?.accepted ? 'border-gray-200' : 'border-amber-300'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: scStatus?.accepted ? '#e8f4f8' : '#fef3c7' }}>
+              <FontAwesomeIcon icon={faFileContract}
+                style={{ color: scStatus?.accepted ? '#2a5f6f' : '#d97706', fontSize: 16 }} />
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 text-sm">Service Contract</h4>
+              <p className="text-xs text-gray-500 mt-0.5">
+                The master service agreement between your agency and MyABA.ai.
+              </p>
+            </div>
+          </div>
+          <span className="shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold"
+            style={scStatus?.accepted
+              ? { background: '#EEF7EA', color: '#2E7D22', border: '1px solid #bbf7d0' }
+              : { background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+            {scStatus?.accepted ? 'Signed' : 'Not Signed'}
+          </span>
+        </div>
+
+        {/* Signed — show record */}
+        {scStatus?.accepted && (
+          <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+            <div>
+              <span className="text-gray-400 font-medium uppercase tracking-wide">Signed by</span>
+              <p className="text-gray-700 font-semibold mt-0.5">{scStatus.signerName}</p>
+              <p className="text-gray-500">{scStatus.signerTitle}</p>
+            </div>
+            <div>
+              <span className="text-gray-400 font-medium uppercase tracking-wide">Accepted</span>
+              <p className="text-gray-700 font-semibold mt-0.5">
+                {scStatus.acceptedAt
+                  ? new Date(scStatus.acceptedAt).toLocaleDateString(undefined, {
+                      year: 'numeric', month: 'long', day: 'numeric',
+                    })
+                  : '—'}
+              </p>
+              <p className="text-gray-500">Contract version {scStatus.version ?? '1.0'}</p>
+            </div>
+            <div className="col-span-2 mt-2">
+              <button
+                onClick={() => api.downloadServiceContract(orgId).catch(() => {})}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
+              >
+                <FontAwesomeIcon icon={faDownload} />
+                Download signed Service Contract
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Not yet signed — CTA or inline form */}
+        {!scStatus?.accepted && (
+          <>
+            {!scExpanded ? (
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Your organization has not yet signed the Service Contract.
+                </p>
+                {isAdmin && (
+                  <button
+                    onClick={() => setScExpanded(true)}
+                    className="shrink-0 px-4 py-2 rounded-lg text-white text-xs font-semibold"
+                    style={{ background: '#2a5f6f' }}
+                  >
+                    Sign Service Contract
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  This agreement covers the scope of services, subscription terms, fees, data ownership, and
+                  termination. The full executed document is available to download as a PDF once signed.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                      Full Legal Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      placeholder="e.g. Jane Smith"
+                      value={scName}
+                      onChange={(e) => setScName(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                      Title / Position
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      placeholder="e.g. Executive Director"
+                      value={scTitle}
+                      onChange={(e) => setScTitle(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 shrink-0 accent-teal-700"
+                    checked={scChecked}
+                    onChange={(e) => setScChecked(e.target.checked)}
+                  />
+                  <span className="text-xs text-gray-600 leading-relaxed">
+                    I have authority to bind my organization to this Service Contract and accept it on behalf of my organization.
+                  </span>
+                </label>
+                {scError && <p className="text-xs text-red-500">{scError}</p>}
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    onClick={handleAcceptServiceContract}
+                    disabled={!scName.trim() || !scTitle.trim() || !scChecked || scSaving}
+                    className="px-5 py-2 rounded-lg text-white text-sm font-semibold"
+                    style={{
+                      background: (scName.trim() && scTitle.trim() && scChecked) ? '#2a5f6f' : '#9ca3af',
+                      cursor: (!scName.trim() || !scTitle.trim() || !scChecked || scSaving) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {scSaving ? 'Recording…' : 'Accept & Sign Service Contract'}
+                  </button>
+                  <button
+                    onClick={() => { setScExpanded(false); setScName(''); setScTitle(''); setScChecked(false); setScError(''); }}
+                    className="px-4 py-2 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </>
@@ -893,14 +1069,11 @@ function SecurityTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
 // ── Roles & Permissions tab ───────────────────────────────────────────────────
 
 const ROLES_CONFIG = [
-  { key: 'ORG_SUPER_ADMIN',   label: 'Clinical Director',      locked: true,  baseline: false },
-  { key: 'CLINICAL_DIRECTOR', label: 'Clinical Director',      locked: true,  baseline: false },
-  { key: 'ORG_ADMIN',         label: 'Practice Administrator', locked: false, baseline: true  },
-  { key: 'SUPERVISING_BCBA',  label: 'Clinical Supervisor', locked: false, baseline: true  },
-  { key: 'RBT',               label: 'Behavior Technician', locked: false, baseline: true  },
-  { key: 'GENERAL_STAFF',     label: 'General Staff',       locked: false, baseline: false },
-  { key: 'SCHEDULING_ADMIN',  label: 'Scheduling Admin',    locked: false, baseline: false },
-  { key: 'BILLING_ADMIN',     label: 'Billing Admin',       locked: false, baseline: false },
+  { key: 'ORG_SUPER_ADMIN',   label: 'Practice Administrator', locked: true,  baseline: false, restricted: false },
+  { key: 'CLINICAL_DIRECTOR', label: 'Clinical Director',      locked: false, baseline: false, restricted: false },
+  { key: 'SUPERVISING_BCBA',  label: 'Clinical Supervisor',    locked: false, baseline: true,  restricted: false },
+  { key: 'RBT',               label: 'Behavior Technician',    locked: false, baseline: true,  restricted: false },
+  { key: 'GENERAL_STAFF',     label: 'General Staff',          locked: false, baseline: false, restricted: true  },
 ];
 
 const PERM_GROUPS = [
@@ -917,9 +1090,9 @@ type PermMatrix = Record<string, Record<string, Record<string, boolean>>>;
 const DEFAULT_PERMS: PermMatrix = {
   ORG_SUPER_ADMIN:   { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:true }  },
   CLINICAL_DIRECTOR: { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:true }  },
-  ORG_ADMIN:         { clients:{add:true,  edit:true,  delete:true },  projects:{add:true,  edit:true,  delete:true },  resources:{add:true,  edit:true,  delete:true },  team:{add:true,  edit:true,  delete:false}  },
   SUPERVISING_BCBA:  { clients:{add:true,  edit:true,  delete:false},  projects:{add:true,  edit:true,  delete:false},  resources:{add:false, edit:true,  delete:false},  team:{add:false, edit:false, delete:false}  },
-  RBT:               { clients:{add:false, edit:true,  delete:false},  projects:{add:false, edit:false, delete:false},  resources:{add:false, edit:false, delete:false},  team:{add:false, edit:false, delete:false}  },
+  RBT:               { clients:{add:false, edit:true,  delete:false},  projects:{add:true,  edit:true,  delete:false},  resources:{add:false, edit:false, delete:false},  team:{add:false, edit:false, delete:false}  },
+  GENERAL_STAFF:     { clients:{add:false, edit:false, delete:false},  projects:{add:true,  edit:true,  delete:false},  resources:{add:false, edit:false, delete:false},  team:{add:false, edit:false, delete:false}  },
 };
 
 type CustomRole = { key: string; label: string };
@@ -937,35 +1110,14 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   const [saved, setSaved]             = useState(false);
 
-  // Admin clinical access toggle
-  const [adminClinicalAccess, setAdminClinicalAccess] = useState(false);
-  const [adminClinicalSaving, setAdminClinicalSaving] = useState(false);
-
   // Roles currently assigned to at least one org member — fetched on mount
   const [memberRoles, setMemberRoles] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!orgId) return;
-    api.getOrg(orgId)
-      .then((o) => setAdminClinicalAccess(o.settings?.adminClinicalAccess ?? false))
-      .catch(() => {});
     api.getOrgMembers(orgId)
       .then((members) => setMemberRoles(new Set(members.map((m) => m.role))))
       .catch(() => { /* silently ignore — we won't block deletions on API failure */ });
   }, [orgId]);
-
-  const handleAdminClinicalToggle = async () => {
-    if (!isAdmin) return;
-    const next = !adminClinicalAccess;
-    setAdminClinicalAccess(next);
-    setAdminClinicalSaving(true);
-    try {
-      await api.updateOrgSettings(orgId, { adminClinicalAccess: next });
-    } catch {
-      setAdminClinicalAccess(!next); // revert on failure
-    } finally {
-      setAdminClinicalSaving(false);
-    }
-  };
 
   // Editable display names — keyed by role key
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>(() =>
@@ -983,7 +1135,7 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
 
   const allRoles = [
     ...ROLES_CONFIG.map((r) => ({ ...r, custom: false })),
-    ...customRoles.map((r) => ({ ...r, locked: false, baseline: false, custom: true })),
+    ...customRoles.map((r) => ({ ...r, locked: false, baseline: false, restricted: false, custom: true })),
   ];
 
   const toggle = (roleKey: string, group: string, action: string) => {
@@ -1065,7 +1217,8 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
           <h3 className="text-xl font-semibold text-gray-900 mb-1">Roles & Permissions</h3>
           <p className="text-sm text-gray-500">
             Rename roles and configure their permissions. Click a role name to edit it.
-            Super Admin is a fixed system role.
+            Practice Administrator is a fixed system role with full access.
+            General Staff is a restricted, non-HIPAA role.
           </p>
         </div>
         {isAdmin && (
@@ -1078,32 +1231,6 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
             Add Role
           </button>
         )}
-      </div>
-
-      {/* Administrator Clinical Access */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-gray-800">Administrator Clinical Access</p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              When on, users with the <strong className="text-gray-600">Full Administrator</strong> role
-              can use AI chat and generate clinical documents — useful when your administrator is
-              also your lead BCBA.
-            </p>
-          </div>
-          <button
-            onClick={handleAdminClinicalToggle}
-            disabled={!isAdmin || adminClinicalSaving}
-            className="shrink-0 transition-colors disabled:opacity-50"
-            style={{ color: adminClinicalAccess ? '#3F9B2F' : '#d1d5db' }}
-            title={isAdmin ? (adminClinicalAccess ? 'Disable admin clinical access' : 'Enable admin clinical access') : 'Admin only'}
-          >
-            <FontAwesomeIcon
-              icon={adminClinicalAccess ? faToggleOn : faToggleOff}
-              style={{ fontSize: 28 }}
-            />
-          </button>
-        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -1180,6 +1307,15 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
                         {!role.locked && role.baseline && (
                           <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-400">
                             Baseline
+                          </span>
+                        )}
+                        {role.restricted && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded font-medium"
+                            style={{ background: '#fef3c7', color: '#92400e' }}
+                            title="Restricted role — no access to HIPAA-protected data (PHI)"
+                          >
+                            Restricted · Non-HIPAA
                           </span>
                         )}
                         {role.custom && (
@@ -1304,6 +1440,103 @@ function RolesTab({ isAdmin, orgId }: { isAdmin: boolean; orgId: string }) {
             {saved ? '✓ Permissions Saved' : 'Save Permissions'}
           </button>
           {saved && <span className="text-xs text-gray-400">Changes will apply on next session.</span>}
+        </div>
+      )}
+
+      {/* Identity-provider role mapping (stubbed — not yet enforced) */}
+      <IdpMappingSection
+        roles={allRoles.map((r) => ({ key: r.key, label: roleLabels[r.key] ?? r.label }))}
+        isAdmin={isAdmin}
+      />
+    </div>
+  );
+}
+
+// ── Identity-provider role mapping (stub) ───────────────────────────────────────
+
+function IdpMappingSection({
+  roles, isAdmin,
+}: {
+  roles: { key: string; label: string }[];
+  isAdmin: boolean;
+}) {
+  const [mappings, setMappings] = useState<{ idpRole: string; appRole: string }[]>([]);
+  const [idpRole, setIdpRole]   = useState('');
+  const [appRole, setAppRole]   = useState(roles[0]?.key ?? '');
+
+  const addMapping = () => {
+    if (!idpRole.trim() || !appRole) return;
+    setMappings((prev) => [...prev, { idpRole: idpRole.trim(), appRole }]);
+    setIdpRole('');
+  };
+
+  return (
+    <div className="mt-8 bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <FontAwesomeIcon icon={faLink} style={{ color: '#2a5f6f', fontSize: 13 }} />
+        <h4 className="text-sm font-semibold text-gray-800">Identity Provider Role Mapping</h4>
+        <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{ background: '#fef3c7', color: '#92400e' }}>
+          Preview
+        </span>
+      </div>
+      <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+        Map roles or groups from your SSO / identity provider (Okta, Microsoft Entra, Google Workspace, SAML)
+        to MyABA.ai roles. When SSO is enabled, members will be assigned the mapped role automatically.
+        <strong className="text-gray-500"> Not yet enforced — this configuration is saved for when SSO goes live.</strong>
+      </p>
+
+      {mappings.length > 0 && (
+        <div className="mb-4 divide-y divide-gray-100 border border-gray-100 rounded-lg">
+          {mappings.map((m, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <span className="font-mono text-gray-700">{m.idpRole}</span>
+              <span className="text-gray-300">→</span>
+              <span className="text-gray-700">{roles.find((r) => r.key === m.appRole)?.label ?? m.appRole}</span>
+              {isAdmin && (
+                <button
+                  onClick={() => setMappings((prev) => prev.filter((_, j) => j !== i))}
+                  className="ml-auto text-gray-300 hover:text-red-500"
+                  title="Remove mapping"
+                >
+                  <FontAwesomeIcon icon={faTimes} style={{ fontSize: 12 }} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">IdP role / group</label>
+            <input
+              type="text"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              placeholder="e.g. aba-supervisors"
+              value={idpRole}
+              onChange={(e) => setIdpRole(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addMapping(); }}
+            />
+          </div>
+          <FontAwesomeIcon icon={faArrowRight} style={{ color: '#9ca3af', fontSize: 12, marginBottom: 10 }} />
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">MyABA.ai role</label>
+            <select
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white"
+              value={appRole}
+              onChange={(e) => setAppRole(e.target.value)}
+            >
+              {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
+          </div>
+          <button
+            onClick={addMapping}
+            className="px-4 py-2 rounded-lg text-white text-sm font-medium shrink-0"
+            style={{ background: '#2a5f6f' }}
+          >
+            Add Mapping
+          </button>
         </div>
       )}
     </div>

@@ -26,6 +26,8 @@ interface AuthContextValue {
   register: (email: string, password: string, displayName: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-read the Firebase user + claims (call after a profile / email / MFA change). */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -112,8 +114,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
 
+  const refreshUser = async () => {
+    if (DEV_AUTH) return;
+    const { auth } = await import('../lib/firebase');
+    const user = auth.currentUser;
+    if (!user) return;
+    await user.reload();
+    const tokenResult = await user.getIdTokenResult(true);
+    const claims = tokenResult.claims as Record<string, unknown>;
+    setFirebaseUser(user);
+    setCurrentUser({
+      uid: user.uid,
+      email: user.email ?? '',
+      displayName: user.displayName,
+      role: (claims.role as UserRole) ?? 'GENERAL_STAFF',
+      purpose: (claims.purpose as UserPurpose) ?? 'treatment',
+      orgId: (claims.orgId as string) ?? '',
+      supervisorId: claims.supervisorId as string | undefined,
+      phiAccess: claims.phiAccess as boolean | undefined,
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, register, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, register, loginWithGoogle, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

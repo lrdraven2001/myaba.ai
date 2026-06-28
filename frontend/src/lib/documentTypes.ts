@@ -127,6 +127,23 @@ export const DOCUMENT_TYPES: DocumentType[] = [
   },
 ];
 
+/** Topical category for each built-in document type (matches the Resources category pills). */
+export const DOCUMENT_TYPE_CATEGORY: Record<string, string> = {
+  behavior_intervention_plan:     'Clinical',
+  functional_behavior_assessment: 'Clinical',
+  session_note:                   'Clinical',
+  progress_report:                'Reports',
+  treatment_plan:                 'Clinical',
+  discharge_summary:              'Discharge',
+  parent_training_note:           'Parent Training',
+  supervision_log:                'Supervision',
+};
+
+/** Category for a document type — built-in starters have a defined category; others default to Clinical. */
+export function categoryFor(value: string): string {
+  return DOCUMENT_TYPE_CATEGORY[value] ?? 'Clinical';
+}
+
 export function documentTypeLabel(value: string): string {
   return DOCUMENT_TYPES.find((t) => t.value === value)?.label ?? value;
 }

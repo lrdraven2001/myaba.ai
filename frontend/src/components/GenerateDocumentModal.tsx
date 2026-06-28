@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTimes, faRobot, faSpinner, faShieldAlt, faCheckCircle,
-  faExclamationTriangle, faChevronDown, faChevronUp, faCopy, faCheck,
+  faExclamationTriangle, faChevronDown, faChevronUp, faCopy, faCheck, faFileWord,
 } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { DOCUMENT_TYPES } from '../lib/documentTypes';
@@ -64,22 +64,44 @@ export default function GenerateDocumentModal({
   const [result,    setResult]      = useState<GenerateResult | null>(null);
   const [showFindings, setShowFindings] = useState(false);
   const [copied,    setCopied]      = useState(false);
-  // Document types that have a customized agency Generation Template.
+  // Built-in document types that have a customized agency Generation Template.
   const [customizedTypes, setCustomizedTypes] = useState<Set<string>>(new Set());
+  // Agency-added custom templates (their own document types) — these grow the pulldown.
+  const [customTemplates, setCustomTemplates] = useState<Array<{ documentType: string; title: string }>>([]);
+  // Built-in document types the agency has hidden (archived) — excluded from the pulldown.
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.getResources()
       .then((res) => {
-        const list = (res as Array<{ resourceType?: string; documentType?: string; customized?: boolean }>) ?? [];
-        const customized = new Set(
-          list
-            .filter((r) => r.resourceType === 'GENERATION_TEMPLATE' && r.customized && r.documentType)
-            .map((r) => r.documentType as string),
+        const list = (res as Array<{ resourceType?: string; documentType?: string; customized?: boolean; archived?: boolean; title?: string }>) ?? [];
+        const builtinKeys = new Set(DOCUMENT_TYPES.map((t) => t.value));
+        const gen = list.filter((r) => r.resourceType === 'GENERATION_TEMPLATE' && r.documentType);
+        setHiddenTypes(new Set(gen.filter((r) => r.archived && r.documentType).map((r) => r.documentType as string)));
+        setCustomizedTypes(new Set(
+          gen.filter((r) => r.customized && !r.archived && builtinKeys.has(r.documentType as string)).map((r) => r.documentType as string),
+        ));
+        setCustomTemplates(
+          gen.filter((r) => !r.archived && !builtinKeys.has(r.documentType as string))
+             .map((r) => ({ documentType: r.documentType as string, title: r.title ?? r.documentType as string })),
         );
-        setCustomizedTypes(customized);
       })
       .catch(() => {});
   }, []);
+
+  // Built-in document types still visible in the pulldown (hidden ones removed).
+  const visibleDocTypes = DOCUMENT_TYPES.filter((t) => !hiddenTypes.has(t.value));
+
+  // If the selected built-in type was hidden, fall back to the first visible option.
+  useEffect(() => {
+    if (hiddenTypes.has(docType) && visibleDocTypes.length > 0) setDocType(visibleDocTypes[0].value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenTypes]);
+
+  const currentDocLabel =
+    DOCUMENT_TYPES.find((t) => t.value === docType)?.label
+    ?? customTemplates.find((ct) => ct.documentType === docType)?.title
+    ?? docType;
 
   const generate = async () => {
     setLoading(true);
@@ -167,16 +189,25 @@ export default function GenerateDocumentModal({
                   onChange={(e) => setDocType(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
                 >
-                  {DOCUMENT_TYPES.map((t) => (
+                  {visibleDocTypes.map((t) => (
                     <option key={t.value} value={t.value}>
                       {t.label} {customizedTypes.has(t.value) ? '(Customized)' : '(Default)'}
                     </option>
                   ))}
+                  {customTemplates.length > 0 && (
+                    <optgroup label="Agency Templates">
+                      {customTemplates.map((ct) => (
+                        <option key={ct.documentType} value={ct.documentType}>{ct.title}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
-                  {customizedTypes.has(docType)
-                    ? 'Uses your agency’s customized template from the Agency Library.'
-                    : 'Uses the built-in default template. Customize it in Resources → Agency Library.'}
+                  {customTemplates.some((ct) => ct.documentType === docType)
+                    ? 'Uses your agency’s custom template from the Agency Library.'
+                    : customizedTypes.has(docType)
+                      ? 'Uses your agency’s customized template from the Agency Library.'
+                      : 'Uses the built-in default template. Customize it in Resources → Agency Library.'}
                 </p>
               </div>
 
@@ -232,15 +263,24 @@ export default function GenerateDocumentModal({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {DOCUMENT_TYPES.find(t => t.value === docType)?.label ?? docType}
+                    {currentDocLabel}
                   </p>
-                  <button
-                    onClick={copyContent}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
-                  >
-                    <FontAwesomeIcon icon={copied ? faCheck : faCopy} style={{ fontSize: 11 }} />
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => api.exportDocx(currentDocLabel, result.content).catch(() => {})}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      <FontAwesomeIcon icon={faFileWord} style={{ fontSize: 11 }} />
+                      Word
+                    </button>
+                    <button
+                      onClick={copyContent}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      <FontAwesomeIcon icon={copied ? faCheck : faCopy} style={{ fontSize: 11 }} />
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
                 <div
                   className="rounded-xl border border-gray-200 px-5 py-4 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed"

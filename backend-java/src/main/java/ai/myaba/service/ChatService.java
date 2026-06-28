@@ -336,6 +336,23 @@ public class ChatService {
                 .update(Map.of("title", newTitle, "updatedAt", now)).get();
     }
 
+    /** Attach (or, with empty clientId, detach) a client to an existing chat. */
+    public void setChatClient(AppUser user, String chatId, String clientId) throws Exception {
+        Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
+        if (!canManageChat(user, chat)) throw new SecurityException("Cannot update chat: " + chatId);
+        String cid = clientId != null ? clientId.trim() : "";
+        String now = Instant.now().toString();
+        if (devMode) {
+            chat.put("clientId", cid);
+            chat.put("updatedAt", now);
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection("organizations").document(user.getOrgId())
+                .collection("chats").document(chatId)
+                .update(Map.of("clientId", cid, "updatedAt", now)).get();
+    }
+
     /**
      * Delete a chat and all its messages (owner or admin only).
      */

@@ -98,7 +98,7 @@ public class DevAdminController {
         }
 
         String uid         = body.get("uid");
-        String role        = body.getOrDefault("role", UserRole.TREATING_BCBA);
+        String role        = body.getOrDefault("role", UserRole.CLINICAL_DIRECTOR);
         String orgId       = body.getOrDefault("orgId", "dev-org-001");
         String purpose     = body.getOrDefault("purpose", "treatment");
         String supervisorId = body.get("supervisorId");

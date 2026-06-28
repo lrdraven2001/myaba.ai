@@ -280,7 +280,7 @@ public class OrgAclxPolicyService {
 
     private void requireAdmin(AppUser user) {
         if (!UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("ACLX policy management requires ORG_ADMIN role");
+            throw new SecurityException("ACLX policy management requires an administrator role");
         }
     }
 }

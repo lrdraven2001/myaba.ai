@@ -85,7 +85,55 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+/** POST { title, content } to a document-export endpoint and trigger a file download. */
+async function downloadDoc(format: 'docx' | 'xlsx', title: string, content: string) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/documents/export/${format}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title, content }),
+  });
+  if (!res.ok) throw new Error(`Failed to export ${format.toUpperCase()} (HTTP ${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(title || 'document').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'document'}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── API surface ───────────────────────────────────────────────────────────────
+
+/** Fields accepted when creating/updating a resource (Library / Policies / Grounding / Templates). */
+export interface ResourceInput {
+  title?: string;
+  category?: string;
+  textContent?: string;
+  isActive?: boolean;
+  /** Bucket: LIBRARY | GROUNDING | POLICY */
+  bucket?: string;
+  resourceType?: string;
+  purposes?: string[];
+  /** For GENERATION_TEMPLATE resources — the client document type it customizes. */
+  documentType?: string;
+  customized?: boolean;
+  clientId?: string;
+  description?: string;
+  /** Topical category pill (Billing | Clinical | Supervision | …). */
+  topicCategory?: string;
+  /** File format: PDF | DOCX | PPTX | XLSX | LINK | TEXT. */
+  fileType?: string;
+  /** Origin: DRIVE | ONEDRIVE | WEB | UPLOAD | MANUAL. */
+  source?: string;
+  url?: string;
+  folder?: string;
+  shared?: boolean;
+  archived?: boolean;
+  linkedIds?: string[];
+}
 
 export const api = {
 
@@ -118,6 +166,13 @@ export const api = {
     request<void>(`/chats/${chatId}`, {
       method: 'PATCH',
       body: JSON.stringify({ title }),
+    }),
+
+  /** Attach (clientId) or detach ('') a client on an existing chat. */
+  setChatClient: (chatId: string, clientId: string) =>
+    request<void>(`/chats/${chatId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ clientId }),
     }),
 
   /** Delete a chat and all its messages. */
@@ -363,35 +418,13 @@ export const api = {
 
   getPolicy: (policyId: string) => request<PolicyDocument>(`/policies/${policyId}`),
 
-  createPolicy: (data: {
-    title: string;
-    category: string;
-    textContent?: string;
-    isActive?: boolean;
-    /** Bucket: LIBRARY | GROUNDING | POLICY */
-    bucket?: string;
-    resourceType?: string;
-    purposes?: string[];
-    /** For GENERATION_TEMPLATE library resources — the client document type it customizes. */
-    documentType?: string;
-    /** Whether a default template has been customized by the agency. */
-    customized?: boolean;
-    clientId?: string;
-  }) =>
+  createPolicy: (data: ResourceInput & { title: string; category: string }) =>
     request<{ policyId: string }>('/policies', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  updatePolicy: (
-    policyId: string,
-    data: {
-      title?: string;
-      category?: string;
-      textContent?: string;
-      isActive?: boolean;
-    },
-  ) =>
+  updatePolicy: (policyId: string, data: ResourceInput) =>
     request<void>(`/policies/${policyId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -399,6 +432,13 @@ export const api = {
 
   deletePolicy: (policyId: string) =>
     request<void>(`/policies/${policyId}`, { method: 'DELETE' }),
+
+  /** Archive / unarchive a resource (soft — keeps it for restore). */
+  setResourceArchived: (policyId: string, archived: boolean) =>
+    request<void>(`/policies/${policyId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ archived }),
+    }),
 
   getResources: (purpose?: string, clientId?: string) => {
     const params = new URLSearchParams();
@@ -491,6 +531,72 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /** Update the signed-in user's own profile (display name; email synced after verification). */
+  updateMyProfile: (data: { displayName?: string; email?: string }) =>
+    request<{ success: boolean }>('/me/profile', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // ── Notifications ───────────────────────────────────────────────────────────
+
+  getNotifications: () =>
+    request<{ items: Array<{
+      id: string; title: string; body?: string; level?: string; type?: string;
+      link?: string; read?: boolean; createdAt?: string;
+    }>; unread: number }>('/notifications'),
+
+  markNotificationRead: (id: string) =>
+    request<{ success: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
+
+  markAllNotificationsRead: () =>
+    request<{ success: boolean }>('/notifications/read-all', { method: 'POST' }),
+
+  /** Admin: send a system message to the whole team. */
+  broadcastNotification: (orgId: string, data: { title: string; body?: string; level?: string }) =>
+    request<{ sent: number }>(`/orgs/${orgId}/notifications/broadcast`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Service Contract acceptance status. */
+  getServiceContractStatus: (orgId: string) =>
+    request<{
+      accepted: boolean;
+      acceptedAt?: string;
+      acceptedBy?: string;
+      signerName?: string;
+      signerTitle?: string;
+      version?: string;
+    }>(`/orgs/${orgId}/service-contract`),
+
+  /** Record Service Contract acceptance (admin only). */
+  acceptServiceContract: (orgId: string, data: { signerName: string; signerTitle: string }) =>
+    request<{
+      accepted: boolean;
+      acceptedAt: string;
+      acceptedBy: string;
+      signerName: string;
+      signerTitle: string;
+      version: string;
+    }>(`/orgs/${orgId}/service-contract`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** Download the executed Service Contract as a PDF. */
+  downloadServiceContract: async (orgId: string) => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE}/orgs/${orgId}/service-contract/document`, { headers });
+    if (!res.ok) throw new Error(`Failed to download Service Contract (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ServiceContract-${orgId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   /** Assign or clear the supervisor for a member. Pass empty string to clear. Admin only. */
   setMemberSupervisor: (orgId: string, uid: string, supervisorId: string) =>
@@ -638,6 +744,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ clientId, documentType, additionalContext }),
     }),
+
+  /** Download generated text as a Word (.docx) file. */
+  exportDocx: (title: string, content: string) => downloadDoc('docx', title, content),
+
+  /** Download generated text (Markdown tables become a grid) as an Excel (.xlsx) file. */
+  exportXlsx: (title: string, content: string) => downloadDoc('xlsx', title, content),
+
+  /** Extract plain text from an uploaded Word (.docx) template. */
+  extractTemplateDocx: async (file: File): Promise<string> => {
+    const headers = await getAuthHeaders();
+    // Drop the JSON Content-Type so the browser sets the multipart boundary.
+    const h: Record<string, string> = {};
+    if (headers.Authorization) h.Authorization = headers.Authorization;
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/documents/template/extract`, { method: 'POST', headers: h, body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Failed to read Word document (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    return (data.text as string) ?? '';
+  },
 
   // ── Compliance dashboard ──────────────────────────────────────────────────
 

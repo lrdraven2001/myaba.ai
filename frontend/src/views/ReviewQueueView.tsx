@@ -4,7 +4,7 @@ import {
   faShieldAlt, faSpinner, faCheckCircle, faBan, faClock,
   faChevronDown, faChevronUp, faInfoCircle,
   faChartBar, faListAlt, faTag, faPlus, faTrash, faLock,
-  faBookOpen, faComments, faUser, faExclamationTriangle,
+  faBookOpen, faComments, faUser, faExclamationTriangle, faToggleOn, faToggleOff,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -231,7 +231,7 @@ export default function ReviewQueueView() {
           <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#2a5f6f', fontSize: 16 }} />
         </div>
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">Review &amp; Rules</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Review</h1>
           <p className="text-xs text-gray-500">
             {reviewRequired
               ? 'Flagged content is held for review before being delivered.'
@@ -653,6 +653,21 @@ export function OrgPolicyTab({ orgId }: { orgId: string }) {
   const [addSaving, setAddSaving]     = useState(false);
   const [addError, setAddError]       = useState('');
 
+  // Output rule: prefer client display/preferred names in generated content
+  const [preferNames, setPreferNames] = useState(false);
+  const [savingNames, setSavingNames] = useState(false);
+  useEffect(() => {
+    if (!orgId) return;
+    api.getOrg(orgId).then((o) => setPreferNames(o.settings?.preferClientDisplayName ?? false)).catch(() => {});
+  }, [orgId]);
+  const toggleNames = async () => {
+    const next = !preferNames;
+    setPreferNames(next); setSavingNames(true);
+    try { await api.updateOrgSettings(orgId, { preferClientDisplayName: next }); }
+    catch { setPreferNames(!next); }
+    finally { setSavingNames(false); }
+  };
+
   const loadPolicy = () => {
     if (!orgId) return;
     setLoading(true);
@@ -711,6 +726,30 @@ export function OrgPolicyTab({ orgId }: { orgId: string }) {
           beyond the default compliance baseline. Rules can be added manually or promoted
           from a review decision.
         </p>
+      </div>
+
+      {/* Output formatting rules */}
+      <div>
+        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Output Formatting</h3>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Use client preferred names in output</p>
+            <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+              When on, generated chats and documents always refer to a client by their preferred/display
+              name and never their legal name — enforced by both a model instruction and a deterministic
+              rewrite pass before the response is shown.
+            </p>
+          </div>
+          <button
+            onClick={toggleNames}
+            disabled={savingNames}
+            className="shrink-0 transition-colors disabled:opacity-50"
+            style={{ color: preferNames ? '#3F9B2F' : '#d1d5db' }}
+            title={preferNames ? 'Disable' : 'Enable'}
+          >
+            <FontAwesomeIcon icon={preferNames ? faToggleOn : faToggleOff} style={{ fontSize: 28 }} />
+          </button>
+        </div>
       </div>
 
       {/* Rule list */}

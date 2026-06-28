@@ -35,6 +35,8 @@ services:
       firebase emulators:start
         --project demo-myaba
         --only auth,firestore
+        --import=/home/node/.cache/data
+        --export-on-exit=/home/node/.cache/data
     ports:
       - "4000:4000"   # Emulator UI
       - "9099:9099"   # Auth
@@ -74,6 +76,9 @@ services:
       - VERTEX_MODEL=${VERTEX_MODEL:-claude-sonnet-4@20250514}
       - GEMINI_LOCATION=${GEMINI_LOCATION:-global}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      # Tiered models: Flash-Lite for chat + light docs, 2.5 Pro for signable clinical documents.
+      - GEMINI_MODEL_FAST=${GEMINI_MODEL_FAST:-gemini-3.1-flash-lite}
+      - GEMINI_MODEL_REASONING=${GEMINI_MODEL_REASONING:-gemini-2.5-pro}
       - GOOGLE_CLOUD_PROJECT=myapaai
       - FIREBASE_PROJECT_ID=demo-myaba
       - CORS_ALLOWED_ORIGINS=http://localhost:5173
@@ -131,6 +136,7 @@ services:
       - ./homepage/public:/app/public
 
 volumes:
-  # Persists emulator data (Firestore documents, Auth users) across restarts.
-  # Run `docker compose down -v` for a clean slate.
+  # Persists emulator data (Firestore documents, Auth users) across restarts via the
+  # --import / --export-on-exit flags on the firebase service. The snapshot lives at
+  # /home/node/.cache/data inside this volume. Run `docker compose down -v` for a clean slate.
   firebase-emulator-data:
