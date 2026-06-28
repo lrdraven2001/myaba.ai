@@ -78,10 +78,12 @@ gcloud run services add-iam-policy-binding aclx-gateway --region us-central1 \
 ```
 
 ### ACLX label-signing key (Secret Manager)
+ACLX signs labels with **Ed25519** (`SIGNING_ALG=ed25519`) and loads the key as
+base64 of the **DER (PKCS8)** private key — not PEM, not RSA.
 ```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out aclx-key.pem
-base64 -w0 aclx-key.pem | gcloud secrets create aclx-signing-key --data-file=-
-rm aclx-key.pem
+openssl genpkey -algorithm ed25519 -outform DER -out aclx-ed.der
+base64 -w0 aclx-ed.der | gcloud secrets create aclx-signing-key --data-file=-
+rm aclx-ed.der
 ```
 
 ### 0a. Continuous deployment (GitHub → Cloud Run)

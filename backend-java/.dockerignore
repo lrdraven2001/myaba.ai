@@ -1,0 +1,9 @@
+# Keep the Cloud Build context small. The Dockerfile builds from source via
+# Maven inside the image, so local build output and IDE files aren't needed.
+target
+.idea
+*.iml
+.vscode
+.git
+.env
+*.log

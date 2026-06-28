@@ -64,9 +64,10 @@ spec:
               value: "true"
             - name: ACLX_DOMAIN
               value: "hipaa"
-            # Replace with the ACLX service URL printed after it is deployed.
+            # ACLX gateway (private, IAM-gated). The API sends a Google ID token
+            # with this URL as the audience; myaba-api SA has run.invoker on it.
             - name: ACLX_GATEWAY_URL
-              value: "https://aclx-gateway-REPLACE-uc.a.run.app"
+              value: "https://aclx-gateway-wnvhcl6tqq-uc.a.run.app"
 
             # ── CORS: same-origin via Firebase Hosting /api rewrite, plus the
             #    apex/app hosts in case the API is also mapped to api.myaba.ai ─
