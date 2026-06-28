@@ -24,6 +24,9 @@ substitutions:
 steps:
   # 1. Build (tag both :latest — referenced by the YAML — and :$SHORT_SHA for trace)
   - name: gcr.io/cloud-builders/docker
+    # The Dockerfile uses BuildKit cache mounts (RUN --mount=type=cache for /root/.m2),
+    # which the default docker build does not support — enable BuildKit for this step.
+    env: ['DOCKER_BUILDKIT=1']
     args:
       - build
       - -t
