@@ -80,9 +80,41 @@ base64 -w0 aclx-key.pem | gcloud secrets create aclx-signing-key --data-file=-
 rm aclx-key.pem
 ```
 
+### 0a. Continuous deployment (GitHub → Cloud Run)
+The repos are on **GitHub** (`github.com/lrdraven2001/{myaba.ai,ACL}`). Because
+the API needs persistent env/SA/VPC config and ACLX is a multi-container service,
+the triggers run a **`cloudbuild.yaml`** (build → `services replace`) rather than
+the basic single-container "deploy from repository".
+
+```bash
+# 1) Connect GitHub to Cloud Build in THIS project (per-project; redo it in myapaai)
+#    Console → Cloud Build → Repositories (2nd gen) → Create host connection → GitHub
+#    → install the app on lrdraven2001/myaba.ai and lrdraven2001/ACL.
+
+# 2) Cloud Build SA needs deploy rights
+CB_SA="$(gcloud projects describe myapaai --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
+for ROLE in roles/run.admin roles/iam.serviceAccountUser roles/artifactregistry.writer; do
+  gcloud projects add-iam-policy-binding myapaai --member="serviceAccount:${CB_SA}" --role="$ROLE"
+done
+
+# 3) API trigger — only fires on backend/API-config changes (SPAs go to Hosting)
+gcloud builds triggers create github \
+  --name=myaba-api --repo-name=myaba.ai --repo-owner=lrdraven2001 \
+  --branch-pattern='^main$' --build-config=cloudbuild.yaml \
+  --included-files='backend-java/**,deploy/cloud-run-api.yaml' --region=us-central1
+
+# 4) ACLX trigger (separate repo) — see deploy/cloud-run-aclx in the ACL repo
+gcloud builds triggers create github \
+  --name=aclx-gateway --repo-name=ACL --repo-owner=lrdraven2001 \
+  --branch-pattern='^main$' --build-config=cloudbuild.yaml --region=us-central1
+```
+
+> With triggers in place, **steps 1 + 3 below happen automatically on push.** The
+> manual commands remain valid for the first deploy / out-of-band rollouts.
+
 ---
 
-## 1. Build & push images
+## 1. Build & push images (manual — or let the trigger do it)
 ```bash
 PROJECT=myapaai ACLX_DIR=/d/aegislayer/ACL ./deploy/build-and-push.sh
 ```

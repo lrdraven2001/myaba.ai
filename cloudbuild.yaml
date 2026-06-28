@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# cloudbuild.yaml — continuous deploy for the myaba-api Cloud Run service.
+#
+# Wired to a Cloud Build trigger connected to this GitHub repo (project myapaai),
+# firing on push to main. Builds the API image and deploys it by REPLACING the
+# declarative service YAML — so env vars, the runtime service account, the VPC
+# connector, and ingress are all preserved on every deploy (a plain
+# "deploy from repository" would drop them).
+#
+# Trigger setup (one-time) — see deploy/DEPLOY.md §0a:
+#   • Connect the GitHub repo to Cloud Build (2nd-gen) in project myapaai
+#   • Create the trigger with:
+#       --included-files = "backend-java/**","deploy/cloud-run-api.yaml"
+#     so frontend/homepage commits (which deploy to Firebase Hosting) don't
+#     rebuild the API.
+#   • Grant the Cloud Build service account: roles/run.admin,
+#     roles/iam.serviceAccountUser (to deploy as myaba-api SA),
+#     roles/artifactregistry.writer.
+# ─────────────────────────────────────────────────────────────────────────────
+substitutions:
+  _REGION: us-central1
+  _IMAGE: us-docker.pkg.dev/${PROJECT_ID}/myaba/api
+
+steps:
+  # 1. Build (tag both :latest — referenced by the YAML — and :$SHORT_SHA for trace)
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:latest
+      - -t
+      - ${_IMAGE}:${SHORT_SHA}
+      - -f
+      - backend-java/Dockerfile
+      - backend-java
+
+  # 2. Push both tags
+  - name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, '${_IMAGE}']
+
+  # 3. Deploy declaratively (preserves env / service account / VPC / ingress)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - replace
+      - deploy/cloud-run-api.yaml
+      - --region
+      - ${_REGION}
+
+images:
+  - ${_IMAGE}:latest
+  - ${_IMAGE}:${SHORT_SHA}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
