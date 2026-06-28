@@ -81,13 +81,22 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        String header = request.getHeader("Authorization");
-        if (header == null || !header.startsWith("Bearer ")) {
+        // Prefer a custom header so the token survives the Firebase Hosting →
+        // Cloud Run edge: a Bearer token in the standard Authorization header is
+        // intercepted by Cloud Run's IAM and rejected (403) before reaching the
+        // app. Fall back to Authorization: Bearer for local dev / direct calls.
+        String token = request.getHeader("X-Firebase-Token");
+        if (token == null || token.isBlank()) {
+            String header = request.getHeader("Authorization");
+            if (header != null && header.startsWith("Bearer ")) {
+                token = header.substring(7);
+            }
+        }
+        if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String token = header.substring(7);
         try {
             FirebaseToken decoded = FirebaseAuth.getInstance().verifyIdToken(token);
             Map<String, Object> claims = decoded.getClaims();

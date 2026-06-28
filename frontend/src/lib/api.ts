@@ -37,9 +37,12 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser;
   if (!user) throw new Error('Not authenticated');
   const token = await user.getIdToken();
+  // Custom header (not Authorization): the Firebase Hosting → Cloud Run edge
+  // rejects a Bearer token in the Authorization header (Cloud Run IAM eats it),
+  // so the token must ride in a header the edge leaves untouched.
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
+    'X-Firebase-Token': token,
   };
 }
 
@@ -682,7 +685,7 @@ export const api = {
     const token = await auth.currentUser!.getIdToken();
     const res = await fetch(`${API_BASE}/clients/${clientId}/documents`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { 'X-Firebase-Token': token },
       body: formData,
     });
     return res.json();
@@ -705,7 +708,7 @@ export const api = {
     let authHeaders: Record<string, string> = {};
     if (!DEV_AUTH) {
       const token = await auth.currentUser!.getIdToken();
-      authHeaders = { Authorization: `Bearer ${token}` };
+      authHeaders = { 'X-Firebase-Token': token };
     }
 
     const res = await fetch(`${API_BASE}/import/officepuzzle`, {
@@ -756,7 +759,7 @@ export const api = {
     const headers = await getAuthHeaders();
     // Drop the JSON Content-Type so the browser sets the multipart boundary.
     const h: Record<string, string> = {};
-    if (headers.Authorization) h.Authorization = headers.Authorization;
+    if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
     const form = new FormData();
     form.append('file', file);
     const res = await fetch(`${API_BASE}/documents/template/extract`, { method: 'POST', headers: h, body: form });
