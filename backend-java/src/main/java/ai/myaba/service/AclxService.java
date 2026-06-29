@@ -488,8 +488,14 @@ public class AclxService {
                     List.of("org_management", "user_management", "phi_read", "phi_write",
                             "clinical_oversight", "all_clients");
 
+            // Practice Administrator: the primary BCBA + supervisor + platform admin.
+            // Holds the full superset — platform/user management AND complete clinical
+            // access AND org-wide clinical oversight of every client.
             case ai.myaba.model.dto.UserRole.ORG_SUPER_ADMIN ->
-                    List.of("org_management", "user_management", "platform_config", "phi_read");
+                    List.of("org_management", "user_management", "platform_config",
+                            "clinical_access", "phi_read", "phi_write",
+                            "document_generate", "document_approve",
+                            "clinical_oversight", "caseload_oversight", "all_clients");
 
             default -> List.of();
         };

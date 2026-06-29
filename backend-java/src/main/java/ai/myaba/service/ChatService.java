@@ -266,7 +266,12 @@ public class ChatService {
                                 String userText, String assistantText,
                                 String aclxDecision, Map<String, Object> aclxLabelData,
                                 String aclxContentId) throws Exception {
-        String now = Instant.now().toString();
+        // The user message and the assistant reply are written together, so they must
+        // NOT share a createdAt — orderBy("createdAt") returns ties arbitrarily, which
+        // swaps the turn. Stamp the assistant 1ms later so it always sorts after the user.
+        Instant base = Instant.now();
+        String now = base.toString();
+        String asstTime = base.plusMillis(1).toString();
 
         if (devMode) {
             List<Map<String, Object>> msgs = devMessages.computeIfAbsent(chatId, k -> new ArrayList<>());
@@ -283,7 +288,7 @@ public class ChatService {
             asstMsg.put("chatId",    chatId);
             asstMsg.put("role",      "assistant");
             asstMsg.put("content",   assistantText);
-            asstMsg.put("createdAt", now);
+            asstMsg.put("createdAt", asstTime);
             if (aclxDecision != null)  asstMsg.put("aclxDecision",  aclxDecision);
             if (aclxContentId != null) asstMsg.put("aclxContentId", aclxContentId);
             if (aclxLabelData != null && !aclxLabelData.isEmpty()) {
@@ -313,7 +318,7 @@ public class ChatService {
         asstMsg.put("chatId", chatId);
         asstMsg.put("role", "assistant");
         asstMsg.put("content", assistantText);
-        asstMsg.put("createdAt", now);
+        asstMsg.put("createdAt", asstTime);
         if (aclxDecision != null)  asstMsg.put("aclxDecision",  aclxDecision);
         if (aclxContentId != null) asstMsg.put("aclxContentId", aclxContentId);
         if (aclxLabelData != null && !aclxLabelData.isEmpty()) {

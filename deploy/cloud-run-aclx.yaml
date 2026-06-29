@@ -69,6 +69,10 @@ spec:
               value: "global"
             - name: GEMINI_MODEL
               value: "gemini-3.1-flash-lite"
+            # Semantic detector runs on a stronger model to avoid false-positive
+            # redaction of clinical ABA terminology (DRA, extinction, FCT, …).
+            - name: SEMANTIC_DETECTOR_MODEL
+              value: "gemini-2.5-flash"
 
             # Cloud DLP optional (myABA's own API already scrubs); off here.
             - name: ENABLE_CLOUD_DLP

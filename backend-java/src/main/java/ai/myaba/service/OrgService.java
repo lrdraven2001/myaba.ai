@@ -271,8 +271,9 @@ public class OrgService {
         } else {
             Firestore db = FirestoreClient.getFirestore();
             db.collection("organizations").document(orgId).set(data).get();
-            setUserClaims(adminUid, orgId, creatorRole, "oversight");
-            writeMemberRecord(db, orgId, adminUid, creatorRole, "oversight");
+            String creatorPurpose = defaultPurpose(creatorRole);   // treatment — the admin is the clinical lead
+            setUserClaims(adminUid, orgId, creatorRole, creatorPurpose);
+            writeMemberRecord(db, orgId, adminUid, creatorRole, creatorPurpose);
         }
         return orgId;
     }
@@ -915,11 +916,15 @@ public class OrgService {
     }
 
     private String defaultPurpose(String role) {
+        // Every role in this product is a clinical role with treatment-level access —
+        // the Practice Administrator (ORG_SUPER_ADMIN) is the practice's BCBA/primary
+        // supervisor, not an IT-only admin, so they review and use all client PHI. A
+        // non-treatment "oversight" purpose would trigger HIPAA minimum-necessary
+        // redaction of client identity on their own clients, which is not the workflow.
         return switch (role) {
             case UserRole.SUPERVISING_BCBA, UserRole.RBT,
-                 UserRole.CLINICAL_DIRECTOR   -> "treatment";
-            case UserRole.ORG_SUPER_ADMIN     -> "oversight";
-            default                           -> "treatment";
+                 UserRole.CLINICAL_DIRECTOR, UserRole.ORG_SUPER_ADMIN -> "treatment";
+            default                                                   -> "treatment";
         };
     }
 }

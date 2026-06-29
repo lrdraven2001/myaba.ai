@@ -71,8 +71,10 @@ spec:
 
             # ── CORS: same-origin via Firebase Hosting /api rewrite, plus the
             #    apex/app hosts in case the API is also mapped to api.myaba.ai ─
+            # Include the Firebase Hosting *.web.app domains (used before the
+            # custom domains are mapped) alongside the production custom domains.
             - name: CORS_ALLOWED_ORIGINS
-              value: "https://app.myaba.ai,https://myaba.ai"
+              value: "https://app.myaba.ai,https://myaba.ai,https://myaba-app.web.app,https://myaba-ai.web.app"
 
             # NOTE: FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST are
             # intentionally ABSENT — their presence would route to the emulator.
