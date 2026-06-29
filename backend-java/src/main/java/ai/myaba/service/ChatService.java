@@ -169,6 +169,12 @@ public class ChatService {
                     .collect(Collectors.toList());
         }
 
+        // A brand-new user has no org yet (the orgId claim is unset until they
+        // create or join one). Firestore document("") throws, so return no chats.
+        if (user.getOrgId() == null || user.getOrgId().isBlank()) {
+            return List.of();
+        }
+
         Firestore db = FirestoreClient.getFirestore();
         Query query;
         if (user.isAdmin()) {

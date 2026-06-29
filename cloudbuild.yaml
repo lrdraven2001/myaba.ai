@@ -41,7 +41,7 @@ steps:
   - name: gcr.io/cloud-builders/docker
     args: [push, --all-tags, '${_IMAGE}']
 
-  # 3. Deploy declaratively (preserves env / service account / VPC / ingress)
+  # 3a. Apply declarative config (env / service account / probes / ingress).
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
@@ -51,6 +51,22 @@ steps:
       - deploy/cloud-run-api.yaml
       - --region
       - ${_REGION}
+
+  # 3b. Force a new revision pinned to THIS build's immutable image tag.
+  #     services replace with a :latest tag does NOT roll a revision when only
+  #     the image content changed (the spec text is identical), so the container
+  #     would keep running stale code. Deploying the per-commit SHA fixes that.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - myaba-api
+      - --region
+      - ${_REGION}
+      - --image
+      - ${_IMAGE}:${SHORT_SHA}
 
 images:
   - ${_IMAGE}:latest
