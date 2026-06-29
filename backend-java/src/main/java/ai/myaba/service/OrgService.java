@@ -245,7 +245,14 @@ public class OrgService {
      *
      * @return new orgId
      */
-    public String createOrg(String adminUid, OrgRequest req) throws Exception {
+    public String createOrg(String adminUid, String adminEmail, OrgRequest req) throws Exception {
+        // Pathfinder gate (defense in depth — the controller also checks): only
+        // vendor-approved emails may provision an org. Never reach Firestore writes
+        // for an unapproved caller.
+        if (!isApprovedOrgCreator(adminEmail)) {
+            throw new SecurityException("Account not approved to create an organization: " + adminEmail);
+        }
+
         String orgId  = "org-" + UUID.randomUUID().toString().substring(0, 8);
         String now    = Instant.now().toString();
 
@@ -274,8 +281,50 @@ public class OrgService {
             String creatorPurpose = defaultPurpose(creatorRole);   // treatment — the admin is the clinical lead
             setUserClaims(adminUid, orgId, creatorRole, creatorPurpose);
             writeMemberRecord(db, orgId, adminUid, creatorRole, creatorPurpose);
+            markOrgCreatorUsed(adminEmail, adminUid, orgId); // consume the approval — one org per approved email
         }
         return orgId;
+    }
+
+    // ── Pathfinder org-creation allowlist ──────────────────────────────────────
+    // Firestore collection `approvedOrgCreators`, doc id = lowercased email:
+    //   { approvedBy, approvedAt, note, used:bool, usedByUid, usedAt, orgId }
+    // To approve a customer admin, add a doc with that email id (used defaults false).
+    private static final String APPROVED_CREATORS = "approvedOrgCreators";
+
+    /**
+     * Returns true only when {@code email} is on the vendor allowlist and has not
+     * already been used to create an org. Dev mode is open. Fails CLOSED on any
+     * lookup error — a check failure must never let an unapproved user provision.
+     */
+    public boolean isApprovedOrgCreator(String email) {
+        if (devMode) return true;
+        if (email == null || email.isBlank()) return false;
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            var snap = db.collection(APPROVED_CREATORS)
+                    .document(email.trim().toLowerCase()).get().get();
+            return snap.exists() && !Boolean.TRUE.equals(snap.getBoolean("used"));
+        } catch (Exception e) {
+            log.error("isApprovedOrgCreator lookup failed for {}: {}", email, e.getMessage());
+            return false; // fail-closed
+        }
+    }
+
+    /** Marks an approved-creator entry consumed after a successful org creation. */
+    private void markOrgCreatorUsed(String email, String uid, String orgId) {
+        if (email == null || email.isBlank()) return;
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            db.collection(APPROVED_CREATORS).document(email.trim().toLowerCase())
+              .update(Map.of(
+                  "used", true,
+                  "usedByUid", uid,
+                  "usedAt", Instant.now().toString(),
+                  "orgId", orgId));
+        } catch (Exception e) {
+            log.warn("markOrgCreatorUsed failed for {} (org {} still created): {}", email, orgId, e.getMessage());
+        }
     }
 
     /**

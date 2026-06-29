@@ -468,6 +468,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  /** Whether the signed-in user is approved (Pathfinder allowlist) to create an org. */
+  getOrgEligibility: () =>
+    request<{ allowed: boolean; email: string }>('/orgs/eligibility'),
+
   /** Get org metadata. */
   getOrg: (orgId: string) => request<Org>(`/orgs/${orgId}`),
 

@@ -16,6 +16,7 @@ import ReviewQueueView from './views/ReviewQueueView';
 import TeamView from './views/TeamView';
 import LoginView from './views/LoginView';
 import OnboardingView from './views/OnboardingView';
+import NotProvisionedView from './views/NotProvisionedView';
 import InviteAcceptView from './views/InviteAcceptView';
 import { api } from './lib/api';
 
@@ -112,6 +113,9 @@ function AppShell() {
   const [invitePreview, setInvitePreview]     = useState<{ orgName: string; role: string } | null>(null);
   // Org BAA state — absent field on legacy orgs treated as accepted (true).
   const [baaAccepted, setBaaAccepted] = useState<boolean>(true);
+  // Pathfinder org-creation eligibility for users with no org yet.
+  // null = unknown/loading; true = may create; false = show "not provisioned".
+  const [orgEligible, setOrgEligible] = useState<boolean | null>(null);
 
   // Pre-fetch org name so InviteAcceptView can show it before the user logs in.
   // Never remove the token on failure — the invite may still be valid even if preview fails.
@@ -129,6 +133,18 @@ function AppShell() {
       .then((org) => setBaaAccepted(org.baaAccepted ?? true))
       .catch(() => setBaaAccepted(true)); // fail-open: don't lock out on network error
   }, [currentUser?.orgId]);
+
+  // For signed-in users with no org, check the Pathfinder allowlist before
+  // showing the create-org flow. Fail closed on error (show "not provisioned").
+  useEffect(() => {
+    if (DEV_AUTH) { setOrgEligible(true); return; }
+    if (!currentUser) { setOrgEligible(null); return; }
+    if (currentUser.orgId) { setOrgEligible(true); return; }
+    setOrgEligible(null);
+    api.getOrgEligibility()
+      .then((r) => setOrgEligible(r.allowed))
+      .catch(() => setOrgEligible(false));
+  }, [currentUser?.uid, currentUser?.orgId]);
 
   const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
@@ -172,6 +188,14 @@ function AppShell() {
   if (!currentUser) return <LoginView />;
 
   if (!DEV_AUTH && (!currentUser.orgId || currentUser.orgId === '')) {
+    if (orgEligible === null) {
+      return (
+        <div className="h-screen flex items-center justify-center">
+          <div className="text-gray-400 text-lg">Loading…</div>
+        </div>
+      );
+    }
+    if (!orgEligible) return <NotProvisionedView />;
     return (
       <OnboardingView
         onComplete={() => { window.location.reload(); }}

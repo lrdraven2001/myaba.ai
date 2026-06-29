@@ -49,15 +49,43 @@ public class OrgController {
             return ResponseEntity.badRequest().body(Map.of("error", "Organization name is required"));
         }
 
+        // Pathfinder gate: only vendor-approved emails may provision a new org.
+        if (!orgService.isApprovedOrgCreator(user.getEmail())) {
+            log.warn("Blocked org creation by non-approved user {} ({})", user.getUid(), user.getEmail());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error", "Your account is not approved to create an organization. "
+                            + "Contact MyABA to join the Pathfinder program."));
+        }
+
         try {
-            String orgId = orgService.createOrg(user.getUid(), req);
+            String orgId = orgService.createOrg(user.getUid(), user.getEmail(), req);
             log.info("User {} created org {}", user.getUid(), orgId);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("orgId", orgId));
+        } catch (SecurityException e) {
+            // Backstop if the allowlist changed between the check above and creation.
+            log.warn("Org creation denied for user {}: {}", user.getUid(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Your account is not approved to create an organization."));
         } catch (Exception e) {
             log.error("Failed to create org for user {}: {}", user.getUid(), e.getMessage());
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "Failed to create organization"));
         }
+    }
+
+    // ── Org-creation eligibility ────────────────────────────────────────────────
+
+    /**
+     * GET /api/orgs/eligibility
+     * Lets the onboarding UI decide whether to show the create-org flow or a
+     * "not provisioned" screen, without exposing the allowlist itself.
+     */
+    @GetMapping("/api/orgs/eligibility")
+    public ResponseEntity<?> orgCreationEligibility(@AuthenticationPrincipal AppUser user) {
+        boolean allowed = orgService.isApprovedOrgCreator(user.getEmail());
+        return ResponseEntity.ok(Map.of(
+                "allowed", allowed,
+                "email", user.getEmail() == null ? "" : user.getEmail()));
     }
 
     // ── Get org ───────────────────────────────────────────────────────────────
