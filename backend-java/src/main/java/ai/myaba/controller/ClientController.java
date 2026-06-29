@@ -226,6 +226,44 @@ public class ClientController {
         }
     }
 
+    // ── GET /api/clients/{clientId}/documents/{docId} ─────────────────────────
+    // Returns a single persisted document INCLUDING its content, so it can be
+    // attached as chat context. Authorized clinical staff receive the full text.
+    @GetMapping("/{clientId}/documents/{docId}")
+    public ResponseEntity<?> getClientDocument(
+            @PathVariable String clientId,
+            @PathVariable String docId,
+            @AuthenticationPrincipal AppUser user) {
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canAccessClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to view documents for this client"));
+            }
+            if (devMode) {
+                return ResponseEntity.ok(Map.of("id", docId, "content", ""));
+            }
+            Firestore db = FirestoreClient.getFirestore();
+            com.google.cloud.firestore.DocumentSnapshot snap = db
+                    .collection("orgs").document(user.getOrgId())
+                    .collection("clients").document(clientId)
+                    .collection("documents").document(docId)
+                    .get().get();
+            if (!snap.exists()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Document not found"));
+            }
+            Map<String, Object> data = new java.util.LinkedHashMap<>(snap.getData());
+            data.put("id", snap.getId());
+            data.remove("aclxContentLabel"); // signing artefact — not needed by the client
+            return ResponseEntity.ok(data);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (Exception e) {
+            log.error("getClientDocument failed {} / {} / {}: {}", user.getOrgId(), clientId, docId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to load document"));
+        }
+    }
+
     // ── Inner DTO ─────────────────────────────────────────────────────────
 
     @lombok.Data

@@ -146,6 +146,16 @@ function stripDocumentTags(text: string): string {
   return text.replace(/<\/?document>/gi, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * True when the response body contains a Markdown pipe table (a separator row like
+ * | --- | --- |). The Excel export only makes sense for tabular content, so the
+ * Excel button is shown only when this is true.
+ */
+const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/m;
+function hasTable(text: string): boolean {
+  return TABLE_SEPARATOR_RE.test(extractDocumentBody(text));
+}
+
 /** Derive initials from a name string. */
 function toInitials(name: string): string {
   return name
@@ -409,17 +419,23 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       new Set([...(primaryClientId ? [primaryClientId] : []), ...attachedClientIds])
     );
 
+    // Visible reference shown in (and persisted with) the message — just the names.
     const fileContext =
       attachedFiles.length > 0
-        ? `\n\n[Context files attached: ${attachedFiles.map((f) => f.name).join(', ')}]`
+        ? `\n\n📎 ${attachedFiles.map((f) => f.name).join(', ')}`
         : '';
+
+    // The actual document CONTENT (uploads, templates, client files) is sent
+    // separately as contextDocs so it reaches the model but stays OUT of the
+    // visible/persisted chat message.
+    const contextDocs = attachedFiles
+      .filter((f) => f.content && f.content.trim())
+      .map((f) => ({ name: f.name, content: f.content as string }));
 
     const userMsg: ChatMessage = {
       id:        Date.now().toString(),
       role:      'user',
-      content:   text + (attachedFiles.length > 0
-        ? `\n\n[Context: ${attachedFiles.map((f) => f.name).join(', ')}]`
-        : ''),
+      content:   text + fileContext,
       timestamp: new Date().toISOString(),
     };
 
@@ -458,6 +474,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         primaryClientId,
         allClientIds,
         activeChatId,
+        contextDocs,
       );
 
       const assistantMsg: ChatMessage = {
@@ -820,13 +837,16 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                           >
                             <FontAwesomeIcon icon={faFileWord} style={{ fontSize: 11 }} /> Word
                           </button>
-                          <button
-                            onClick={() => api.exportXlsx(deriveTitleFromMessage(msg.content), extractDocumentBody(msg.content)).catch(() => {})}
-                            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-green-700 transition-colors"
-                            title="Download as an Excel spreadsheet (tables become a grid)"
-                          >
-                            <FontAwesomeIcon icon={faFileExcel} style={{ fontSize: 11 }} /> Excel
-                          </button>
+                          {/* Excel only when the response actually contains a table */}
+                          {hasTable(msg.content) && (
+                            <button
+                              onClick={() => api.exportXlsx(deriveTitleFromMessage(msg.content), extractDocumentBody(msg.content)).catch(() => {})}
+                              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-green-700 transition-colors"
+                              title="Download the table as an Excel spreadsheet"
+                            >
+                              <FontAwesomeIcon icon={faFileExcel} style={{ fontSize: 11 }} /> Excel
+                            </button>
+                          )}
                           <button
                             onClick={() => setTemplateSourceContent(extractDocumentBody(msg.content))}
                             className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-teal-600 transition-colors"

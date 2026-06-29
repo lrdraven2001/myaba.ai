@@ -85,4 +85,35 @@ public class DocumentFormatController {
             return ResponseEntity.badRequest().body(Map.of("error", "Could not read the Word document: " + e.getMessage()));
         }
     }
+
+    /**
+     * Extract plain text from an uploaded chat attachment (.docx, .pdf, .txt/.md/.csv)
+     * so it can be added to chat context. No DLP de-identification — clinical staff
+     * need the actual data they upload; PHI is governed at output time by ACLX.
+     * Max 20 MB.
+     */
+    @PostMapping("/attachment/extract")
+    public ResponseEntity<?> extractAttachment(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AppUser user) {
+        String name = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+        String lower = name.toLowerCase();
+        if (!(lower.endsWith(".docx") || lower.endsWith(".pdf") || lower.endsWith(".txt")
+                || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text"))) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Unsupported file type. Upload a PDF, DOCX, or text file."));
+        }
+        if (file.getSize() > 20L * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));
+        }
+        try {
+            String text = documentFormatService.extractText(name, file.getBytes());
+            if (text == null) text = "";
+            return ResponseEntity.ok(Map.of("name", name, "text", text, "chars", text.length()));
+        } catch (Exception e) {
+            log.error("extractAttachment failed for {}: {}", name, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Could not read the file: " + e.getMessage()));
+        }
+    }
 }

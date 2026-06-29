@@ -142,4 +142,27 @@ public class DocumentFormatService {
             return extractDocxText(in);
         }
     }
+
+    /**
+     * Extract plain text from an uploaded attachment for use as chat context.
+     * Supports .docx (POI), .pdf (PDFBox), and plain text (.txt/.md/.csv).
+     *
+     * <p>No DLP de-identification is applied — clinical staff need the actual client
+     * data they upload to operate on it. PHI governance happens at output time via
+     * ACLX, scoped to the authenticated user's role/purpose.
+     */
+    public String extractText(String filename, byte[] bytes) throws Exception {
+        String lower = filename == null ? "" : filename.toLowerCase();
+        if (lower.endsWith(".docx")) {
+            return extractDocxText(bytes);
+        }
+        if (lower.endsWith(".pdf")) {
+            try (org.apache.pdfbox.pdmodel.PDDocument doc =
+                         org.apache.pdfbox.pdmodel.PDDocument.load(bytes)) {
+                return new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+            }
+        }
+        // .txt, .md, .csv, .text, or unknown — read as UTF-8 text.
+        return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
 }

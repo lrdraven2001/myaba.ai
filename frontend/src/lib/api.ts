@@ -248,6 +248,7 @@ export const api = {
     clientId?: string,
     clientIds?: string[],
     chatId?: string,
+    contextDocs?: { name: string; content: string }[],
   ) =>
     request<{ reply: string; decision: string; chatId?: string }>('/chat', {
       method: 'POST',
@@ -257,6 +258,7 @@ export const api = {
         clientId,
         clientIds: clientIds && clientIds.length > 1 ? clientIds : undefined,
         history: history.map((m) => ({ role: m.role, content: m.content })),
+        contextDocs: contextDocs && contextDocs.length > 0 ? contextDocs : undefined,
       }),
     }),
 
@@ -672,7 +674,15 @@ export const api = {
   // ── Documents ─────────────────────────────────────────────────────────────
 
   getClientDocuments: (clientId: string) =>
-    request<{ documents: unknown[] }>(`/clients/${clientId}/documents`),
+    request<{ documents: { id: string; documentType?: string; createdAt?: string }[] }>(
+      `/clients/${clientId}/documents`,
+    ),
+
+  /** Fetch a single persisted client document INCLUDING its content (for chat context). */
+  getClientDocument: (clientId: string, docId: string) =>
+    request<{ id: string; documentType?: string; content?: string; createdAt?: string }>(
+      `/clients/${clientId}/documents/${docId}`,
+    ),
 
   uploadDocument: async (clientId: string, formData: FormData) => {
     if (DEV_AUTH) {
@@ -769,6 +779,21 @@ export const api = {
     }
     const data = await res.json();
     return (data.text as string) ?? '';
+  },
+
+  /** Upload a chat attachment (PDF/DOCX/TXT) and get its extracted text for context. */
+  extractAttachment: async (file: File): Promise<{ name: string; text: string; chars: number }> => {
+    const headers = await getAuthHeaders();
+    const h: Record<string, string> = {};
+    if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/documents/attachment/extract`, { method: 'POST', headers: h, body: form });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Failed to read file (HTTP ${res.status})`);
+    }
+    return res.json();
   },
 
   // ── Compliance dashboard ──────────────────────────────────────────────────

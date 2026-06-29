@@ -1,13 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faFileAlt, faUpload, faUsers, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
-import {
-  FAKE_TEMPLATES,
-  FAKE_CLIENT_FILES,
-} from '../../lib/fakeData';
+import { FAKE_TEMPLATES } from '../../lib/fakeData';
 import type { AttachedFile, FakeClientFile } from '../../lib/fakeData';
 import type { Client, Template } from '../../types';
+
+/** Maximum number of files that can be attached to a single message. */
+const MAX_ATTACHMENTS = 10;
+
+/** Pretty-print a documentType slug, e.g. behavior_intervention_plan → Behavior Intervention Plan. */
+function prettyDocType(slug?: string): string {
+  if (!slug) return 'Document';
+  return slug.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** Map a documentType slug to a category color bucket. */
+const DOCTYPE_CATEGORY: Record<string, string> = {
+  behavior_intervention_plan:     'bip',
+  functional_behavior_assessment: 'fba',
+  progress_report:                'progress_note',
+  progress_note:                  'progress_note',
+  treatment_plan:                 'skill_acquisition',
+  parent_training:                'parent_training',
+  intake:                         'intake',
+  assessment:                     'assessment',
+};
 
 /** Minimal shape used inside this modal */
 interface SidebarClientEntry {
@@ -40,6 +58,7 @@ interface DisplayTemplate {
   id: string;
   title: string;
   category: string;
+  content: string;
 }
 
 export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: Props) {
@@ -48,15 +67,49 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [templates, setTemplates]     = useState<DisplayTemplate[]>([]);
   const [clients, setClients]         = useState<SidebarClientEntry[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([]);
+  const [uploading, setUploading]     = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [clientDocs, setClientDocs]   = useState<Record<string, FakeClientFile[]>>({});
+  const [resolving, setResolving]     = useState(false);
+
+  const handleFilesChosen = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      let current = selectedIds.size + uploadedFiles.length;
+      for (const file of Array.from(fileList)) {
+        if (current >= MAX_ATTACHMENTS) {
+          setUploadError(`You can attach up to ${MAX_ATTACHMENTS} files per message.`);
+          break;
+        }
+        if (file.size > 20 * 1024 * 1024) { setUploadError(`${file.name} exceeds the 20 MB limit.`); continue; }
+        const { name, text } = await api.extractAttachment(file);
+        setUploadedFiles((prev) => [
+          ...prev,
+          { id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, source: 'upload', content: text },
+        ]);
+        current++;
+      }
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Upload failed.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+  const removeUpload = (id: string) => setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
 
   // Load templates from API (fall back to fake data if backend is down)
   useEffect(() => {
     api.getTemplates()
       .then((data: Template[]) =>
-        setTemplates(data.map((t) => ({ id: t.id, title: t.title, category: t.category })))
+        setTemplates(data.map((t) => ({ id: t.id, title: t.title, category: t.category, content: t.content })))
       )
       .catch(() =>
-        setTemplates(FAKE_TEMPLATES.map((t) => ({ id: t.id, title: t.title, category: t.category })))
+        setTemplates(FAKE_TEMPLATES.map((t) => ({ id: t.id, title: t.title, category: t.category, content: '' })))
       );
   }, []);
 
@@ -75,6 +128,22 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
         });
         setClients(mapped);
         setExpandedClients(new Set(mapped.map((c) => c.id)));
+        // Load each client's real persisted documents (metadata only; content is
+        // fetched on attach). FAKE data is no longer used here.
+        mapped.forEach((c) => {
+          api.getClientDocuments(c.id)
+            .then((res) => {
+              const docs: FakeClientFile[] = (res.documents ?? []).map((d) => ({
+                id: d.id,
+                clientId: c.id,
+                title: prettyDocType(d.documentType),
+                category: DOCTYPE_CATEGORY[d.documentType ?? ''] ?? 'other',
+                uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '',
+              }));
+              setClientDocs((prev) => ({ ...prev, [c.id]: docs }));
+            })
+            .catch(() => setClientDocs((prev) => ({ ...prev, [c.id]: [] })));
+        });
       })
       .catch(() => {});
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -82,8 +151,12 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
   const toggle = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) { next.delete(id); return next; }
+      if (prev.size + uploadedFiles.length >= MAX_ATTACHMENTS) {
+        setUploadError(`You can attach up to ${MAX_ATTACHMENTS} files per message.`);
+        return prev;
+      }
+      next.add(id);
       return next;
     });
   };
@@ -97,19 +170,35 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
     });
   };
 
-  const handleAttach = () => {
-    const files: AttachedFile[] = [];
-    templates.forEach((t) => {
-      if (selectedIds.has(t.id)) files.push({ id: t.id, name: t.title, source: 'template' });
-    });
-    FAKE_CLIENT_FILES.forEach((f) => {
-      if (selectedIds.has(f.id))
-        files.push({ id: f.id, name: f.title, source: 'client_file', clientId: f.clientId });
-    });
-    onAttach(files);
+  const handleAttach = async () => {
+    setResolving(true);
+    try {
+      const files: AttachedFile[] = [];
+      // Templates carry their body as content (loaded with the template list).
+      templates.forEach((t) => {
+        if (selectedIds.has(t.id))
+          files.push({ id: t.id, name: t.title, source: 'template', content: t.content });
+      });
+      // Client files: fetch each selected document's full content on attach.
+      for (const [clientId, docs] of Object.entries(clientDocs)) {
+        for (const d of docs) {
+          if (!selectedIds.has(d.id)) continue;
+          let content = '';
+          try {
+            content = (await api.getClientDocument(clientId, d.id)).content ?? '';
+          } catch { /* leave content empty — name still attaches */ }
+          files.push({ id: d.id, name: d.title, source: 'client_file', clientId, content });
+        }
+      }
+      files.push(...uploadedFiles);
+      onAttach(files);
+    } finally {
+      setResolving(false);
+    }
   };
 
-  const selectedCount = selectedIds.size;
+  const selectedCount = selectedIds.size + uploadedFiles.length;
+  const atCap = selectedCount >= MAX_ATTACHMENTS;
 
   const tabs: { id: Tab; label: string; icon: typeof faFileAlt }[] = [
     { id: 'templates',    label: 'Templates',    icon: faFolderOpen },
@@ -180,7 +269,7 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
                 <p className="text-sm text-gray-400 italic py-4 text-center">Loading clients…</p>
               ) : (
                 clients.map((client) => {
-                  const files = FAKE_CLIENT_FILES.filter((f) => f.clientId === client.id);
+                  const files = clientDocs[client.id] ?? [];
                   const isExpanded = expandedClients.has(client.id);
                   const selectedInClient = files.filter((f) => selectedIds.has(f.id)).length;
                   return (
@@ -232,21 +321,59 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
 
           {/* ── Upload ─────────────────────────────────────────────── */}
           {activeTab === 'upload' && (
-            <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-gray-300 rounded-xl text-sm">
-              <FontAwesomeIcon icon={faUpload} className="text-4xl text-gray-300 mb-3" />
-              <p className="font-semibold text-gray-600">Drag files here or click to browse</p>
-              <p className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT — max 20 MB each</p>
-              <button
-                className="mt-4 px-5 py-2 text-white text-sm font-medium rounded-lg opacity-50 cursor-not-allowed"
-                style={{ background: '#2a5f6f' }}
-                disabled
-                title="DLP scanning not yet configured"
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.txt,.md,.csv"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => handleFilesChosen(e.target.files)}
+              />
+              <div
+                className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-gray-300 rounded-xl text-sm cursor-pointer hover:border-gray-400"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); handleFilesChosen(e.dataTransfer.files); }}
               >
-                Browse Files
-              </button>
-              <p className="text-xs text-gray-400 mt-4 max-w-xs text-center">
-                Uploaded files will pass through Google DLP scanning before being added to context.
-                DLP is currently not configured — uploads are disabled.
+                <FontAwesomeIcon icon={faUpload} className="text-4xl text-gray-300 mb-3" />
+                <p className="font-semibold text-gray-600">Drag files here or click to browse</p>
+                <p className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT — max 20 MB each, up to {MAX_ATTACHMENTS} files</p>
+                <button
+                  type="button"
+                  className="mt-4 px-5 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                  style={{ background: '#2a5f6f' }}
+                  onClick={(e) => { e.stopPropagation(); if (!atCap) fileInputRef.current?.click(); }}
+                  disabled={uploading || atCap}
+                >
+                  {uploading ? 'Reading…' : atCap ? 'Limit reached' : 'Browse Files'}
+                </button>
+              </div>
+
+              {uploadError && <p className="text-xs text-red-600 mt-3">{uploadError}</p>}
+
+              {uploadedFiles.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {uploadedFiles.map((f) => (
+                    <div key={f.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FontAwesomeIcon icon={faFileAlt} className="text-gray-400" />
+                        <span className="text-sm text-gray-700 truncate">{f.name}</span>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {(f.content?.length ?? 0).toLocaleString()} chars
+                        </span>
+                      </div>
+                      <button onClick={() => removeUpload(f.id)} className="text-gray-300 hover:text-red-500 shrink-0">
+                        <FontAwesomeIcon icon={faTimes} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-gray-400 mt-4">
+                Uploaded files are read into this chat's context so the assistant can work with them.
+                Content is not de-identified — clinical staff retain full access to client data.
               </p>
             </div>
           )}
@@ -254,10 +381,10 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-          <span className="text-sm text-gray-500">
+          <span className={`text-sm ${atCap ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
             {selectedCount > 0
-              ? `${selectedCount} file${selectedCount !== 1 ? 's' : ''} selected`
-              : 'No files selected'}
+              ? `${selectedCount} of ${MAX_ATTACHMENTS} files selected${atCap ? ' — limit reached' : ''}`
+              : `No files selected (up to ${MAX_ATTACHMENTS})`}
           </span>
           <div className="flex gap-3">
             <button
@@ -270,13 +397,13 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
               className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity"
               style={{
                 background: '#2a5f6f',
-                opacity: selectedCount === 0 ? 0.4 : 1,
-                cursor: selectedCount === 0 ? 'not-allowed' : 'pointer',
+                opacity: selectedCount === 0 || resolving ? 0.4 : 1,
+                cursor: selectedCount === 0 || resolving ? 'not-allowed' : 'pointer',
               }}
               onClick={handleAttach}
-              disabled={selectedCount === 0}
+              disabled={selectedCount === 0 || resolving}
             >
-              Attach{selectedCount > 0 ? ` (${selectedCount})` : ''}
+              {resolving ? 'Attaching…' : `Attach${selectedCount > 0 ? ` (${selectedCount})` : ''}`}
             </button>
           </div>
         </div>

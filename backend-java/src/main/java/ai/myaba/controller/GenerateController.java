@@ -355,7 +355,7 @@ public class GenerateController {
             if (req.getHistory() != null) {
                 req.getHistory().forEach(m -> generalMessages.add(Map.of("role", m.getRole(), "content", m.getContent())));
             }
-            generalMessages.add(Map.of("role", "user", "content", req.getMessage()));
+            generalMessages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), req.getContextDocs())));
 
             String generalRaw;
             try {
@@ -495,7 +495,7 @@ public class GenerateController {
             req.getHistory().forEach(m ->
                     messages.add(Map.of("role", m.getRole(), "content", m.getContent())));
         }
-        messages.add(Map.of("role", "user", "content", req.getMessage()));
+        messages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), req.getContextDocs())));
 
         // Build policy-augmented system prompt (includes base clinical identity + client context)
         String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
@@ -717,6 +717,28 @@ public class GenerateController {
             record) INSIDE the <document> … </document> tags.
             """;
 
+    /**
+     * Appended to every chat system prompt so responses are always phrased in
+     * precise behavior-analytic language rather than lay descriptions.
+     */
+    private static final String ABA_LANGUAGE_GUIDANCE = """
+
+            ABA LANGUAGE (always apply):
+            - Always respond using precise Applied Behavior Analysis (ABA) terminology and \
+            behavior-analytic language, consistent with how a BCBA documents and discusses cases.
+            - Use the correct technical terms rather than lay phrasing, e.g.: antecedent–behavior–\
+            consequence (ABC), function of behavior (escape, attention, access to tangibles, automatic), \
+            positive/negative reinforcement, punishment, extinction and extinction burst, differential \
+            reinforcement (DRA/DRO/DRI/DRL), functional communication training (FCT), manding/tacting, \
+            prompting and prompt fading, shaping, chaining, stimulus control, generalization and \
+            maintenance, task analysis, discrete trial training (DTT), naturalistic teaching, and \
+            operational/measurable definitions of target behaviors.
+            - Describe behaviors in observable, measurable terms (frequency, duration, latency, \
+            intensity) and tie interventions to the behavior's function.
+            - You may briefly define a term in plain language when it aids understanding, but lead \
+            with the correct behavior-analytic terminology.
+            """;
+
     /** Built-in starter document types every org has (key → display label). */
     private static final java.util.Map<String, String> BUILTIN_TEMPLATES = new java.util.LinkedHashMap<>() {{
         put("behavior_intervention_plan",     "Behavior Intervention Plan (BIP)");
@@ -806,6 +828,23 @@ public class GenerateController {
      * System prompt for general (non-clinical) chat sessions.
      * PHI access is prohibited at the model layer. ACLX provides a second defence.
      */
+    /**
+     * Fold attached-document context into the message sent to the model. Content is
+     * added here so the assistant can work with the documents, while the persisted
+     * chat message stays clean (the UI shows only the file names).
+     */
+    private String withContextDocs(String message, List<ChatRequest.ContextDoc> docs) {
+        if (docs == null || docs.isEmpty()) return message;
+        StringBuilder sb = new StringBuilder(message == null ? "" : message);
+        for (ChatRequest.ContextDoc d : docs) {
+            if (d == null || d.getContent() == null || d.getContent().isBlank()) continue;
+            sb.append("\n\n[Attached document: ")
+              .append(d.getName() == null || d.getName().isBlank() ? "file" : d.getName())
+              .append("]\n").append(d.getContent());
+        }
+        return sb.toString();
+    }
+
     private String buildGeneralChatSystemPrompt(String orgId) {
         return """
                 You are a general business and administrative assistant embedded in myABA.ai, \
@@ -834,7 +873,7 @@ public class GenerateController {
 
                 Keep responses professional, concise, and relevant to an ABA practice. \
                 Do not use emoji characters.\
-                """ + buildTemplatesContext(orgId) + DOCUMENT_GENERATION_GUIDANCE;
+                """ + buildTemplatesContext(orgId) + DOCUMENT_GENERATION_GUIDANCE + ABA_LANGUAGE_GUIDANCE;
     }
 
     /**
@@ -877,6 +916,7 @@ public class GenerateController {
                 """);
         sb.append(buildTemplatesContext(user.getOrgId()));
         sb.append(DOCUMENT_GENERATION_GUIDANCE);
+        sb.append(ABA_LANGUAGE_GUIDANCE);
 
         // ── Layer 1: client context ───────────────────────────────────────────────
         if (req.getClientId() != null && !req.getClientId().isBlank() && !clientsById.isEmpty()) {

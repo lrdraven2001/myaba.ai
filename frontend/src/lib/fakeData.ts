@@ -7,6 +7,7 @@ export interface AttachedFile {
   name: string;
   source: 'template' | 'client_file' | 'upload';
   clientId?: string; // set when source = 'client_file'
+  content?: string;  // extracted text — set when source = 'upload' (sent as chat context)
 }
 
 export interface FakeTemplate {
