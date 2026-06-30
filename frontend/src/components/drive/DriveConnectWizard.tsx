@@ -6,6 +6,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../../lib/api';
+import { openDrivePicker, isPickerConfigured } from '../../lib/googlePicker';
 import type { Client, DriveConnection, DriveVerifyResult } from '../../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -107,6 +108,30 @@ function Step1Select({
     ? 'https://drive.google.com/file/d/…/view'
     : 'https://onedrive.live.com/…';
 
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [pickerErr, setPickerErr]   = useState<string | null>(null);
+  const pickerAvailable = provider === 'google' && isPickerConfigured();
+
+  const handleBrowse = async () => {
+    setPickerErr(null);
+    setPickerBusy(true);
+    try {
+      const picked = await openDrivePicker(state.itemType);
+      if (picked) {
+        onChange({
+          ...state,
+          driveUrl: picked.url,
+          displayName: state.displayName || picked.name,
+          itemType: picked.isFolder ? 'folder' : 'file',
+        });
+      }
+    } catch (e) {
+      setPickerErr(e instanceof Error ? e.message : 'Could not open Google Drive');
+    } finally {
+      setPickerBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* HIPAA notice */}
@@ -130,6 +155,35 @@ function Step1Select({
           I confirm a BAA is in place with {providerFull}.
         </span>
       </label>
+
+      {/* Browse via Google Picker (drive.file) — falls back to manual link below */}
+      {provider === 'google' && (
+        <div>
+          {pickerAvailable ? (
+            <button
+              type="button"
+              onClick={handleBrowse}
+              disabled={pickerBusy}
+              className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
+            >
+              <FontAwesomeIcon icon={pickerBusy ? faSpinner : faGoogle} className={pickerBusy ? 'animate-spin' : 'text-[#4285F4]'} />
+              {pickerBusy ? 'Opening Google Drive…' : 'Browse Google Drive'}
+            </button>
+          ) : (
+            <p className="text-xs text-gray-400">
+              Drive Picker isn’t configured — paste a link below instead.
+            </p>
+          )}
+          {pickerErr && <p className="text-xs text-red-500 mt-1.5">{pickerErr}</p>}
+          {pickerAvailable && (
+            <div className="flex items-center gap-3 my-3">
+              <div className="flex-1 h-px bg-gray-200" />
+              <span className="text-xs text-gray-400">or paste a link</span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Drive URL */}
       <div>

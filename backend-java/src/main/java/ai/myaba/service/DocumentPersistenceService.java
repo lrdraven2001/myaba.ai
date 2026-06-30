@@ -74,7 +74,7 @@ public class DocumentPersistenceService {
 
             Firestore db = FirestoreClient.getFirestore();
             DocumentReference ref = db
-                    .collection("orgs").document(orgId)
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
                     .collection(FirestoreCollections.CLIENTS).document(clientId)
                     .collection(FirestoreCollections.DOCUMENTS)
                     .add(doc)

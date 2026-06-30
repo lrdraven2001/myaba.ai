@@ -642,7 +642,10 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
       {/* Right: active chat */}
       {activeChat ? (
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div
+          className="flex-1 min-w-0 flex flex-col overflow-hidden"
+          style={{ background: 'linear-gradient(160deg, #eef5fb 0%, #f1f8f1 100%)' }}
+        >
           {/* PHI access warning — shown whenever the user cannot process HIPAA data */}
           {/* BAA not yet signed — clinical features locked for this user's org */}
           {clinicalChatLocked && (
@@ -814,7 +817,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                     >
                       <div
                         className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                          msg.role === 'user' ? 'text-white' : 'bg-gray-100 text-gray-800'
+                          msg.role === 'user' ? 'text-white' : 'bg-white text-gray-800 border border-gray-200 shadow-sm'
                         }`}
                         style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
                       >
@@ -866,9 +869,9 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
             )}
           </div>
 
-          {/* Input area */}
+          {/* Input area — full chat-window width (messages stay centered) */}
           <div className="px-6 pb-6 pt-2">
-            <div className="max-w-3xl mx-auto">
+            <div className="w-full">
               {/* Attached file chips */}
               {attachedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import {
-  faLock, faShieldHalved, faClock, faRightToBracket, faDatabase, faMobileScreen,
+  faLock, faShieldHalved, faClock, faDatabase, faMobileScreen,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   SettingsCard, Badge, Toggle, SelectPill, SettingRow, SectionHeading,
@@ -10,6 +10,17 @@ import {
 const TIMEOUT_OPTIONS = [
   { value: '5', label: '5 minutes' }, { value: '15', label: '15 minutes' },
   { value: '30', label: '30 minutes' }, { value: '60', label: '60 minutes' },
+];
+
+// Data-retention window options (days). Minimum 30 days; longest aligns with the HIPAA-required period.
+const RETENTION_OPTIONS = [
+  { value: '30',   label: '30 days' },
+  { value: '90',   label: '90 days' },
+  { value: '180',  label: '6 months' },
+  { value: '365',  label: '1 year' },
+  { value: '730',  label: '2 years' },
+  { value: '2190', label: '6 years' },
+  { value: '2555', label: '7 years (HIPAA)' },
 ];
 
 /**
@@ -23,18 +34,26 @@ const TIMEOUT_OPTIONS = [
 export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [timeout, setTimeoutMin] = useState('15');
   const [mfaEnforced, setMfaEnforced] = useState(false);
+  const [retentionDays, setRetentionDays] = useState('2555');
 
   useEffect(() => {
     if (!orgId) return;
     api.getOrg(orgId).then((o) => {
       setTimeoutMin(String(o.settings?.sessionTimeoutMinutes ?? 15));
       setMfaEnforced(Boolean(o.settings?.mfaEnforced));
+      setRetentionDays(String(o.settings?.retentionDays ?? 2555));
     }).catch(() => {});
   }, [orgId]);
 
   const changeTimeout = async (v: string) => {
     setTimeoutMin(v);
     await api.updateOrgSettings(orgId, { sessionTimeoutMinutes: Number(v) }).catch(() => {});
+  };
+
+  const changeRetention = async (v: string) => {
+    const prev = retentionDays;
+    setRetentionDays(v);
+    await api.updateOrgSettings(orgId, { retentionDays: Number(v) }).catch(() => setRetentionDays(prev));
   };
 
   const toggleMfaEnforced = async (next: boolean) => {
@@ -47,14 +66,13 @@ export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string;
       <SectionHeading title="Security & Identity" description="Manage how users sign in, verify their identity, and how long sessions stay active." />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
-        <SettingsCard icon={faLock} title="Authentication" subtitle="How users sign in and verify their identity.">
+        <SettingsCard
+          icon={faLock}
+          title="Authentication"
+          subtitle="Members sign in with Google (Single Sign-On)."
+          action={<Badge tone="green">SSO Enabled</Badge>}
+        >
           <div className="divide-y divide-gray-100">
-            <SettingRow
-              icon={faRightToBracket} iconColor="#1E88FF"
-              title="Single Sign-On"
-              description="Users sign in with Google via Firebase Authentication."
-              control={<Badge tone="green">Enabled</Badge>}
-            />
             <SettingRow
               icon={faMobileScreen} iconColor="#16a34a"
               title="Multi-Factor Authentication"
@@ -82,12 +100,12 @@ export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string;
             <SettingRow
               icon={faShieldHalved} iconColor="#64748B"
               title="Retention Policy"
-              description="Records are retained for the HIPAA-required period."
-              control={<span className="text-sm text-gray-500">7 years</span>}
+              description="How long this organization's records are kept before permanent deletion."
+              control={<SelectPill ariaLabel="Data retention period" tone="neutral" value={retentionDays} options={RETENTION_OPTIONS} onChange={changeRetention} disabled={!isAdmin} />}
             />
           </div>
           <div className="px-5 sm:px-6 py-3 text-xs text-gray-400 bg-gray-50 border-t border-gray-100 rounded-b-2xl">
-            Data retention applies platform-wide and cannot be overridden per organization.
+            Minimum 30 days. Audit &amp; compliance logs are always retained for the HIPAA-required 6-year minimum, regardless of this setting.
           </div>
         </SettingsCard>
       </div>

@@ -490,10 +490,11 @@ function ProjectDetailView({
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setShowAccess(true)}
+            title="Share this project — give people view or edit access"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
           >
             <FontAwesomeIcon icon={faUsers} style={{ fontSize: 12 }} />
-            Access
+            Share
           </button>
           <button
             onClick={handleStartChat}
@@ -647,7 +648,7 @@ function ProjectDetailView({
                 </button>
               </div>
             </div>
-            <div className="px-3 py-2">
+            <div className="px-3 py-2 max-h-72 overflow-y-auto">
               {loadingDocs ? (
                 <div className="flex items-center gap-2 px-2 py-3 text-gray-300 text-sm">
                   <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
@@ -797,6 +798,20 @@ function ProjectAccessModal({
     setRemovingId(null);
   };
 
+  // Change an existing member's role (view ↔ edit) without removing them.
+  const handleChangeRole = async (userId: string, role: 'editor' | 'viewer') => {
+    const prev = members[userId];
+    if (prev === role) return;
+    const next = { ...members, [userId]: role };
+    setMembers(next); // optimistic
+    try {
+      await api.shareProject(project.id, userId, role); // PUT upserts the role
+      onUpdated({ ...project, members: next as Record<string, 'editor' | 'viewer'>, memberIds: Object.keys(next) });
+    } catch {
+      setMembers({ ...members, [userId]: prev }); // revert
+    }
+  };
+
   // Members available to add: not already in project, not owner, role-filtered for PHI
   const availableToAdd = orgMembers.filter((m) => {
     if (m.id === project.ownerId) return false;
@@ -916,8 +931,21 @@ function ProjectAccessModal({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-700 truncate">{getMemberDisplay(uid)}</p>
-                  <p className="text-xs text-gray-400 capitalize">{role}</p>
+                  {!canManage && (
+                    <p className="text-xs text-gray-400">{role === 'editor' ? 'Can edit' : 'Can view'}</p>
+                  )}
                 </div>
+                {canManage && (
+                  <select
+                    value={role}
+                    onChange={(e) => handleChangeRole(uid, e.target.value as 'editor' | 'viewer')}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-teal-500 shrink-0"
+                    aria-label="Member access level"
+                  >
+                    <option value="viewer">Can view</option>
+                    <option value="editor">Can edit</option>
+                  </select>
+                )}
                 {canManage && (
                   <button
                     onClick={() => handleRemoveMember(uid)}
@@ -952,8 +980,8 @@ function ProjectAccessModal({
                   value={addRole}
                   onChange={(e) => setAddRole(e.target.value as 'editor' | 'viewer')}
                 >
-                  <option value="viewer">Viewer</option>
-                  <option value="editor">Editor</option>
+                  <option value="viewer">Can view</option>
+                  <option value="editor">Can edit</option>
                 </select>
                 <button
                   onClick={handleAddMember}

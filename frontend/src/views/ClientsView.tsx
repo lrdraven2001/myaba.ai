@@ -6,6 +6,7 @@ import {
   faFileAlt, faFolderOpen, faLink, faSpinner, faTimes,
   faRobot, faComments, faExternalLinkAlt,
   faUserNurse, faUsers, faCheck, faShieldAlt, faTrashAlt,
+  faBoxArchive, faBoxOpen, faFileExport,
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
@@ -78,6 +79,7 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
 
   // List controls
   const [search, setSearch]           = useState('');
+  const [clientTab, setClientTab]     = useState<'active' | 'archived'>('active');
   const [sortField, setSortField]     = useState<SortField>('lastName');
   const [sortDir, setSortDir]         = useState<SortDir>('asc');
   const [filterDx, setFilterDx]       = useState('');
@@ -118,7 +120,8 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
         c.diagnosis?.toLowerCase().includes(q) ||
         c.primaryInsurance?.toLowerCase().includes(q);
       const matchDx = !filterDx || c.diagnosis === filterDx;
-      return matchSearch && matchDx;
+      const matchTab = Boolean(c.archived) === (clientTab === 'archived');
+      return matchSearch && matchDx && matchTab;
     });
     list = [...list].sort((a, b) => {
       const av = (a[sortField] ?? '').toLowerCase();
@@ -126,10 +129,28 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return list;
-  }, [clients, search, filterDx, sortField, sortDir]);
+  }, [clients, search, filterDx, sortField, sortDir, clientTab]);
+
+  const archivedCount = useMemo(() => clients.filter((c) => c.archived).length, [clients]);
+  const pg = usePagination(displayClients, 12);
 
   const handleFormChange = (field: keyof typeof EMPTY_CLIENT, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  const handleArchiveClient = async (client: Client, archived: boolean) => {
+    // Optimistic — revert on failure.
+    setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, archived } : c)));
+    try { await api.archiveClient(client.id, archived); }
+    catch { setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, archived: !archived } : c))); }
+  };
+
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const handleExportClient = async (client: Client) => {
+    setExportingId(client.id);
+    try { await api.exportClient(client.id, fullName(client)); }
+    catch (e) { console.error('Client export failed', e); }
+    finally { setExportingId(null); }
+  };
 
   const handleSelectClient = (c: Client) => {
     setSelectedClient(c);
@@ -238,8 +259,7 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
 
             {activeTab === 'info' && (
               <>
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 max-w-3xl">
                     <Field label="First Name" value={form.firstName} onChange={(v) => handleFormChange('firstName', v)} inputClass={inputClass} labelClass={labelClass} />
                     <Field label="Last Name" value={form.lastName} onChange={(v) => handleFormChange('lastName', v)} inputClass={inputClass} labelClass={labelClass} />
                     <Field label="Preferred Name / Goes By" value={form.preferredName} onChange={(v) => handleFormChange('preferredName', v)} inputClass={inputClass} labelClass={labelClass} />
@@ -262,12 +282,6 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
                       />
                     </div>
                     <Field label="Diagnosis" value={form.diagnosis} onChange={(v) => handleFormChange('diagnosis', v)} inputClass={inputClass} labelClass={labelClass} />
-                  </div>
-                  <div className="space-y-4">
-                    <h3 className="font-bold text-gray-800">Linked EHR Information</h3>
-                    <Field label="EHR Provider" value={form.ehrProvider ?? ''} onChange={(v) => handleFormChange('ehrProvider', v)} inputClass={inputClass} labelClass={labelClass} />
-                    <Field label="Case ID #" value={form.ehrCaseId ?? ''} onChange={(v) => handleFormChange('ehrCaseId', v)} inputClass={inputClass} labelClass={labelClass} />
-                  </div>
                 </div>
               </>
             )}
@@ -295,7 +309,20 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
                 }}
               />
             )}
-            {activeTab === 'ehr' && <EmptyTab message="No EHR connected" sub="Connect an EHR provider to sync client data automatically" />}
+            {activeTab === 'ehr' && (
+              <div className="max-w-xl">
+                <h2 className="text-base font-semibold text-gray-800 mb-1">EHR Connection</h2>
+                <p className="text-sm text-gray-500 mb-5">
+                  Link this client to their record in your practice management system. Connect a provider
+                  in <strong>Settings → Integrations</strong> to sync automatically, or enter the reference manually below.
+                </p>
+                <div className="space-y-4 bg-white rounded-xl border border-gray-200 p-5">
+                  <Field label="EHR Provider" value={form.ehrProvider ?? ''} onChange={(v) => handleFormChange('ehrProvider', v)} inputClass={inputClass} labelClass={labelClass} />
+                  <Field label="Case ID #" value={form.ehrCaseId ?? ''} onChange={(v) => handleFormChange('ehrCaseId', v)} inputClass={inputClass} labelClass={labelClass} />
+                  <p className="text-xs text-gray-400">Saved with the client when you click <strong>Save Changes</strong>.</p>
+                </div>
+              </div>
+            )}
             {activeTab === 'resources' && (
               <ConnectedResourcesTab clientId={selectedClient.id} clientName={clientDisplayName(selectedClient)} />
             )}
@@ -426,6 +453,23 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
         )}
       </div>
 
+      {/* Active / Archived tabs */}
+      <div className="flex gap-6 px-6 border-b border-gray-200 bg-white">
+        {([
+          { id: 'active'   as const, label: 'Active',   count: clients.length - archivedCount },
+          { id: 'archived' as const, label: 'Archived', count: archivedCount },
+        ]).map((t) => {
+          const on = clientTab === t.id;
+          return (
+            <button key={t.id} onClick={() => { setClientTab(t.id); pg.reset(); }}
+              className={`relative py-2.5 text-sm font-medium transition-colors ${on ? 'text-teal-700' : 'text-gray-500 hover:text-gray-800'}`}>
+              {t.label} <span className="text-xs text-gray-400">{t.count}</span>
+              {on && <span className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full" style={{ background: '#2a5f6f' }} />}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Client list */}
       <div className="flex-1 overflow-y-auto bg-gray-50 px-6 py-4" onClick={() => { setShowSortMenu(false); setShowFilterMenu(false); }}>
         {loading ? (
@@ -477,15 +521,21 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
             </div>
           )
         ) : (
-          <div className="space-y-2">
-            {displayClients.map((client) => (
-              <ClientRow
-                key={client.id}
-                client={client}
-                onSelect={handleSelectClient}
-                onStartChat={onStartChat ? () => onStartChat(client.id) : undefined}
-              />
-            ))}
+          <div>
+            <div className="space-y-2">
+              {pg.pageItems.map((client) => (
+                <ClientRow
+                  key={client.id}
+                  client={client}
+                  onSelect={handleSelectClient}
+                  onStartChat={onStartChat ? () => onStartChat(client.id) : undefined}
+                  onArchive={(archived) => handleArchiveClient(client, archived)}
+                  onExport={() => handleExportClient(client)}
+                  exporting={exportingId === client.id}
+                />
+              ))}
+            </div>
+            <Pagination state={pg} label="clients" />
           </div>
         )}
       </div>
@@ -517,12 +567,19 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
 // ── Client row ────────────────────────────────────────────────────────────────
 
 function ClientRow({
-  client, onSelect, onStartChat,
+  client, onSelect, onStartChat, onArchive, onExport, exporting,
 }: {
   client: Client;
   onSelect: (c: Client) => void;
   onStartChat?: () => void;
+  onArchive?: (archived: boolean) => void;
+  onExport?: () => void;
+  exporting?: boolean;
 }) {
+  const teamCount = new Set(
+    [client.treatingBcbaId, client.supervisingBcbaId, ...(client.supervisorIds ?? []), ...(client.rbtIds ?? [])]
+      .filter(Boolean),
+  ).size;
   return (
     <div
       className="w-full bg-white rounded-xl px-5 py-4 flex items-center gap-4 transition-all group"
@@ -559,6 +616,18 @@ function ClientRow({
           {client.dateOfBirth && client.primaryInsurance && <span>•</span>}
           {client.primaryInsurance && <span>{client.primaryInsurance}</span>}
         </div>
+        {/* Treatment-team + last-updated pills */}
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#EEF7EA', color: '#2E7D22' }}>
+            <FontAwesomeIcon icon={faUsers} style={{ fontSize: 9 }} />
+            {teamCount} on team
+          </span>
+          {client.updatedAt && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500">
+              Updated {new Date(client.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Start Chat button */}
@@ -572,6 +641,31 @@ function ClientRow({
         >
           <FontAwesomeIcon icon={faCommentDots} className="text-xs" />
           Start Chat
+        </button>
+      )}
+
+      {/* Export full record */}
+      {onExport && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onExport(); }}
+          disabled={exporting}
+          title="Export full record (JSON)"
+          aria-label="Export client record"
+          className="flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors shrink-0 disabled:opacity-50"
+        >
+          <FontAwesomeIcon icon={exporting ? faSpinner : faFileExport} className={`text-xs ${exporting ? 'animate-spin' : ''}`} />
+        </button>
+      )}
+
+      {/* Archive / unarchive */}
+      {onArchive && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onArchive(!client.archived); }}
+          title={client.archived ? 'Unarchive client' : 'Archive client'}
+          aria-label={client.archived ? 'Unarchive client' : 'Archive client'}
+          className="flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors shrink-0"
+        >
+          <FontAwesomeIcon icon={client.archived ? faBoxOpen : faBoxArchive} className="text-xs" />
         </button>
       )}
 

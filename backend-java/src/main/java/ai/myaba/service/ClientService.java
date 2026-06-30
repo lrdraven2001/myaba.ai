@@ -244,6 +244,22 @@ public class ClientService {
                 .update(updates).get();
     }
 
+    /** Archive or unarchive a client. Authorization is checked in the controller. */
+    public void setArchived(String orgId, String clientId, boolean archived) throws Exception {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("archived", archived);
+        updates.put("updatedAt", TimestampUtil.now());
+
+        if (devMode) {
+            devClients.merge(clientId, updates, (existing, upd) -> { existing.putAll(upd); return existing; });
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).document(clientId)
+                .update(updates).get();
+    }
+
     /**
      * Update the authorization assignments for a client (who is the treating BCBA, RBTs, etc.).
      * Also recomputes {@code memberIds} for efficient Firestore queries.

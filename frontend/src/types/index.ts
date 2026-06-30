@@ -136,6 +136,8 @@ export interface Client {
   memberIds?: string[];
   createdAt: string;
   updatedAt?: string;
+  /** When true, the client is archived (read-only, hidden from the default Active list). */
+  archived?: boolean;
 }
 
 // ── Documents ─────────────────────────────────────────────────────────────────
@@ -233,6 +235,8 @@ export interface OrgSettings {
   mfaEnforced?: boolean;
   /** When true, AI output always uses a client's preferred/display name, never their legal name. */
   preferClientDisplayName?: boolean;
+  /** Org data-retention window in days (minimum 30). Audit/compliance logs keep a separate HIPAA 6-year floor. */
+  retentionDays?: number;
 }
 
 /** Acceptance status for a signed agreement (BAA, Service Contract). */
@@ -606,6 +610,15 @@ export interface UsageSummary {
    * True for enterprise plans only.
    */
   canSetCustomLimit: boolean;
+}
+
+/** One month of usage, for the agency-usage trend report. */
+export interface UsageHistoryEntry {
+  /** Billing period, e.g. "2026-06". */
+  period: string;
+  requestCount: number;
+  chatCount: number;
+  documentCount: number;
 }
 
 // ── OfficePuzzle Import ───────────────────────────────────────────────────────

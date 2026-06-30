@@ -3,11 +3,11 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faDownload, faStar, faCircleInfo, faUsers, faFileLines,
   faComments, faBolt, faCreditCard, faPlus, faLock,
-  faGem, faBell, faSlidersH, faCircleQuestion,
+  faGem, faBell, faSlidersH, faCircleQuestion, faChartColumn,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { api } from '../../lib/api';
-import type { UsageSummary } from '../../types';
+import type { UsageSummary, UsageHistoryEntry } from '../../types';
 import {
   SettingsCard, Badge, SectionHeading, SecondaryButton,
 } from '../../components/settings/primitives';
@@ -20,9 +20,11 @@ const SEAT_LIMIT: Record<string, number> = { solo: 3, team: 15, enterprise: 100,
 export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [usage, setUsage]     = useState<UsageSummary | null>(null);
   const [members, setMembers] = useState<number>(0);
+  const [history, setHistory] = useState<UsageHistoryEntry[]>([]);
 
   useEffect(() => {
     api.getUsage().then(setUsage).catch(() => {});
+    api.getUsageHistory(12).then((r) => setHistory(r.history ?? [])).catch(() => {});
     if (orgId) api.getOrgMembers(orgId).then((m) => setMembers(Array.isArray(m) ? m.length : 0)).catch(() => {});
   }, [orgId]);
 
@@ -39,7 +41,7 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
     : '—';
 
   const downloadReport = () => {
-    const rows = [
+    const rows: string[][] = [
       ['Metric', 'Value', 'Limit'],
       ['Period', usage?.period ?? '', ''],
       ['Plan', planLabel, ''],
@@ -48,6 +50,12 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
       ['Chat messages', String(chats), ''],
       ['Team members', String(members), String(seatLimit)],
     ];
+    if (history.length) {
+      rows.push([], ['Monthly History'], ['Period', 'Documents', 'Chats', 'Total Requests']);
+      for (const h of history) {
+        rows.push([h.period, String(h.documentCount), String(h.chatCount), String(h.requestCount)]);
+      }
+    }
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -112,6 +120,16 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
         </SettingsCard>
       </div>
 
+      {/* Agency usage trend */}
+      <SettingsCard
+        title={<span className="flex items-center gap-1.5">Usage Trend <FontAwesomeIcon icon={faChartColumn} className="text-gray-300" style={{ fontSize: 12 }} /></span>}
+        subtitle="AI activity over the last 12 months"
+      >
+        <div className="px-5 sm:px-6 pb-6 pt-1">
+          <UsageTrend history={history} />
+        </div>
+      </SettingsCard>
+
       {/* Invoices · Payment method */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SettingsCard title="Recent Invoices">
@@ -161,6 +179,53 @@ function UsageBar({ icon, color, label, used, limit }: {
       </div>
       <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Usage trend chart ───────────────────────────────────────────────────────
+function UsageTrend({ history }: { history: UsageHistoryEntry[] }) {
+  if (!history.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <FontAwesomeIcon icon={faChartColumn} className="text-gray-300 text-2xl mb-2" />
+        <p className="text-sm font-medium text-gray-600">No usage recorded yet</p>
+        <p className="text-xs text-gray-400 mt-1">Monthly AI activity will appear here as your team generates documents and chats.</p>
+      </div>
+    );
+  }
+  const max = Math.max(1, ...history.map((h) => h.documentCount + h.chatCount));
+  const monthLabel = (p: string, opts: Intl.DateTimeFormatOptions) => {
+    const d = new Date(p + '-01');
+    return isNaN(d.getTime()) ? p : d.toLocaleString('default', opts);
+  };
+  return (
+    <div>
+      <div className="flex items-end gap-1.5 sm:gap-3" style={{ height: 160 }}>
+        {history.map((h) => {
+          const total   = h.documentCount + h.chatCount;
+          const barPct  = (total / max) * 100;
+          const chatPct = total ? (h.chatCount / total) * 100 : 0;
+          return (
+            <div key={h.period} className="flex-1 flex flex-col items-center justify-end gap-1.5 min-w-0 h-full">
+              <div
+                className="w-full max-w-[42px] rounded-t-md overflow-hidden flex flex-col bg-gray-50"
+                style={{ height: `${Math.max(barPct, total > 0 ? 4 : 1.5)}%` }}
+                title={`${monthLabel(h.period, { month: 'long', year: 'numeric' })} — ${h.documentCount.toLocaleString()} documents, ${h.chatCount.toLocaleString()} chats`}
+              >
+                <div style={{ height: `${chatPct}%`, background: '#3F9B2F' }} />
+                <div style={{ flex: 1, background: '#7C3AED' }} />
+              </div>
+              <span className="text-[10px] text-gray-400 w-full text-center truncate">{monthLabel(h.period, { month: 'short' })}</span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#7C3AED' }} /> Documents</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#3F9B2F' }} /> Chats</span>
       </div>
     </div>
   );

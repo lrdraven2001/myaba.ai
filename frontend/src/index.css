@@ -14,10 +14,18 @@ body {
   height: 100%;
   overflow: hidden;
   /* Soft brand-tinted canvas (blue → green) shown behind transparent gutters.
-     Kept very light so foreground text retains WCAG AA / 508 contrast. */
-  background: linear-gradient(165deg, #e6eff6 0%, #ebf4ed 100%);
+     Kept light enough that foreground text retains WCAG AA / 508 contrast. */
+  background: linear-gradient(165deg, #d3e1ee 0%, #dbeae0 100%);
   background-attachment: fixed;
   color: #1a2e35;
+}
+
+/* Retint the neutral canvas so the app reads less stark-white. Tailwind's
+   bg-gray-50 (#F9FAFB) is the main surface across every view; nudge it to a
+   soft cool tone so white cards/panels still pop on top. Plain (un-layered)
+   rule, so it overrides the layered Tailwind utility. Kept light for AA/508. */
+.bg-gray-50 {
+  background-color: #dde7ec !important;
 }
 
 #root {

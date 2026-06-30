@@ -269,6 +269,52 @@ public class UsageService {
     }
 
     /**
+     * Return up to {@code months} most-recent monthly usage records for an org,
+     * oldest-first (suitable for a trend chart). Each entry has {@code period}
+     * (YYYY-MM), {@code requestCount}, {@code chatCount}, {@code documentCount}.
+     *
+     * <p>Reads the {@code organizations/{orgId}/usage} subcollection — the same
+     * per-period documents written by {@link #recordRequest}.
+     */
+    public java.util.List<Map<String, Object>> getUsageHistory(String orgId, int months) {
+        int limit = months <= 0 ? 12 : Math.min(months, 36);
+
+        if (devMode) {
+            Map<String, Object> only = new java.util.LinkedHashMap<>();
+            only.put("period",        currentPeriod());
+            only.put("requestCount",  devStore.getOrDefault(orgId, new AtomicLong(0)).get());
+            only.put("chatCount",     0L);
+            only.put("documentCount", 0L);
+            return java.util.List.of(only);
+        }
+
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            var snaps = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection("usage")
+                    .orderBy("period", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                    .limit(limit)
+                    .get().get().getDocuments();
+
+            java.util.List<Map<String, Object>> out = new java.util.ArrayList<>();
+            for (var s : snaps) {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("period",        s.getId());            // doc id == period (YYYY-MM)
+                m.put("requestCount",  longOrZero(s, "requestCount"));
+                m.put("chatCount",     longOrZero(s, "chatCount"));
+                m.put("documentCount", longOrZero(s, "documentCount"));
+                out.add(m);
+            }
+            java.util.Collections.reverse(out); // oldest → newest for charting
+            return out;
+
+        } catch (Exception e) {
+            log.error("Failed to get usage history for org {}: {}", orgId, e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
+    /**
      * Set (or clear) a custom monthly request cap for an enterprise org.
      *
      * <p>Enterprise plans are unlimited by default; this lets admins set an

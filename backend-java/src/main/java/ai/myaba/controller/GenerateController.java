@@ -634,6 +634,18 @@ public class GenerateController {
         return ResponseEntity.ok(summary);
     }
 
+    /** Return the monthly usage history (oldest→newest) for the caller's org — agency reporting. */
+    @GetMapping("/usage/history")
+    public ResponseEntity<?> getUsageHistory(
+            @AuthenticationPrincipal AppUser user,
+            @RequestParam(name = "months", defaultValue = "12") int months) {
+        if (user == null || user.getOrgId() == null || user.getOrgId().isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Not authenticated"));
+        }
+        return ResponseEntity.ok(Map.of("history", usageService.getUsageHistory(user.getOrgId(), months)));
+    }
+
     /**
      * Set (or clear) a custom monthly spending cap for an enterprise org.
      * Admin-only. Pass {@code {"limit": 500}} or {@code {"limit": null}} to clear.

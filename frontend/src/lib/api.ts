@@ -25,6 +25,7 @@ import type {
   SubjectAuthorization,
   Template,
   UsageSummary,
+  UsageHistoryEntry,
 } from '../types';
 
 const API_BASE = '/api';
@@ -227,6 +228,10 @@ export const api = {
   getUsage: () =>
     request<UsageSummary>('/usage'),
 
+  /** Get monthly usage history (oldest→newest) for agency reporting. */
+  getUsageHistory: (months = 12) =>
+    request<{ history: UsageHistoryEntry[] }>(`/usage/history?months=${months}`),
+
   /**
    * Set (or clear) a custom monthly request cap for an enterprise org.
    * Admin only. Pass null to remove the cap (revert to unlimited).
@@ -281,6 +286,30 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  /** Archive or unarchive a client (hides it from the default Active list). */
+  archiveClient: (clientId: string, archived: boolean) =>
+    request<void>(`/clients/${clientId}/archive`, {
+      method: 'PUT',
+      body: JSON.stringify({ archived }),
+    }),
+
+  /** Download a client's full record (demographics, team, chats, documents) as a single JSON archive. */
+  exportClient: async (clientId: string, clientName?: string) => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE}/clients/${clientId}/export`, { headers });
+    if (!res.ok) throw new Error(`Failed to export client (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safe = (clientName || clientId).replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || clientId;
+    a.download = `${safe}-archive.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   updateClientAuthorizations: (
     clientId: string,
