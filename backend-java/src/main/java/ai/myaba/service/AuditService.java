@@ -28,10 +28,10 @@ public class AuditService {
      * to {@code null} when not provided by the caller.</p>
      */
     @Async
-    public void log(String eventType, String userId, String clientId,
+    public void log(String eventType, String orgId, String userId, String clientId,
                     String documentId, String aclxContentId,
                     String decision, Object aclxLabel) {
-        log(eventType, userId, clientId, documentId, aclxContentId,
+        log(eventType, orgId, userId, clientId, documentId, aclxContentId,
             decision, aclxLabel, null, null);
     }
 
@@ -49,7 +49,7 @@ public class AuditService {
      * (different store, different retention schedule, required for SOC 2 CC7.2).
      */
     @Async
-    public void logAclx(String eventType, String userId, String clientId,
+    public void logAclx(String eventType, String orgId, String userId, String clientId,
                         String documentId, AclxResponse aclxResult,
                         String sourceIp, String correlationId) {
         if (devMode) {
@@ -71,6 +71,7 @@ public class AuditService {
             Firestore db = FirestoreClient.getFirestore();
             Map<String, Object> entry = new HashMap<>();
             entry.put("eventType",     eventType);
+            entry.put("orgId",         orgId);
             entry.put("userId",        userId);
             entry.put("clientId",      clientId);
             entry.put("documentId",    documentId);
@@ -152,7 +153,7 @@ public class AuditService {
      * </ul>
      */
     @Async
-    public void log(String eventType, String userId, String clientId,
+    public void log(String eventType, String orgId, String userId, String clientId,
                     String documentId, String aclxContentId,
                     String decision, Object aclxLabel,
                     String sourceIp, String correlationId) {
@@ -167,6 +168,7 @@ public class AuditService {
             Firestore db = FirestoreClient.getFirestore();
             Map<String, Object> entry = new HashMap<>();
             entry.put("eventType",     eventType);
+            entry.put("orgId",         orgId);
             entry.put("userId",        userId);
             entry.put("clientId",      clientId);
             entry.put("documentId",    documentId);

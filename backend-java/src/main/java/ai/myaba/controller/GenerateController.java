@@ -103,7 +103,7 @@ public class GenerateController {
         // content to a governance gateway is legally impermissible without consent.)
         String diagnosis = (String) client.getOrDefault("diagnosis", "");
         if (subjectAuthorizationService.requiresHardBlock(user.getOrgId(), req.getClientId(), diagnosis)) {
-            auditService.log("DOCUMENT_BLOCKED_NO_AUTH", user.getUid(), req.getClientId(),
+            auditService.log("DOCUMENT_BLOCKED_NO_AUTH", user.getOrgId(), user.getUid(), req.getClientId(),
                     null, null, "BLOCK", null);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
                     "error",  "Document generation blocked: explicit written authorization required " +
@@ -122,7 +122,7 @@ public class GenerateController {
                     inputGuardService.check(user, req.getAdditionalContext(), List.of());
             if (dlpViolation.isPresent()) {
                 InputGuard.Violation v = dlpViolation.get();
-                auditService.log("DOCUMENT_DLP_BLOCKED", user.getUid(), req.getClientId(),
+                auditService.log("DOCUMENT_DLP_BLOCKED", user.getOrgId(), user.getUid(), req.getClientId(),
                         null, null, "BLOCK", null);
                 log.warn("DLP blocked document generation: user={} org={} code={} detected={}",
                         user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
@@ -213,7 +213,7 @@ public class GenerateController {
 
         // Use enriched ACLX audit log — stores detector findings, synthesis flag,
         // content label, decision ID, authorization detail, redaction count.
-        auditService.logAclx("DOCUMENT_GENERATED", user.getUid(), req.getClientId(),
+        auditService.logAclx("DOCUMENT_GENERATED", user.getOrgId(), user.getUid(), req.getClientId(),
                 null, aclxResult, null, null);
 
         // §4: Extract authorization deny reason from the label (for review queue)
@@ -269,7 +269,7 @@ public class GenerateController {
                         .build());
             }
             case "ESCALATE" -> {
-                auditService.logAclx("DOCUMENT_ESCALATED", user.getUid(), req.getClientId(),
+                auditService.logAclx("DOCUMENT_ESCALATED", user.getOrgId(), user.getUid(), req.getClientId(),
                         null, aclxResult, null, null);
                 String rqItemId = reviewQueueService.enqueue(
                         user.getOrgId(),
@@ -342,7 +342,7 @@ public class GenerateController {
             Optional<InputGuard.Violation> gv = inputGuardService.check(user, req.getMessage(), List.of());
             if (gv.isPresent()) {
                 InputGuard.Violation v = gv.get();
-                auditService.log("GENERAL_CHAT_INPUT_GUARD_BLOCKED", user.getUid(), null, null, null, "BLOCK", null);
+                auditService.log("GENERAL_CHAT_INPUT_GUARD_BLOCKED", user.getOrgId(), user.getUid(), null, null, null, "BLOCK", null);
                 Map<String, Object> guardBody = new java.util.LinkedHashMap<>();
                 guardBody.put("error",    "Message blocked by input compliance guard");
                 guardBody.put("message",  v.userMessage());
@@ -372,7 +372,7 @@ public class GenerateController {
             if ("unavailable".equals(generalPolicyVer) || generalPolicyVer == null) {
                 if ("ALLOW".equals(generalDecision)) generalDecision = "BLOCK";
             }
-            auditService.logAclx("GENERAL_CHAT_RESPONSE", user.getUid(), null, null, generalAclx, null, null);
+            auditService.logAclx("GENERAL_CHAT_RESPONSE", user.getOrgId(), user.getUid(), null, null, generalAclx, null, null);
 
             // ESCALATE is treated as BLOCK — no PHI delivered via review queue for non-clinical roles
             String generalReply;
@@ -440,7 +440,7 @@ public class GenerateController {
                     String cid       = entry.getKey();
                     String clientDx  = (String) entry.getValue().getOrDefault("diagnosis", "");
                     if (subjectAuthorizationService.requiresHardBlock(user.getOrgId(), cid, clientDx)) {
-                        auditService.log("CHAT_BLOCKED_NO_AUTH", user.getUid(), cid,
+                        auditService.log("CHAT_BLOCKED_NO_AUTH", user.getOrgId(), user.getUid(), cid,
                                 null, null, "BLOCK", null);
                         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
                                 "error",  "Chat blocked: explicit written authorization required " +
@@ -467,7 +467,7 @@ public class GenerateController {
                     inputGuardService.check(user, req.getMessage(), allClientIds);
             if (guardViolation.isPresent()) {
                 InputGuard.Violation v = guardViolation.get();
-                auditService.log("CHAT_INPUT_GUARD_BLOCKED", user.getUid(),
+                auditService.log("CHAT_INPUT_GUARD_BLOCKED", user.getOrgId(), user.getUid(),
                         req.getClientId(), null, null, "BLOCK", null);
                 log.warn("InputGuard blocked chat: user={} org={} code={} detected={}",
                         user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
@@ -538,7 +538,7 @@ public class GenerateController {
 
         // Use enriched ACLX audit log — stores detector findings, synthesis flag,
         // content label, decision ID, authorization detail, redaction count.
-        auditService.logAclx("CHAT_RESPONSE", user.getUid(), req.getClientId(),
+        auditService.logAclx("CHAT_RESPONSE", user.getOrgId(), user.getUid(), req.getClientId(),
                 null, aclxResult, null, null);
 
         // §4: QUARANTINE_SUSPECTED in BLOCK — don't surface raw reason to end user

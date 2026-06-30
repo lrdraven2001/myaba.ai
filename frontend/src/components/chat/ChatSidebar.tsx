@@ -5,6 +5,7 @@ import {
   faSearch, faTimes, faTrash,
 } from '@fortawesome/free-solid-svg-icons';
 import type { Chat } from '../../types';
+import { usePagination, Pagination } from '../Pagination';
 
 export interface SidebarClient {
   id: string;
@@ -26,27 +27,28 @@ interface Props {
 
 // ── Time bucket helpers ───────────────────────────────────────────────────────
 
-function timeBucket(iso: string): 'today' | 'yesterday' | 'this_week' | 'earlier' {
+function timeBucket(iso: string): 'last5' | 'lastweek' | 'older' {
   try {
-    const d = new Date(iso);
-    const now = new Date();
-    const startOfToday    = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
-    const startOfWeek     = new Date(startOfToday.getTime() - startOfToday.getDay() * 86_400_000);
-    if (d >= startOfToday)     return 'today';
-    if (d >= startOfYesterday) return 'yesterday';
-    if (d >= startOfWeek)      return 'this_week';
-    return 'earlier';
-  } catch { return 'earlier'; }
+    const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
+    if (days <= 5)  return 'last5';
+    if (days <= 14) return 'lastweek';
+    return 'older';
+  } catch { return 'older'; }
 }
 
 const BUCKET_LABELS: Record<string, string> = {
-  today:     'Today',
-  yesterday: 'Yesterday',
-  this_week: 'This Week',
-  earlier:   'Earlier',
+  last5:    'Last 5 days',
+  lastweek: 'Last week',
+  older:    'Older',
 };
-const BUCKET_ORDER = ['today', 'yesterday', 'this_week', 'earlier'];
+const BUCKET_ORDER = ['last5', 'lastweek', 'older'];
+
+/** Scope label/color for a chat — General, Client, or Project. */
+function chatScope(chat: Chat): { label: string; color: string } {
+  if (chat.clientId)     return { label: 'Client',  color: '#1E88FF' };
+  if (chat.projectLabel) return { label: 'Project', color: '#F5A623' };
+  return { label: 'General', color: '#6b7280' };
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -66,7 +68,7 @@ export default function ChatSidebar({
   const searchRef                   = useRef<HTMLInputElement>(null);
 
   // Which section keys are expanded (e.g. "today", "client:c-001", "project:Q3")
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['today']));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['last5', 'lastweek', 'older']));
 
   // Auto-expand the section containing the active chat
   useEffect(() => {
@@ -234,7 +236,7 @@ export default function ChatSidebar({
                   borderBottom: activeTab === t ? '2px solid #2a5f6f' : '2px solid transparent',
                 }}
               >
-                {t === 'recents' ? 'Recents' : t === 'clients' ? 'Clients' : 'Projects'}
+                {t === 'recents' ? 'All' : t === 'clients' ? 'Clients' : 'Projects'}
               </button>
             ))}
           </div>
@@ -296,8 +298,10 @@ function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelec
   const sorted = [...chats].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
+  const pg = usePagination(sorted, 20);
+  // Group the current page by date bucket (Last 5 days / Last week / Older).
   const grouped = new Map<string, Chat[]>();
-  for (const chat of sorted) {
+  for (const chat of pg.pageItems) {
     const b = timeBucket(chat.updatedAt);
     if (!grouped.has(b)) grouped.set(b, []);
     grouped.get(b)!.push(chat);
@@ -318,6 +322,7 @@ function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelec
           onDelete={onDelete}
         />
       ))}
+      <div className="px-3"><Pagination state={pg} label="chats" /></div>
     </>
   );
 }
@@ -325,14 +330,14 @@ function RecentsTab({ chats, activeChatId, previews, expanded, onToggle, onSelec
 // ── Clients tab ───────────────────────────────────────────────────────────────
 
 function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: TabProps & { clients: SidebarClient[] }) {
+  // Clients tab shows only client-scoped chats — no general or project chats.
   const clientChats  = chats.filter((c) => c.clientId !== '');
-  const generalChats = chats.filter((c) => c.clientId === '' && c.projectLabel === '');
   const activeClients = clients.filter((cl) => clientChats.some((c) => c.clientId === cl.id));
   const unknownIds = Array.from(
     new Set(clientChats.map((c) => c.clientId).filter((id) => !clients.some((cl) => cl.id === id)))
   );
 
-  if (clientChats.length === 0 && generalChats.length === 0)
+  if (clientChats.length === 0)
     return <p className="text-xs text-gray-400 text-center mt-8 px-4">No client chats yet.</p>;
 
   return (
@@ -349,12 +354,6 @@ function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle
           previews={previews} expanded={expanded.has(`client:${id}`)} onToggle={onToggle}
           onSelect={onSelect} onDelete={onDelete} />
       ))}
-      {generalChats.length > 0 && (
-        <Section sectionKey="client:general" label="General" chats={generalChats}
-          activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('client:general')} onToggle={onToggle}
-          onSelect={onSelect} onDelete={onDelete} />
-      )}
     </>
   );
 }
@@ -362,12 +361,11 @@ function ClientsTab({ chats, clients, activeChatId, previews, expanded, onToggle
 // ── Projects tab ──────────────────────────────────────────────────────────────
 
 function ProjectsTab({ chats, activeChatId, previews, expanded, onToggle, onSelect, onDelete }: TabProps) {
+  // Projects tab shows only project-scoped chats — no general or client chats.
   const projectChats = chats.filter((c) => c.clientId === '' && c.projectLabel !== '');
-  const generalChats = chats.filter((c) => c.clientId === '' && c.projectLabel === '');
-  const clientChats  = chats.filter((c) => c.clientId !== '');
   const labels = Array.from(new Set(projectChats.map((c) => c.projectLabel)));
 
-  if (!projectChats.length && !generalChats.length && !clientChats.length)
+  if (!projectChats.length)
     return <p className="text-xs text-gray-400 text-center mt-8 px-4">No project chats yet.</p>;
 
   return (
@@ -378,18 +376,6 @@ function ProjectsTab({ chats, activeChatId, previews, expanded, onToggle, onSele
           previews={previews} expanded={expanded.has(`project:${label}`)} onToggle={onToggle}
           onSelect={onSelect} onDelete={onDelete} />
       ))}
-      {generalChats.length > 0 && (
-        <Section sectionKey="project:General" label="General" chats={generalChats}
-          activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('project:General')} onToggle={onToggle}
-          onSelect={onSelect} onDelete={onDelete} />
-      )}
-      {clientChats.length > 0 && (
-        <Section sectionKey="project:clients" label="Client Chats" chats={clientChats}
-          activeChatId={activeChatId} previews={previews}
-          expanded={expanded.has('project:clients')} onToggle={onToggle}
-          onSelect={onSelect} onDelete={onDelete} />
-      )}
     </>
   );
 }
@@ -478,9 +464,15 @@ function ChatRow({ chat, preview, isActive, onClick, onDelete }: {
           : { borderLeft: '3px solid transparent', background: hovered ? '#f9fafb' : 'transparent' }}
         onClick={onClick}
       >
-        <p className="text-sm font-medium truncate" style={{ color: isActive ? '#1e4d5c' : '#374151' }}>
-          {chat.title || 'Untitled Chat'}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium truncate flex-1" style={{ color: isActive ? '#1e4d5c' : '#374151' }}>
+            {chat.title || 'Untitled Chat'}
+          </p>
+          {(() => { const s = chatScope(chat); return (
+            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+              style={{ background: `${s.color}1A`, color: s.color }}>{s.label}</span>
+          ); })()}
+        </div>
         <p className="text-xs text-gray-400 truncate mt-0.5">
           {preview ?? formatDate(chat.updatedAt)}
         </p>

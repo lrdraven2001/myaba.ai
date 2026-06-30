@@ -9,11 +9,14 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
+import { canSupervise } from '../types';
 import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
 import GenerateDocumentModal from '../components/GenerateDocumentModal';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { usePagination, Pagination } from '../components/Pagination';
+import CreatedByPill, { type MemberLike } from '../components/CreatedByPill';
 
 /** Best-effort display name for a client. */
 function clientDisplayName(c: { preferredName?: string; firstName?: string; lastName?: string; legalName?: string }): string {
@@ -821,9 +824,16 @@ function NewClientModal({
 // ── Documents tab ─────────────────────────────────────────────────────────────
 
 function ClientDocumentsTab({ clientId, clientName }: { clientId: string; clientName?: string }) {
+  const { currentUser } = useAuth();
   const [docs, setDocs]       = useState<Array<Record<string, string>>>([]);
+  const [members, setMembers] = useState<MemberLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
+  const pg = usePagination(docs, 8);
+
+  useEffect(() => {
+    if (currentUser?.orgId) api.getOrgMembers(currentUser.orgId).then(setMembers).catch(() => {});
+  }, [currentUser?.orgId]);
 
   const loadDocs = () => {
     setLoading(true);
@@ -868,23 +878,29 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
           <p className="text-sm mt-1">Click <strong>Generate Document</strong> to create the first one for this client.</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {docs.map((d, i) => (
-            <div key={d.id ?? i} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
-              style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF4FF' }}>
-                <FontAwesomeIcon icon={faFileAlt} style={{ color: '#1E88FF', fontSize: 13 }} />
+        <div>
+          <div className="space-y-2">
+            {pg.pageItems.map((d, i) => (
+              <div key={d.id ?? i} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
+                style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF4FF' }}>
+                  <FontAwesomeIcon icon={faFileAlt} style={{ color: '#1E88FF', fontSize: 13 }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{d.documentType ?? d.title ?? 'AI Document'}</p>
+                    <CreatedByPill createdBy={d.createdBy ?? d.addedBy ?? d.userId} members={members} />
+                  </div>
+                  {d.createdAt && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Generated {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{d.documentType ?? d.title ?? 'AI Document'}</p>
-                {d.createdAt && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Generated {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <Pagination state={pg} label="documents" />
         </div>
       )}
 
@@ -903,8 +919,11 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
 // ── Chats tab ─────────────────────────────────────────────────────────────────
 
 function ClientChatsTab({ clientId, onStartChat, onOpenChat }: { clientId: string; onStartChat?: () => void; onOpenChat?: (chatId: string) => void }) {
+  const { currentUser } = useAuth();
   const [chats, setChats]     = useState<Chat[]>([]);
+  const [members, setMembers] = useState<MemberLike[]>([]);
   const [loading, setLoading] = useState(true);
+  const pg = usePagination(chats, 8);
 
   useEffect(() => {
     setLoading(true);
@@ -913,6 +932,10 @@ function ClientChatsTab({ clientId, onStartChat, onOpenChat }: { clientId: strin
       .catch(() => setChats([]))
       .finally(() => setLoading(false));
   }, [clientId]);
+
+  useEffect(() => {
+    if (currentUser?.orgId) api.getOrgMembers(currentUser.orgId).then(setMembers).catch(() => {});
+  }, [currentUser?.orgId]);
 
   return (
     <div>
@@ -945,30 +968,36 @@ function ClientChatsTab({ clientId, onStartChat, onOpenChat }: { clientId: strin
           <p className="text-sm mt-1">Start a conversation scoped to this client.</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {chats.map((chat) => (
-            <div key={chat.id} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
-              style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF7EA' }}>
-                <FontAwesomeIcon icon={faCommentDots} style={{ color: '#3F9B2F', fontSize: 13 }} />
+        <div>
+          <div className="space-y-2">
+            {pg.pageItems.map((chat) => (
+              <div key={chat.id} className="bg-white rounded-xl px-5 py-3 flex items-center gap-4"
+                style={{ border: '2px solid #DCE7EE', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF7EA' }}>
+                  <FontAwesomeIcon icon={faCommentDots} style={{ color: '#3F9B2F', fontSize: 13 }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{chat.title || 'Untitled Chat'}</p>
+                    <CreatedByPill createdBy={chat.createdBy} members={members} />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {chat.projectLabel ? `📁 ${chat.projectLabel} · ` : ''}
+                    {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+                {onOpenChat && (
+                  <button onClick={() => onOpenChat(chat.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0"
+                    style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}>
+                    <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />
+                    Open
+                  </button>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{chat.title || 'Untitled Chat'}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {chat.projectLabel ? `📁 ${chat.projectLabel} · ` : ''}
-                  {new Date(chat.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                </p>
-              </div>
-              {onOpenChat && (
-                <button onClick={() => onOpenChat(chat.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shrink-0"
-                  style={{ borderColor: '#3F9B2F', color: '#3F9B2F', background: 'white' }}>
-                  <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />
-                  Open
-                </button>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
+          <Pagination state={pg} label="chats" />
         </div>
       )}
     </div>
@@ -1205,7 +1234,7 @@ function TreatmentTeamTab({
       .finally(() => setLoadingMembers(false));
   }, [orgId]);
 
-  const supervisorOpts = members.filter((m) => m.role === 'SUPERVISING_BCBA');
+  const supervisorOpts = members.filter((m) => canSupervise(m.role));
   const rbtOptions     = members.filter((m) => ['RBT'].includes(m.role));
 
   // Toggle a supervisor on/off the roster; if removed and was current, clear current

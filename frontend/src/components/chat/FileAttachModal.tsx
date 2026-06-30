@@ -66,6 +66,7 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(alreadyAttached));
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [templates, setTemplates]     = useState<DisplayTemplate[]>([]);
+  const [tplLoading, setTplLoading]   = useState(true);
   const [clients, setClients]         = useState<SidebarClientEntry[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<AttachedFile[]>([]);
   const [uploading, setUploading]     = useState(false);
@@ -110,7 +111,8 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
       )
       .catch(() =>
         setTemplates(FAKE_TEMPLATES.map((t) => ({ id: t.id, title: t.title, category: t.category, content: '' })))
-      );
+      )
+      .finally(() => setTplLoading(false));
   }, []);
 
   // Load clients when client files tab is active
@@ -244,8 +246,10 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
           {/* ── Templates ─────────────────────────────────────────── */}
           {activeTab === 'templates' && (
             <div className="space-y-1">
-              {templates.length === 0 ? (
+              {tplLoading ? (
                 <p className="text-sm text-gray-400 italic py-4 text-center">Loading templates…</p>
+              ) : templates.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-6 text-center">No templates yet. Create one in Documents → Templates.</p>
               ) : (
                 templates.map((t) => (
                   <TemplateRow

@@ -8,7 +8,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
-import { ALL_ROLE_LABELS as ROLE_LABELS } from '../types';
+import { ALL_ROLE_LABELS as ROLE_LABELS, canSupervise } from '../types';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
 
@@ -516,9 +516,10 @@ function UserProfileTab({
   const [saved, setSaved]             = useState(false);
   const [supSaving, setSupSaving]     = useState(false);
 
-  // Active Clinical Supervisors available for RBT assignment
+  // Active supervisors available for RBT assignment (Supervising BCBA, Clinical
+  // Director, or Practice Administrator — see canSupervise).
   const activeSupervisors = allMembers.filter(
-    (m) => m.role === 'SUPERVISING_BCBA' && m.active && m.id !== member.id,
+    (m) => canSupervise(m.role) && m.active && m.id !== member.id,
   );
 
   // Supervisees if this member is a Clinical Supervisor

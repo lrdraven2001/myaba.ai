@@ -79,7 +79,7 @@ public class ClientController {
                         .body(Map.of("error", "Not authorized to access this client"));
             }
 
-            auditService.log("CLIENT_ACCESSED", user.getUid(), clientId, null, null, null, null);
+            auditService.log("CLIENT_ACCESSED", user.getOrgId(), user.getUid(), clientId, null, null, null, null);
             return ResponseEntity.ok(client);
 
         } catch (NoSuchElementException e) {
@@ -104,7 +104,7 @@ public class ClientController {
         }
         try {
             String clientId = clientService.createClient(user.getOrgId(), user.getUid(), req);
-            auditService.log("CLIENT_CREATED", user.getUid(), clientId, null, null, null, null);
+            auditService.log("CLIENT_CREATED", user.getOrgId(), user.getUid(), clientId, null, null, null, null);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("clientId", clientId));
         } catch (Exception e) {
             log.error("createClient failed: {}", e.getMessage());
@@ -127,7 +127,7 @@ public class ClientController {
             }
 
             clientService.updateClient(user.getOrgId(), clientId, req);
-            auditService.log("CLIENT_UPDATED", user.getUid(), clientId, null, null, null, null);
+            auditService.log("CLIENT_UPDATED", user.getOrgId(), user.getUid(), clientId, null, null, null, null);
             return ResponseEntity.ok(Map.of("success", true));
 
         } catch (NoSuchElementException e) {
@@ -165,7 +165,7 @@ public class ClientController {
                     req.getViewerIds()
             );
 
-            auditService.log("CLIENT_AUTHORIZATIONS_UPDATED", user.getUid(), clientId, null, null, null, null);
+            auditService.log("CLIENT_AUTHORIZATIONS_UPDATED", user.getOrgId(), user.getUid(), clientId, null, null, null, null);
             return ResponseEntity.ok(Map.of("success", true));
 
         } catch (NoSuchElementException e) {

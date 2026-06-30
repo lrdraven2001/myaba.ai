@@ -84,6 +84,15 @@ export function canManageClients(role: UserRole): boolean {
 }
 
 /**
+ * Roles that can act as a clinical supervisor on a case (oversee RBTs, sign off).
+ * The Practice Administrator is a BCBA / primary supervisor in this model, so they
+ * are eligible alongside Clinical Directors and Supervising BCBAs.
+ */
+export function canSupervise(role: UserRole | string): boolean {
+  return ['ORG_SUPER_ADMIN', 'CLINICAL_DIRECTOR', 'SUPERVISING_BCBA'].includes(role);
+}
+
+/**
  * True when the user is allowed to view/process PHI.
  * Checks the explicit `phiAccess` claim first (works for custom org roles),
  * then falls back to the predefined role list for legacy tokens.

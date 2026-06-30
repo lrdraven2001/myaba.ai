@@ -165,7 +165,7 @@ public class SearchService {
 
             // Use enriched audit log — stores synthesis flag, detector findings,
             // content label, decision ID, and authorization detail.
-            auditService.logAclx("SEARCH_SUMMARY", user.getUid(), primaryClientId,
+            auditService.logAclx("SEARCH_SUMMARY", user.getOrgId(), user.getUid(), primaryClientId,
                     null, aclx, null, null);
 
             if ("ESCALATE".equals(summaryDecision)) {
