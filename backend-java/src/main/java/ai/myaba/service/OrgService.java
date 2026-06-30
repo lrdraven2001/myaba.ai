@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.OrgRequest;
 import ai.myaba.model.dto.UserRole;
 import com.google.cloud.firestore.Firestore;
@@ -120,7 +123,7 @@ public class OrgService {
             return new HashMap<>(org);
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());
@@ -139,8 +142,8 @@ public class OrgService {
         }
         Firestore db = FirestoreClient.getFirestore();
         List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(orgId)
-                .collection("members").get().get().getDocuments();
+                .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.MEMBERS).get().get().getDocuments();
         return docs.stream().map(d -> {
             Map<String, Object> m = new HashMap<>(d.getData());
             m.put("id", d.getId()); // uid is the document ID
@@ -185,8 +188,8 @@ public class OrgService {
         Map<String, Object> memberUpdate = new HashMap<>();
         memberUpdate.put("supervisorId", supervisorId != null && !supervisorId.isBlank() ? supervisorId : null);
         try {
-            db.collection("organizations").document(orgId)
-              .collection("members").document(uid)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+              .collection(FirestoreCollections.MEMBERS).document(uid)
               .update(memberUpdate);
         } catch (Exception e) {
             log.warn("setSupervisor: could not update Firestore member record for {}: {}", uid, e.getMessage());
@@ -254,7 +257,7 @@ public class OrgService {
         }
 
         String orgId  = "org-" + UUID.randomUUID().toString().substring(0, 8);
-        String now    = Instant.now().toString();
+        String now    = TimestampUtil.now();
 
         boolean itSetup = "it_setup".equals(req.getSetupMode());
         // The starting user is ALWAYS the Practice Administrator (super admin) — the
@@ -277,7 +280,7 @@ public class OrgService {
             log.info("Dev: created org {} (mode={}) for user {}", orgId, data.get("setupMode"), adminUid);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId).set(data).get();
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).set(data).get();
             String creatorPurpose = defaultPurpose(creatorRole);   // treatment — the admin is the clinical lead
             setUserClaims(adminUid, orgId, creatorRole, creatorPurpose);
             writeMemberRecord(db, orgId, adminUid, creatorRole, creatorPurpose);
@@ -320,7 +323,7 @@ public class OrgService {
               .update(Map.of(
                   "used", true,
                   "usedByUid", uid,
-                  "usedAt", Instant.now().toString(),
+                  "usedAt", TimestampUtil.now(),
                   "orgId", orgId));
         } catch (Exception e) {
             log.warn("markOrgCreatorUsed failed for {} (org {} still created): {}", email, orgId, e.getMessage());
@@ -340,7 +343,7 @@ public class OrgService {
         }
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var snap = db.collection("organizations").document(orgId).get().get();
+            var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
             if (!snap.exists()) return false;
             Object v = snap.getData().get("baaAccepted");
             return v == null || Boolean.TRUE.equals(v);
@@ -357,12 +360,12 @@ public class OrgService {
             Map<String, Object> org = devOrgs.get(orgId);
             if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
             org.put("name", name);
-            org.put("updatedAt", Instant.now().toString());
+            org.put("updatedAt", TimestampUtil.now());
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId)
-          .update(Map.of("name", name, "updatedAt", Instant.now().toString())).get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+          .update(Map.of("name", name, "updatedAt", TimestampUtil.now())).get();
     }
 
     // ── Org settings ──────────────────────────────────────────────────────────
@@ -375,14 +378,14 @@ public class OrgService {
             Map<String, Object> existing = new HashMap<>((Map<String, Object>) org.getOrDefault("settings", Map.of()));
             existing.putAll(settings);
             org.put("settings", existing);
-            org.put("updatedAt", Instant.now().toString());
+            org.put("updatedAt", TimestampUtil.now());
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
         Map<String, Object> updates = new HashMap<>();
         settings.forEach((k, v) -> updates.put("settings." + k, v));
-        updates.put("updatedAt", Instant.now().toString());
-        db.collection("organizations").document(orgId).update(updates).get();
+        updates.put("updatedAt", TimestampUtil.now());
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).update(updates).get();
     }
 
     // ── Insurance companies ───────────────────────────────────────────────────
@@ -396,7 +399,7 @@ public class OrgService {
             return list instanceof List ? new ArrayList<>((List<String>) list) : new ArrayList<>();
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
         Object list = snap.getData().get("insuranceCompanies");
         return list instanceof List ? new ArrayList<>((List<String>) list) : new ArrayList<>();
@@ -407,14 +410,14 @@ public class OrgService {
             Map<String, Object> org = devOrgs.get(orgId);
             if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
             org.put("insuranceCompanies", new ArrayList<>(companies));
-            org.put("updatedAt", Instant.now().toString());
+            org.put("updatedAt", TimestampUtil.now());
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
           .update(Map.of(
               "insuranceCompanies", companies,
-              "updatedAt", Instant.now().toString()
+              "updatedAt", TimestampUtil.now()
           )).get();
     }
 
@@ -433,7 +436,7 @@ public class OrgService {
             return baa instanceof Map<?,?> m ? new HashMap<>((Map<String, Object>) m) : Map.of("accepted", false);
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
         Object baa = snap.getData().get("baaAcceptance");
         return baa instanceof Map<?,?> m
@@ -453,7 +456,7 @@ public class OrgService {
             return sc instanceof Map<?,?> m ? new HashMap<>((Map<String, Object>) m) : Map.of("accepted", false);
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
         Object sc = snap.getData().get("serviceContractAcceptance");
         return sc instanceof Map<?,?> m
@@ -464,7 +467,7 @@ public class OrgService {
     /** Record Service Contract acceptance for the org. */
     public Map<String, Object> acceptServiceContract(String orgId, String uid,
                                                      String signerName, String signerTitle) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> record = new HashMap<>();
         record.put("accepted",    true);
         record.put("acceptedAt",  now);
@@ -481,7 +484,7 @@ public class OrgService {
             org.put("updatedAt",                 now);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .update(Map.of(
                   "serviceContractAcceptance", record,
                   "serviceContractAccepted",   true,
@@ -504,7 +507,7 @@ public class OrgService {
      */
     public Map<String, Object> acceptBaa(String orgId, String uid,
                                          String signerName, String signerTitle) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> baaRecord = new HashMap<>();
         baaRecord.put("accepted",    true);
         baaRecord.put("acceptedAt",  now);
@@ -521,7 +524,7 @@ public class OrgService {
             org.put("updatedAt",     now);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .update(Map.of(
                   "baaAcceptance", baaRecord,
                   "baaAccepted",   true,
@@ -724,7 +727,7 @@ public class OrgService {
             devTokens.put(token, data);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("inviteTokens").document(token).set(data).get();
         }
         return appBaseUrl + "/invite/" + token;
@@ -735,13 +738,13 @@ public class OrgService {
      * The token is returned so an admin can re-copy the invite link.
      */
     public List<Map<String, Object>> listPendingInvites(String orgId) throws Exception {
-        String nowIso = Instant.now().toString();
+        String nowIso = TimestampUtil.now();
         java.util.stream.Stream<Map<String, Object>> tokens;
         if (devMode) {
             tokens = devTokens.values().stream().filter(t -> orgId.equals(t.get("orgId")));
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            tokens = db.collection("organizations").document(orgId)
+            tokens = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection("inviteTokens").get().get().getDocuments()
                     .stream().map(d -> (Map<String, Object>) new HashMap<String, Object>(d.getData()));
         }
@@ -765,7 +768,7 @@ public class OrgService {
     public void revokeInvite(String orgId, String token) throws Exception {
         if (devMode) { devTokens.remove(token); return; }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
           .collection("inviteTokens").document(token).delete().get();
     }
 
@@ -842,13 +845,13 @@ public class OrgService {
 
             // Mark token as used and write the new member record
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("inviteTokens").document(token)
-              .update(Map.of("usedBy", claimingUid, "usedAt", Instant.now().toString())).get();
+              .update(Map.of("usedBy", claimingUid, "usedAt", TimestampUtil.now())).get();
             writeMemberRecord(db, orgId, claimingUid, role, purpose);
         }
         data.put("usedBy", claimingUid);
-        data.put("usedAt", Instant.now().toString());
+        data.put("usedAt", TimestampUtil.now());
         if (devMode) devTokens.put(token, data);
     }
 
@@ -871,7 +874,7 @@ public class OrgService {
         if (displayName != null && !displayName.isBlank()) updates.put("displayName", displayName.trim());
         if (email != null && !email.isBlank())             updates.put("email", email.trim());
         if (updates.isEmpty()) return;
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
             for (Map<String, Object> m : devOrgMembers.getOrDefault(orgId, java.util.List.of())) {
@@ -880,7 +883,7 @@ public class OrgService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId).collection("members").document(uid)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).collection(FirestoreCollections.MEMBERS).document(uid)
           .set(updates, com.google.cloud.firestore.SetOptions.merge()).get();
 
         // Keep Firebase Auth display name authoritative for the token's name claim.
@@ -910,10 +913,10 @@ public class OrgService {
             member.put("role",        role);
             member.put("purpose",     purpose);
             member.put("active",      true);
-            member.put("joinedAt",    Instant.now().toString());
+            member.put("joinedAt",    TimestampUtil.now());
 
-            db.collection("organizations").document(orgId)
-              .collection("members").document(uid).set(member).get();
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+              .collection(FirestoreCollections.MEMBERS).document(uid).set(member).get();
             log.info("Wrote member record uid={} org={} role={}", uid, orgId, role);
         } catch (Exception e) {
             log.error("writeMemberRecord failed uid={} org={}: {}", uid, orgId, e.getMessage());

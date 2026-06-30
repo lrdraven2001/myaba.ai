@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AclxResponse;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
@@ -75,7 +78,7 @@ public class ReviewQueueService {
     void seedDevData() {
         if (!devMode) return;
 
-        String now  = Instant.now().toString();
+        String now  = TimestampUtil.now();
         String yday = Instant.now().minus(1, ChronoUnit.DAYS).toString();
         String wk   = Instant.now().minus(7, ChronoUnit.DAYS).toString();
 
@@ -217,7 +220,7 @@ public class ReviewQueueService {
                           String authDenyReason, boolean blocking,
                           AclxResponse aclxResponse) {
         String id  = "rq-" + UUID.randomUUID().toString().substring(0, 8);
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
 
         Map<String, Object> item = new HashMap<>();
         item.put("id",               id);
@@ -301,7 +304,7 @@ public class ReviewQueueService {
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("reviewQueue").document(id).set(item);
         } catch (Exception e) {
             log.error("Failed to enqueue review item: {}", e.getMessage());
@@ -326,7 +329,7 @@ public class ReviewQueueService {
 
         Firestore db = FirestoreClient.getFirestore();
         List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(user.getOrgId())
+                .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("reviewQueue")
                 .orderBy("createdAt", com.google.cloud.firestore.Query.Direction.DESCENDING)
                 .get().get().getDocuments();
@@ -378,7 +381,7 @@ public class ReviewQueueService {
 
             item.put("status",        verdict);
             item.put("reviewedBy",    reviewer.getUid());
-            item.put("reviewedAt",    Instant.now().toString());
+            item.put("reviewedAt",    TimestampUtil.now());
             item.put("reviewerNotes", notes != null ? notes : "");
 
             // Forward verdict to ACLX gateway as a learning signal (best-effort)
@@ -394,7 +397,7 @@ public class ReviewQueueService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(reviewer.getOrgId())
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(reviewer.getOrgId())
                     .collection("reviewQueue").document(itemId);
         var snap = ref.get().get();
         if (!snap.exists()) throw new NoSuchElementException("Review item not found: " + itemId);
@@ -402,7 +405,7 @@ public class ReviewQueueService {
         Map<String, Object> updates = new HashMap<>();
         updates.put("status",        verdict);
         updates.put("reviewedBy",    reviewer.getUid());
-        updates.put("reviewedAt",    Instant.now().toString());
+        updates.put("reviewedAt",    TimestampUtil.now());
         updates.put("reviewerNotes", notes != null ? notes : "");
         ref.update(updates).get();
 
@@ -425,8 +428,6 @@ public class ReviewQueueService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void requireAdmin(AppUser user) {
-        if (!UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("Review queue access requires ORG_ADMIN or ORG_SUPER_ADMIN role");
-        }
+        ai.myaba.security.AuthorizationUtil.requireAdmin(user);
     }
 }

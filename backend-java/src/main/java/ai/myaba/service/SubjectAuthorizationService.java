@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.config.DomainPolicyConfig;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
@@ -73,7 +76,7 @@ public class SubjectAuthorizationService {
     void seedDevData() {
         if (!devMode) return;
 
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
 
         // ── Demo scenario A: standard client, optional research auth ─────────
         // c-001 (Alex M., ASD Level 2): Active RESEARCH authorization.
@@ -234,8 +237,8 @@ public class SubjectAuthorizationService {
         try {
             Firestore db = FirestoreClient.getFirestore();
             List<QueryDocumentSnapshot> docs = db
-                    .collection("organizations").document(orgId)
-                    .collection("clients").document(clientId)
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
                     .collection("authorizations")
                     .get().get().getDocuments();
 
@@ -269,7 +272,7 @@ public class SubjectAuthorizationService {
         requireAdmin(admin);
 
         String authId  = "auth-" + UUID.randomUUID().toString().substring(0, 8);
-        String now     = Instant.now().toString();
+        String now     = TimestampUtil.now();
 
         Map<String, Object> record = new HashMap<>();
         record.put("authId",      authId);
@@ -291,8 +294,8 @@ public class SubjectAuthorizationService {
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(admin.getOrgId())
-              .collection("clients").document(clientId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(admin.getOrgId())
+              .collection(FirestoreCollections.CLIENTS).document(clientId)
               .collection("authorizations").document(authId)
               .set(record).get();
         } catch (Exception e) {
@@ -317,19 +320,19 @@ public class SubjectAuthorizationService {
                             .get(authId);
             if (record == null) throw new NoSuchElementException("Authorization not found: " + authId);
             record.put("status", "REVOKED");
-            record.put("revokedAt", Instant.now().toString());
+            record.put("revokedAt", TimestampUtil.now());
             record.put("revokedBy", admin.getUid());
             return;
         }
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(admin.getOrgId())
-              .collection("clients").document(clientId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(admin.getOrgId())
+              .collection(FirestoreCollections.CLIENTS).document(clientId)
               .collection("authorizations").document(authId)
               .update(Map.of(
                       "status",     "REVOKED",
-                      "revokedAt",  Instant.now().toString(),
+                      "revokedAt",  TimestampUtil.now(),
                       "revokedBy",  admin.getUid()
               )).get();
         } catch (Exception e) {
@@ -341,9 +344,7 @@ public class SubjectAuthorizationService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void requireAdmin(AppUser user) {
-        if (!UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("Authorization management requires an administrator role");
-        }
+        ai.myaba.security.AuthorizationUtil.requireAdmin(user);
     }
 
     /**

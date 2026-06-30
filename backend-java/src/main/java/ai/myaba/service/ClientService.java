@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ClientRequest;
 import ai.myaba.model.dto.UserRole;
@@ -74,8 +77,8 @@ public class ClientService {
         // ORG_ADMIN sees all clients in the org without the memberIds filter
         if (UserRole.isAdmin(user.getRole())) {
             List<QueryDocumentSnapshot> docs = db
-                    .collection("organizations").document(user.getOrgId())
-                    .collection("clients")
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                    .collection(FirestoreCollections.CLIENTS)
                     .orderBy("createdAt")
                     .get().get().getDocuments();
             return toList(docs);
@@ -83,8 +86,8 @@ public class ClientService {
 
         // Everyone else: array-contains on the denormalized memberIds field
         List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(user.getOrgId())
-                .collection("clients")
+                .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.CLIENTS)
                 .whereArrayContains("memberIds", user.getUid())
                 .get().get().getDocuments();
         return toList(docs);
@@ -103,8 +106,8 @@ public class ClientService {
             return c;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
-                .collection("clients").document(clientId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).document(clientId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Client not found: " + clientId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());
@@ -129,8 +132,8 @@ public class ClientService {
         Firestore db = FirestoreClient.getFirestore();
         // Firestore getAll() fetches up to 30 docs in one RPC
         var docRefs = clientIds.stream()
-                .map(id -> db.collection("organizations").document(orgId)
-                        .collection("clients").document(id))
+                .map(id -> db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                        .collection(FirestoreCollections.CLIENTS).document(id))
                 .toArray(com.google.cloud.firestore.DocumentReference[]::new);
 
         db.getAll(docRefs).get().forEach(snap -> {
@@ -190,7 +193,7 @@ public class ClientService {
     public String createClient(String orgId, String createdByUid, ClientRequest req) throws Exception {
         Map<String, Object> data = buildClientData(req, createdByUid);
         data.put("createdBy", createdByUid);
-        data.put("createdAt", Instant.now().toString());
+        data.put("createdAt", TimestampUtil.now());
         data.put("orgId", orgId);
 
         if (devMode) {
@@ -201,8 +204,8 @@ public class ClientService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(orgId)
-                .collection("clients").add(data).get();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).add(data).get();
         return ref.getId();
     }
 
@@ -228,7 +231,7 @@ public class ClientService {
         if (req.getPrimaryInsurance() != null) updates.put("primaryInsurance", req.getPrimaryInsurance());
         if (req.getEhrProvider() != null)    updates.put("ehrProvider", req.getEhrProvider());
         if (req.getEhrCaseId() != null)      updates.put("ehrCaseId", req.getEhrCaseId());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
             devClients.merge(clientId, updates, (existing, upd) -> { existing.putAll(upd); return existing; });
@@ -236,8 +239,8 @@ public class ClientService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId)
-                .collection("clients").document(clientId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).document(clientId)
                 .update(updates).get();
     }
 
@@ -268,7 +271,7 @@ public class ClientService {
                 rbtIds != null ? rbtIds : List.of(),
                 viewerIds != null ? viewerIds : List.of()
         ));
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
             devClients.merge(clientId, updates, (existing, upd) -> { existing.putAll(upd); return existing; });
@@ -276,8 +279,8 @@ public class ClientService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(orgId)
-                .collection("clients").document(clientId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).document(clientId)
                 .update(updates).get();
     }
 

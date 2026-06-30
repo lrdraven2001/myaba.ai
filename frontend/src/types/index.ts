@@ -23,6 +23,21 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   GENERAL_STAFF:     'General Staff',
 };
 
+/**
+ * Display labels for ANY role string that may appear in member/claims data,
+ * including legacy / extended roles beyond the 5 canonical {@link UserRole} values.
+ * Use this (not a locally-redeclared map) when rendering a badge from an arbitrary
+ * role string. Falls through to the raw string for unknown roles at the call site.
+ */
+export const ALL_ROLE_LABELS: Record<string, string> = {
+  ...ROLE_LABELS,
+  ORG_ADMIN:        'Practice Administrator',
+  TREATING_BCBA:    'Treating BCBA',
+  BCBA_STUDENT:     'BCBA Student',
+  SCHEDULING_ADMIN: 'Scheduling Admin',
+  BILLING_ADMIN:    'Billing Admin',
+};
+
 /** The four core roles that can be renamed but never deleted. (Clinical Director is optional/addable.) */
 export const CORE_ROLES: UserRole[] = ['ORG_SUPER_ADMIN', 'SUPERVISING_BCBA', 'RBT', 'GENERAL_STAFF'];
 
@@ -191,17 +206,34 @@ export interface Org {
   baaAccepted?: boolean;
   /** "clinical_director" (BAA signed at setup) or "it_setup" (BAA deferred). */
   setupMode?: 'clinical_director' | 'it_setup';
-  settings?: {
-    sessionTimeoutMinutes: number;
-    mfaRequired: boolean;
-    /** When false, ACLX escalations are logged but do not block content delivery. Defaults true. */
-    reviewRequired?: boolean;
-    aclxEnabled?: boolean;
-    hipaaMode?: boolean;
-    aiAudit?: boolean;
-    /** When true, ORG_ADMIN users can use AI chat and generate documents. */
-    adminClinicalAccess?: boolean;
-  };
+  settings?: OrgSettings;
+}
+
+/** Per-org settings stored under the org document's `settings` map. */
+export interface OrgSettings {
+  sessionTimeoutMinutes: number;
+  mfaRequired: boolean;
+  /** When false, ACLX escalations are logged but do not block content delivery. Defaults true. */
+  reviewRequired?: boolean;
+  aclxEnabled?: boolean;
+  hipaaMode?: boolean;
+  aiAudit?: boolean;
+  /** When true, ORG_ADMIN users can use AI chat and generate documents. */
+  adminClinicalAccess?: boolean;
+  /** When true, all members must enroll a second factor (TOTP) before accessing the app. */
+  mfaEnforced?: boolean;
+  /** When true, AI output always uses a client's preferred/display name, never their legal name. */
+  preferClientDisplayName?: boolean;
+}
+
+/** Acceptance status for a signed agreement (BAA, Service Contract). */
+export interface AgreementStatus {
+  accepted: boolean;
+  acceptedAt?: string;
+  acceptedBy?: string;
+  signerName?: string;
+  signerTitle?: string;
+  version?: string;
 }
 
 // ── Federation (enterprise SSO) ───────────────────────────────────────────────
@@ -604,4 +636,39 @@ export interface SearchResponse {
   summaryDecision: ACLXDecision | null;
   hits: SearchHit[];
   totalCount: number;
+}
+
+// ── Role configuration (Settings → Roles & Permissions) ─────────────────────────
+
+/** Access level for a permission category on a role. */
+export type PermissionLevel = 'all' | 'custom' | 'none';
+
+/** Permission categories shown in the role matrix. */
+export type PermissionCategory =
+  | 'clients' | 'projects' | 'documents' | 'resources'
+  | 'team' | 'ai_features' | 'administration';
+
+export interface CustomRole {
+  key: string;
+  label: string;
+  description?: string;
+  /** Canonical role key this custom role is based on. */
+  baseline?: string;
+  permissions: Partial<Record<PermissionCategory, PermissionLevel>>;
+}
+
+/** Identity-provider group → myABA role mapping. */
+export interface IdpRoleMapping {
+  group: string;
+  role: string;
+}
+
+/** Per-org role configuration persisted via /api/orgs/{orgId}/role-config. */
+export interface RoleConfig {
+  /** Permission-matrix overrides per canonical role key. */
+  roles: Record<string, Partial<Record<PermissionCategory, PermissionLevel>>>;
+  customRoles: CustomRole[];
+  idpRoleMappings: IdpRoleMapping[];
+  updatedAt?: string;
+  updatedBy?: string;
 }

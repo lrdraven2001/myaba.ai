@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.DriveConnectionRequest;
 import com.google.cloud.firestore.Firestore;
@@ -100,7 +103,7 @@ public class DriveService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var docs = db.collection("organizations").document(user.getOrgId())
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("driveConnections").get().get().getDocuments();
         return docs.stream().map(d -> {
             Map<String, Object> m = new HashMap<>(d.getData());
@@ -158,7 +161,7 @@ public class DriveService {
      * @return the generated connection ID
      */
     public String createConnection(AppUser user, DriveConnectionRequest req) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         String id = "drv-" + UUID.randomUUID().toString().substring(0, 8);
 
         Map<String, Object> data = new HashMap<>();
@@ -188,7 +191,7 @@ public class DriveService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("driveConnections").document(id).set(data).get();
         return id;
     }
@@ -215,7 +218,7 @@ public class DriveService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("driveConnections").document(id).delete().get();
     }
 
@@ -265,7 +268,7 @@ public class DriveService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection("driveConnections").document(id).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Drive connection not found: " + id);
         Map<String, Object> data = new HashMap<>(snap.getData());

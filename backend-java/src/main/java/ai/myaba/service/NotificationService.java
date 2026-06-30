@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import com.google.cloud.firestore.Firestore;
 import com.google.firebase.cloud.FirestoreClient;
@@ -48,7 +51,7 @@ public class NotificationService {
             all = new ArrayList<>(devNotes.getOrDefault(user.getOrgId(), List.of()));
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            all = db.collection("organizations").document(user.getOrgId())
+            all = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                     .collection("notifications")
                     .whereEqualTo("userId", user.getUid())
                     .get().get().getDocuments().stream()
@@ -77,9 +80,9 @@ public class NotificationService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
           .collection("notifications").document(id)
-          .update("read", true, "readAt", Instant.now().toString()).get();
+          .update("read", true, "readAt", TimestampUtil.now()).get();
     }
 
     public void markAllRead(AppUser user) throws Exception {
@@ -90,11 +93,11 @@ public class NotificationService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(user.getOrgId())
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("notifications").whereEqualTo("userId", user.getUid())
                 .whereEqualTo("read", false).get().get();
         for (var doc : snap.getDocuments()) {
-            doc.getReference().update("read", true, "readAt", Instant.now().toString()).get();
+            doc.getReference().update("read", true, "readAt", TimestampUtil.now()).get();
         }
     }
 
@@ -104,7 +107,7 @@ public class NotificationService {
      */
     public void notify(String orgId, String userId, String title, String body,
                        String level, String type, String link, String createdBy) {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> data = new HashMap<>();
         data.put("orgId",     orgId);
         data.put("userId",    userId);
@@ -123,7 +126,7 @@ public class NotificationService {
                 devNotes.computeIfAbsent(orgId, k -> new ArrayList<>()).add(data);
             } else {
                 Firestore db = FirestoreClient.getFirestore();
-                db.collection("organizations").document(orgId).collection("notifications").add(data).get();
+                db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).collection("notifications").add(data).get();
             }
         } catch (Exception e) {
             log.warn("Failed to create notification for {}: {}", userId, e.getMessage());

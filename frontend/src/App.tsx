@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronDown, faShieldAlt, faLock, faFileContract } from '@fortawesome/free-solid-svg-icons';
+import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProfileModal from './components/ProfileModal';
 import NotificationBell from './components/NotificationBell';
 import HelpMenu from './components/HelpMenu';
 import Sidebar from './components/Sidebar';
 import ChatView from './views/ChatView';
-import SearchView from './views/SearchView';
+import SearchModal from './views/SearchModal';
 import ResourcesView from './views/ResourcesView';
 import ClientsView from './views/ClientsView';
 import ProjectsView from './views/ProjectsView';
@@ -17,8 +17,11 @@ import TeamView from './views/TeamView';
 import LoginView from './views/LoginView';
 import OnboardingView from './views/OnboardingView';
 import NotProvisionedView from './views/NotProvisionedView';
+import MfaEnrollmentGate from './views/MfaEnrollmentGate';
 import InviteAcceptView from './views/InviteAcceptView';
 import { api } from './lib/api';
+import { ALL_ROLE_LABELS as ROLE_LABELS } from './types';
+import { hasEnrolledFactor } from './lib/mfa';
 
 // Capture invite token from URL before any render — store in sessionStorage, clean URL
 const INVITE_MATCH = window.location.pathname.match(/^\/invite\/([A-Za-z0-9]+)/);
@@ -32,14 +35,6 @@ export type View = 'chat' | 'search' | 'documents' | 'clients' | 'projects' | 's
 export type DocumentTab = 'resources' | 'templates';
 
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
-
-const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   'Practice Administrator',
-  CLINICAL_DIRECTOR: 'Clinical Director',
-  SUPERVISING_BCBA:  'Clinical Supervisor',
-  RBT:               'Behavior Technician',
-  GENERAL_STAFF:     'General Staff',
-};
 
 // ── Top-right profile menu ───────────────────────────────────────────────────────
 
@@ -105,7 +100,7 @@ function ProfileMenu() {
 // ── App shell ──────────────────────────────────────────────────────────────────
 
 function AppShell() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, firebaseUser, loading } = useAuth();
   const [activeView, setActiveView]           = useState<View>('chat');
   const [pendingChatId, setPendingChatId]     = useState<string | null>(null);
   const [pendingClientId, setPendingClientId] = useState<string | null>(null);
@@ -116,6 +111,11 @@ function AppShell() {
   // Pathfinder org-creation eligibility for users with no org yet.
   // null = unknown/loading; true = may create; false = show "not provisioned".
   const [orgEligible, setOrgEligible] = useState<boolean | null>(null);
+  // Workspace search modal (opened from the top-bar icon or Ctrl/⌘+K).
+  const [showSearch, setShowSearch] = useState(false);
+  // MFA enforcement: does the org require MFA, and has this user enrolled a factor?
+  const [mfaEnforced, setMfaEnforced] = useState(false);
+  const [hasMfaFactor, setHasMfaFactor] = useState<boolean | null>(null);
 
   // Pre-fetch org name so InviteAcceptView can show it before the user logs in.
   // Never remove the token on failure — the invite may still be valid even if preview fails.
@@ -126,13 +126,23 @@ function AppShell() {
     }
   }, []);
 
-  // Load org BAA status whenever the user (and their orgId) is known.
+  // Load org BAA status + MFA enforcement whenever the user (and their orgId) is known.
   useEffect(() => {
     if (!currentUser?.orgId) return;
     api.getOrg(currentUser.orgId)
-      .then((org) => setBaaAccepted(org.baaAccepted ?? true))
+      .then((org) => {
+        setBaaAccepted(org.baaAccepted ?? true);
+        setMfaEnforced(Boolean(org.settings?.mfaEnforced));
+      })
       .catch(() => setBaaAccepted(true)); // fail-open: don't lock out on network error
   }, [currentUser?.orgId]);
+
+  // Whether the signed-in Firebase user has enrolled a second factor (TOTP).
+  // Fail-open (treat as enrolled) on any error so we never hard-lock a user out.
+  useEffect(() => {
+    if (DEV_AUTH || !firebaseUser) { setHasMfaFactor(true); return; }
+    hasEnrolledFactor(firebaseUser).then(setHasMfaFactor).catch(() => setHasMfaFactor(true));
+  }, [firebaseUser]);
 
   // For signed-in users with no org, check the Pathfinder allowlist before
   // showing the create-org flow. Fail closed on error (show "not provisioned").
@@ -145,6 +155,18 @@ function AppShell() {
       .then((r) => setOrgEligible(r.allowed))
       .catch(() => setOrgEligible(false));
   }, [currentUser?.uid, currentUser?.orgId]);
+
+  // Ctrl/⌘+K opens the search modal from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
 
@@ -203,6 +225,11 @@ function AppShell() {
     );
   }
 
+  // MFA enforcement gate: org requires MFA and this user hasn't enrolled a factor.
+  if (!DEV_AUTH && mfaEnforced && hasMfaFactor === false) {
+    return <MfaEnrollmentGate />;
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Main content row */}
@@ -233,6 +260,19 @@ function AppShell() {
             </div>
             {/* Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={() => setShowSearch(true)}
+                aria-label="Search (Ctrl/⌘+K)"
+                title="Search  (Ctrl/⌘+K)"
+                style={{
+                  width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'transparent', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#3F5666',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#EAF2F6')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <FontAwesomeIcon icon={faSearch} style={{ fontSize: 15 }} />
+              </button>
               <HelpMenu />
               <NotificationBell />
               <div style={{ width: 1, height: 24, background: '#DCE7EE', margin: '0 8px' }} />
@@ -249,7 +289,6 @@ function AppShell() {
               baaAccepted={baaAccepted}
             />
           )}
-          {activeView === 'search'    && <SearchView onNavigate={handleNavigateFromSearch} />}
           {activeView === 'documents' && <ResourcesView />}
           {activeView === 'clients'   && (
             baaAccepted
@@ -275,6 +314,13 @@ function AppShell() {
           {activeView === 'team'      && <TeamView />}
         </div>
       </div>
+
+      {showSearch && (
+        <SearchModal
+          onClose={() => setShowSearch(false)}
+          onNavigate={handleNavigateFromSearch}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 package ai.myaba.service;
 
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AclxResponse;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -73,8 +75,8 @@ public class DocumentPersistenceService {
             Firestore db = FirestoreClient.getFirestore();
             DocumentReference ref = db
                     .collection("orgs").document(orgId)
-                    .collection("clients").document(clientId)
-                    .collection("documents")
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS)
                     .add(doc)
                     .get(); // wait for Firestore to assign the ID
 

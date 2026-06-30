@@ -17,8 +17,10 @@ import type {
   PolicyDocument,
   Project,
   ProjectKnowledgeDoc,
+  AgreementStatus,
   ReviewQueueItem,
   ReviewVerdict,
+  RoleConfig,
   SearchResponse,
   SubjectAuthorization,
   Template,
@@ -475,6 +477,15 @@ export const api = {
   /** Get org metadata. */
   getOrg: (orgId: string) => request<Org>(`/orgs/${orgId}`),
 
+  /** Per-org role configuration: permission-matrix overrides, custom roles, IdP role mappings. */
+  getRoleConfig: (orgId: string) =>
+    request<RoleConfig>(`/orgs/${orgId}/role-config`),
+  saveRoleConfig: (orgId: string, config: RoleConfig) =>
+    request<RoleConfig>(`/orgs/${orgId}/role-config`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+
   /** Update the org's display name (ORG_ADMIN only). */
   updateOrgName: (orgId: string, name: string) =>
     request<{ name: string }>(`/orgs/${orgId}/name`, {
@@ -502,14 +513,7 @@ export const api = {
 
   /** Get the BAA acceptance status for the org. Returns { accepted: false } if not yet signed. */
   getBaaStatus: (orgId: string) =>
-    request<{
-      accepted: boolean;
-      acceptedAt?: string;
-      acceptedBy?: string;
-      signerName?: string;
-      signerTitle?: string;
-      version?: string;
-    }>(`/orgs/${orgId}/baa`),
+    request<AgreementStatus>(`/orgs/${orgId}/baa`),
 
   /** Download the executed BAA as a PDF. */
   downloadBaa: async (orgId: string) => {
@@ -529,14 +533,7 @@ export const api = {
 
   /** Record BAA acceptance (ORG_ADMIN only). */
   acceptBaa: (orgId: string, data: { signerName: string; signerTitle: string }) =>
-    request<{
-      accepted: boolean;
-      acceptedAt: string;
-      acceptedBy: string;
-      signerName: string;
-      signerTitle: string;
-      version: string;
-    }>(`/orgs/${orgId}/baa`, {
+    request<AgreementStatus>(`/orgs/${orgId}/baa`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -568,25 +565,11 @@ export const api = {
 
   /** Service Contract acceptance status. */
   getServiceContractStatus: (orgId: string) =>
-    request<{
-      accepted: boolean;
-      acceptedAt?: string;
-      acceptedBy?: string;
-      signerName?: string;
-      signerTitle?: string;
-      version?: string;
-    }>(`/orgs/${orgId}/service-contract`),
+    request<AgreementStatus>(`/orgs/${orgId}/service-contract`),
 
   /** Record Service Contract acceptance (admin only). */
   acceptServiceContract: (orgId: string, data: { signerName: string; signerTitle: string }) =>
-    request<{
-      accepted: boolean;
-      acceptedAt: string;
-      acceptedBy: string;
-      signerName: string;
-      signerTitle: string;
-      version: string;
-    }>(`/orgs/${orgId}/service-contract`, {
+    request<AgreementStatus>(`/orgs/${orgId}/service-contract`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

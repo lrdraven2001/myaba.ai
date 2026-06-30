@@ -1,5 +1,7 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -175,7 +177,7 @@ public class PlatformService {
         h.put("aclx",     probe("ACLX Gateway",  false, "Not reachable (dev: off)",  0));
         h.put("dlp",      probe("Google DLP",     false, "Not configured",            0));
         h.put("firebase", probe("Firebase Auth",  true,  "Dev bypass active",         0));
-        h.put("checkedAt", java.time.Instant.now().toString());
+        h.put("checkedAt", TimestampUtil.now());
         return h;
     }
 

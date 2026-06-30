@@ -20,8 +20,11 @@ interface Props {
 }
 
 export default function LoginView({ invitePreview }: Props = {}) {
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, mfaChallengePending, resolveMfaSignIn, cancelMfa } = useAuth();
   const hasInvite = !!invitePreview;
+  const [mfaCode, setMfaCode]   = useState('');
+  const [mfaError, setMfaError] = useState('');
+  const [mfaBusy, setMfaBusy]   = useState(false);
   const [mode, setMode]             = useState<'signin' | 'register'>(hasInvite ? 'register' : 'signin');
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
@@ -57,6 +60,8 @@ export default function LoginView({ invitePreview }: Props = {}) {
         await login(email, password);
       }
     } catch (err: unknown) {
+      // Enrolled-MFA user: the second-factor challenge modal takes over — no error.
+      if ((err as { code?: string })?.code === 'mfa-required') { setLoading(false); return; }
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('email-already-in-use')) {
         setError('An account with this email already exists. Sign in instead.');
@@ -77,10 +82,26 @@ export default function LoginView({ invitePreview }: Props = {}) {
     setGoogleLoading(true);
     try {
       await loginWithGoogle();
-    } catch {
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === 'mfa-required') { setGoogleLoading(false); return; }
       setError('Google sign-in failed. Please try again.');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleVerifyMfa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMfaError('');
+    if (mfaCode.length !== 6) { setMfaError('Enter the 6-digit code from your authenticator.'); return; }
+    setMfaBusy(true);
+    try {
+      await resolveMfaSignIn(mfaCode);
+      // success — onAuthStateChanged signs the user in and unmounts LoginView
+    } catch {
+      setMfaError('Invalid code. Wait for the next code and try again.');
+    } finally {
+      setMfaBusy(false);
     }
   };
 
@@ -95,6 +116,34 @@ export default function LoginView({ invitePreview }: Props = {}) {
       background: '#F0F7FA',
       padding: 24,
     }}>
+      {/* Second-factor (TOTP) challenge — shown when an enrolled-MFA sign-in is paused */}
+      {mfaChallengePending && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(15,35,45,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 380, background: 'white', borderRadius: 18, padding: '28px', boxShadow: '0 10px 40px rgba(0,0,0,0.22)' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#1E3347', margin: 0 }}>Two-step verification</h2>
+            <p style={{ fontSize: 13, color: '#6B7B88', marginTop: 6, lineHeight: 1.5 }}>
+              Enter the 6-digit code from your authenticator app to finish signing in.
+            </p>
+            <form onSubmit={handleVerifyMfa} style={{ marginTop: 16 }}>
+              <input
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric" autoFocus placeholder="000000" aria-label="Authenticator code"
+                style={{ width: '100%', textAlign: 'center', letterSpacing: '0.3em', fontSize: 22, fontWeight: 700, padding: '10px 0', border: '1.5px solid #DCE7EE', borderRadius: 10, color: '#1E3347', outline: 'none', boxSizing: 'border-box' }}
+              />
+              {mfaError && (
+                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: '#FFF1F1', border: '1px solid #FFC9C9', color: '#C0392B', fontSize: 13 }}>{mfaError}</div>
+              )}
+              <button type="submit" disabled={mfaBusy} style={{ width: '100%', marginTop: 14, padding: '12px 0', background: mfaBusy ? '#A8B4BF' : 'linear-gradient(135deg,#1E88FF,#1565C0)', border: 'none', borderRadius: 10, color: 'white', fontSize: 14, fontWeight: 700, cursor: mfaBusy ? 'not-allowed' : 'pointer' }}>
+                {mfaBusy ? 'Verifying…' : 'Verify & Sign In'}
+              </button>
+              <button type="button" onClick={() => { cancelMfa(); setMfaCode(''); setMfaError(''); }} style={{ width: '100%', marginTop: 8, padding: '8px 0', background: 'transparent', border: 'none', color: '#6B7B88', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
       <div style={{
         width: '100%',
         maxWidth: 420,

@@ -23,9 +23,9 @@ const TYPE_META: Record<SearchHitType, {
   chat:     { label: 'Chat',     icon: faCommentDots,    bg: '#f3f4f6', text: '#374151' },
 };
 
-type FilterType = SearchHitType | 'all';
+export type FilterType = SearchHitType | 'all';
 
-const FILTER_TABS: { id: FilterType; label: string }[] = [
+export const FILTER_TABS: { id: FilterType; label: string }[] = [
   { id: 'all',      label: 'All'       },
   { id: 'chat',     label: 'Chats'     },
   { id: 'project',  label: 'Projects'  },
@@ -220,7 +220,7 @@ export default function SearchView({ onNavigate }: Props) {
 
 // ── AI summary card ───────────────────────────────────────────────────────────
 
-function AiSummaryCard({
+export function AiSummaryCard({
   summary, query, decision,
 }: {
   summary: string;
@@ -300,7 +300,7 @@ function AiSummaryCard({
 
 // ── Hit card ──────────────────────────────────────────────────────────────────
 
-function HitCard({ hit, onClick }: { hit: SearchHit; onClick: () => void }) {
+export function HitCard({ hit, onClick }: { hit: SearchHit; onClick: () => void }) {
   const meta = TYPE_META[hit.type] ?? TYPE_META.resource;
 
   return (
@@ -347,7 +347,7 @@ function HitCard({ hit, onClick }: { hit: SearchHit; onClick: () => void }) {
 
 // ── Filter chip ───────────────────────────────────────────────────────────────
 
-function FilterChip({
+export function FilterChip({
   label, count, active, onClick,
 }: {
   label: string; count: number; active: boolean; onClick: () => void;
@@ -405,7 +405,7 @@ function EmptyState() {
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
-function SearchSkeleton() {
+export function SearchSkeleton() {
   return (
     <div className="space-y-3 animate-pulse">
       {/* AI summary skeleton */}

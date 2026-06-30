@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
 import com.google.cloud.firestore.Firestore;
@@ -74,7 +77,7 @@ public class OrgAclxPolicyService {
         policy.put("allowRules",             allowRules);
         policy.put("blockRules",             blockRules);
         policy.put("escalateAtSensitivity",  "HIGH");
-        policy.put("updatedAt",              Instant.now().toString());
+        policy.put("updatedAt",              TimestampUtil.now());
         policy.put("updatedBy",              "admin-user-001");
 
         devPolicies.put("dev-org-001", policy);
@@ -91,7 +94,7 @@ public class OrgAclxPolicyService {
         r.put("slug",               slug);
         r.put("description",        description);
         r.put("addedBy",            addedBy);
-        r.put("addedAt",            Instant.now().toString());
+        r.put("addedAt",            TimestampUtil.now());
         r.put("sourceReviewItemId", sourceItemId != null ? sourceItemId : "");
         return r;
     }
@@ -106,8 +109,8 @@ public class OrgAclxPolicyService {
         }
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var snap = db.collection("organizations").document(orgId)
-                         .collection("config").document("aclxPolicy").get().get();
+            var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                         .collection(FirestoreCollections.CONFIG).document("aclxPolicy").get().get();
             if (!snap.exists()) return emptyPolicy();
             Map<String, Object> data = new HashMap<>(snap.getData());
             if (!data.containsKey("allowRules")) data.put("allowRules", new ArrayList<>());
@@ -174,15 +177,15 @@ public class OrgAclxPolicyService {
             // Remove any existing rule with the same slug
             list.removeIf(r -> slug.equals(r.get("slug")));
             list.add(newRule);
-            policy.put("updatedAt", Instant.now().toString());
+            policy.put("updatedAt", TimestampUtil.now());
             policy.put("updatedBy", admin.getUid());
             return newRule;
         }
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var ref = db.collection("organizations").document(admin.getOrgId())
-                        .collection("config").document("aclxPolicy");
+            var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(admin.getOrgId())
+                        .collection(FirestoreCollections.CONFIG).document("aclxPolicy");
             // Firestore arrayUnion would be cleaner; for simplicity do a read-modify-write
             var snap = ref.get().get();
             Map<String, Object> policy = snap.exists()
@@ -194,7 +197,7 @@ public class OrgAclxPolicyService {
             list.removeIf(r -> slug.equals(r.get("slug")));
             list.add(newRule);
             policy.put(listKey, list);
-            policy.put("updatedAt", Instant.now().toString());
+            policy.put("updatedAt", TimestampUtil.now());
             policy.put("updatedBy", admin.getUid());
             ref.set(policy).get();
         } catch (Exception e) {
@@ -222,8 +225,8 @@ public class OrgAclxPolicyService {
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var ref = db.collection("organizations").document(admin.getOrgId())
-                        .collection("config").document("aclxPolicy");
+            var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(admin.getOrgId())
+                        .collection(FirestoreCollections.CONFIG).document("aclxPolicy");
             var snap = ref.get().get();
             if (!snap.exists()) return;
             Map<String, Object> policy = new HashMap<>(snap.getData());
@@ -255,11 +258,11 @@ public class OrgAclxPolicyService {
 
         try {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(admin.getOrgId())
-              .collection("config").document("aclxPolicy")
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(admin.getOrgId())
+              .collection(FirestoreCollections.CONFIG).document("aclxPolicy")
               .update(Map.of(
                       "escalateAtSensitivity", sensitivity,
-                      "updatedAt", Instant.now().toString(),
+                      "updatedAt", TimestampUtil.now(),
                       "updatedBy", admin.getUid()
               )).get();
         } catch (Exception e) {
@@ -279,8 +282,6 @@ public class OrgAclxPolicyService {
     }
 
     private void requireAdmin(AppUser user) {
-        if (!UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("ACLX policy management requires an administrator role");
-        }
+        ai.myaba.security.AuthorizationUtil.requireAdmin(user);
     }
 }

@@ -3,19 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faSignOutAlt, faUserCircle, faBuilding, faIdBadge, faUserGear } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import AccountSettingsModal from './AccountSettingsModal';
-
-const ROLE_LABELS: Record<string, string> = {
-  CLINICAL_DIRECTOR: 'Clinical Director',
-  TREATING_BCBA:     'Treating BCBA',
-  SUPERVISING_BCBA:  'Clinical Supervisor',
-  BCBA_STUDENT:      'BCBA Student',
-  RBT:               'Behavior Technician',
-  GENERAL_STAFF:     'General Staff',
-  SCHEDULING_ADMIN:  'Scheduling Admin',
-  BILLING_ADMIN:     'Billing Admin',
-  ORG_ADMIN:         'Practice Administrator',
-  ORG_SUPER_ADMIN:   'Practice Administrator',
-};
+import { ALL_ROLE_LABELS as ROLE_LABELS } from '../types';
 
 interface Props {
   onClose: () => void;

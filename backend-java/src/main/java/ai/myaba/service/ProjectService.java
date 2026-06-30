@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ProjectRequest;
 import ai.myaba.model.dto.UserRole;
@@ -100,10 +103,10 @@ public class ProjectService {
         }
         Firestore db = FirestoreClient.getFirestore();
         Query query = user.isAdmin()
-            ? db.collection("organizations").document(user.getOrgId())
-                 .collection("projects").orderBy("updatedAt", Query.Direction.DESCENDING)
-            : db.collection("organizations").document(user.getOrgId())
-                 .collection("projects")
+            ? db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                 .collection(FirestoreCollections.PROJECTS).orderBy("updatedAt", Query.Direction.DESCENDING)
+            : db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                 .collection(FirestoreCollections.PROJECTS)
                  .whereArrayContains("memberIds", user.getUid())
                  .orderBy("updatedAt", Query.Direction.DESCENDING);
         // Exclude soft-deleted in memory (avoids a composite index on deletedAt + updatedAt).
@@ -122,7 +125,7 @@ public class ProjectService {
     // ── Project writes ────────────────────────────────────────────────────
 
     public String createProject(AppUser user, ProjectRequest req) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         List<String> clientIds      = req.getClientIds() != null ? req.getClientIds() : List.of();
         Map<String, String> members = req.getMembers()   != null ? req.getMembers()   : Map.of();
         boolean isShared = Boolean.TRUE.equals(req.getIsShared());
@@ -149,8 +152,8 @@ public class ProjectService {
             return id;
         }
         Firestore db = FirestoreClient.getFirestore();
-        return db.collection("organizations").document(user.getOrgId())
-                  .collection("projects").add(data).get().getId();
+        return db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                  .collection(FirestoreCollections.PROJECTS).add(data).get().getId();
     }
 
     public void updateProject(AppUser user, String projectId, ProjectRequest req) throws Exception {
@@ -165,13 +168,13 @@ public class ProjectService {
         if (req.getClientIds()    != null) updates.put("clientIds",    req.getClientIds());
         if (req.getIsShared()     != null) updates.put("isShared",     req.getIsShared());
         if (req.getContainsPhi()  != null) updates.put("containsPhi",  req.getContainsPhi());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) { project.putAll(updates); return; }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId).update(updates).get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId).update(updates).get();
     }
 
     public void shareMember(AppUser user, String projectId, String targetUserId, String role) throws Exception {
@@ -200,15 +203,15 @@ public class ProjectService {
         }
 
         List<String> memberIds = computeMemberIds(ownerId, members);
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
 
         if (devMode) {
             project.put("members", members); project.put("memberIds", memberIds); project.put("updatedAt", now);
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId)
           .update(Map.of("members", members, "memberIds", memberIds, "updatedAt", now)).get();
     }
 
@@ -218,15 +221,15 @@ public class ProjectService {
         if (!canManageProject(user, project))
             throw new SecurityException("Cannot delete project: " + projectId);
 
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         if (devMode) {
             Map<String, Object> p = devProjects.get(projectId);
             if (p != null) { p.put("deletedAt", now); p.put("deletedBy", user.getUid()); }
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId)
           .update(Map.of("deletedAt", now, "deletedBy", user.getUid())).get();
     }
 
@@ -251,8 +254,8 @@ public class ProjectService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId)
           .update("deletedAt", com.google.cloud.firestore.FieldValue.delete(),
                   "deletedBy", com.google.cloud.firestore.FieldValue.delete()).get();
     }
@@ -269,8 +272,8 @@ public class ProjectService {
             all = devProjects.values().stream();
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            all = toList(db.collection("organizations").document(user.getOrgId())
-                    .collection("projects").get().get().getDocuments()).stream();
+            all = toList(db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                    .collection(FirestoreCollections.PROJECTS).get().get().getDocuments()).stream();
         }
         return all
                 .filter(p -> p.get("deletedAt") != null)
@@ -298,8 +301,8 @@ public class ProjectService {
             return new ArrayList<>(devKnowledgeDocs.getOrDefault(projectId, List.of()));
         }
         Firestore db = FirestoreClient.getFirestore();
-        var docs = db.collection("organizations").document(user.getOrgId())
-                     .collection("projects").document(projectId)
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                     .collection(FirestoreCollections.PROJECTS).document(projectId)
                      .collection("knowledgeDocs")
                      .orderBy("createdAt").get().get().getDocuments();
         return toList(docs);
@@ -315,7 +318,7 @@ public class ProjectService {
         if (!canManageProject(user, project))
             throw new SecurityException("Cannot add knowledge to project: " + projectId);
 
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> doc = new HashMap<>();
         doc.put("projectId",   projectId);
         doc.put("title",       title);
@@ -329,8 +332,8 @@ public class ProjectService {
             return id;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(user.getOrgId())
-                    .collection("projects").document(projectId)
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                    .collection(FirestoreCollections.PROJECTS).document(projectId)
                     .collection("knowledgeDocs").add(doc).get();
         return ref.getId();
     }
@@ -347,8 +350,8 @@ public class ProjectService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-          .collection("projects").document(projectId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId)
           .collection("knowledgeDocs").document(docId).delete().get();
     }
 
@@ -412,8 +415,8 @@ public class ProjectService {
 
     private Map<String, Object> fetchProjectByOrgAndId(String orgId, String projectId) throws Exception {
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
-                     .collection("projects").document(projectId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                     .collection(FirestoreCollections.PROJECTS).document(projectId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Project not found: " + projectId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());
@@ -422,8 +425,8 @@ public class ProjectService {
 
     private List<Map<String, Object>> fetchKnowledgeDocsInternal(String orgId, String projectId) throws Exception {
         Firestore db = FirestoreClient.getFirestore();
-        return toList(db.collection("organizations").document(orgId)
-                        .collection("projects").document(projectId)
+        return toList(db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                        .collection(FirestoreCollections.PROJECTS).document(projectId)
                         .collection("knowledgeDocs")
                         .orderBy("createdAt").get().get().getDocuments());
     }

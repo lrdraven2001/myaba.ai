@@ -1,5 +1,7 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+
 import ai.myaba.model.dto.AclxRequest;
 import ai.myaba.model.dto.AclxResponse;
 import ai.myaba.model.dto.AppUser;
@@ -158,7 +160,7 @@ public class AclxService {
                         .sources(groundingSources != null ? groundingSources : List.of())
                         .build())
                 .requestContext(AclxRequest.RequestContext.builder()
-                        .timestamp(Instant.now().toString())
+                        .timestamp(TimestampUtil.now())
                         .clientId(clientId)
                         .clientIds(allClientIds.size() > 1 ? allClientIds : null)
                         .build())
@@ -253,7 +255,7 @@ public class AclxService {
                 "event_type",     eventType     != null ? eventType     : "",
                 "reviewer_notes", reviewerNotes != null ? reviewerNotes : "",
                 "reviewed_by",    reviewedBy    != null ? reviewedBy    : "",
-                "reviewed_at",    Instant.now().toString()
+                "reviewed_at",    TimestampUtil.now()
         );
 
         try {
@@ -424,7 +426,7 @@ public class AclxService {
                         .sources(List.of())
                         .build())
                 .requestContext(AclxRequest.RequestContext.builder()
-                        .timestamp(java.time.Instant.now().toString())
+                        .timestamp(TimestampUtil.now())
                         .build())
                 .build();
 

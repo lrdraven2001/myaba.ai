@@ -6,6 +6,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle } from '@fortawesome/free-brands-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { startTotpEnrollment, completeTotpEnrollment } from '../lib/mfa';
 import { api } from '../lib/api';
 
 interface Factor { uid: string; displayName?: string | null; factorId: string }
@@ -214,7 +215,7 @@ function SignInSection({ firebaseUser, hasGoogle, hasPassword, flash, refreshUse
 
 function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
   const [factors, setFactors] = useState<Factor[]>([]);
-  const [totp, setTotp]       = useState<null | { uri: string; key: string; qr: string; secret: any }>(null);
+  const [totp, setTotp]       = useState<null | { key: string; qr: string; secret: any }>(null);
   const [code, setCode]       = useState('');
   const [busy, setBusy]       = useState(false);
 
@@ -228,13 +229,8 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
     setBusy(true);
     try {
       await runSensitive(async () => {
-        const { multiFactor, TotpMultiFactorGenerator } = await import('firebase/auth');
-        const session = await multiFactor(firebaseUser).getSession();
-        const secret = await TotpMultiFactorGenerator.generateSecret(session);
-        const uri = secret.generateQrCodeUrl(firebaseUser.email ?? 'account', 'myABA.ai');
-        const QRCode = (await import('qrcode')).default;
-        const qr = await QRCode.toDataURL(uri);
-        setTotp({ uri, key: secret.secretKey, qr, secret });
+        const { secret, qrDataUrl, manualKey } = await startTotpEnrollment(firebaseUser);
+        setTotp({ key: manualKey, qr: qrDataUrl, secret });
       });
     } catch (e: any) { flash(e?.message ?? 'Could not start 2FA setup. (Authenticator 2FA needs real Firebase / Identity Platform — limited in the local emulator.)', true); }
     finally { setBusy(false); }
@@ -244,9 +240,7 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
     if (!totp || !code.trim()) return;
     setBusy(true);
     try {
-      const { multiFactor, TotpMultiFactorGenerator } = await import('firebase/auth');
-      const cred = TotpMultiFactorGenerator.assertionForEnrollment(totp.secret, code.trim());
-      await multiFactor(firebaseUser).enroll(cred, 'Authenticator app');
+      await completeTotpEnrollment(firebaseUser, totp.secret, code.trim(), 'Authenticator app');
       setTotp(null); setCode('');
       await refreshUser(); await loadFactors();
       flash('Authenticator app added. You\'ll be asked for a code at sign-in.');

@@ -8,12 +8,11 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   multiFactor,
-  TotpMultiFactorGenerator,
   type TotpSecret,
 } from 'firebase/auth';
-import QRCode from 'qrcode';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
+import { startTotpEnrollment, completeTotpEnrollment } from '../lib/mfa';
 
 // Firebase emulator does not support TOTP MFA — skip that step in dev
 const IS_EMULATOR = !!import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL;
@@ -119,13 +118,10 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
       if (IS_EMULATOR) {
         setStep('agreements');
       } else {
-        const session = await multiFactor(user).getSession();
-        const secret  = await TotpMultiFactorGenerator.generateSecret(session);
-        const uri     = secret.generateQrCodeUrl(email, 'myABA.ai');
-        const dataUrl = await QRCode.toDataURL(uri, { width: 200, margin: 2 });
+        const { secret, qrDataUrl, manualKey } = await startTotpEnrollment(user, email);
         setTotpSecret(secret);
-        setQrDataUrl(dataUrl);
-        setManualKey(secret.secretKey);
+        setQrDataUrl(qrDataUrl);
+        setManualKey(manualKey);
         setStep('twoFactor');
       }
     } catch (err: unknown) {
@@ -149,8 +145,7 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
     if (otpCode.length !== 6) { setError('Enter the 6-digit code from your authenticator.'); return; }
     setLoading(true);
     try {
-      const assertion = TotpMultiFactorGenerator.assertionForEnrollment(totpSecret, otpCode);
-      await multiFactor(auth.currentUser).enroll(assertion, 'Authenticator App');
+      await completeTotpEnrollment(auth.currentUser, totpSecret, otpCode);
       setStep('agreements');
     } catch {
       setError('Invalid code. Please wait for the next code and try again.');

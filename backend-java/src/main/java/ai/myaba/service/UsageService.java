@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import com.google.cloud.firestore.FieldValue;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.SetOptions;
@@ -100,7 +103,7 @@ public class UsageService {
             Firestore db = FirestoreClient.getFirestore();
 
             // Read plan from org document
-            var orgSnap = db.collection("organizations").document(orgId).get().get();
+            var orgSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
             if (!orgSnap.exists()) {
                 log.warn("Usage check: org {} not found — allowing", orgId);
                 return true;
@@ -120,7 +123,7 @@ public class UsageService {
 
             // Read current month usage
             String period = currentPeriod();
-            var usageSnap = db.collection("organizations").document(orgId)
+            var usageSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection("usage").document(period).get().get();
 
             long count = 0L;
@@ -169,11 +172,11 @@ public class UsageService {
             updates.put("requestCount", FieldValue.increment(1));
             updates.put(typeCountKey,   FieldValue.increment(1));
             updates.put("period",       period);
-            updates.put("lastUpdated",  Instant.now().toString());
+            updates.put("lastUpdated",  TimestampUtil.now());
 
             // set+merge creates the document if it doesn't exist, or merges into
             // the existing one — FieldValue.increment starts from 0 on a new field
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection("usage").document(period)
                     .set(updates, SetOptions.merge())
                     .get();
@@ -210,7 +213,7 @@ public class UsageService {
         try {
             Firestore db = FirestoreClient.getFirestore();
 
-            var orgSnap = db.collection("organizations").document(orgId).get().get();
+            var orgSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
             String plan        = orgSnap.exists() ? orgSnap.getString("plan") : "solo";
             int    planLimit   = limitForPlan(plan);
             boolean isEnterprise = "enterprise".equalsIgnoreCase(plan);
@@ -222,7 +225,7 @@ public class UsageService {
                 effectiveLimit = customLimitOverride.intValue();
             }
 
-            var usageSnap = db.collection("organizations").document(orgId)
+            var usageSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection("usage").document(period).get().get();
 
             Map<String, Object> result = new HashMap<>();
@@ -280,7 +283,7 @@ public class UsageService {
     public void setCustomLimit(String orgId, int limit) throws Exception {
         Firestore db = FirestoreClient.getFirestore();
 
-        var orgSnap = db.collection("organizations").document(orgId).get().get();
+        var orgSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!orgSnap.exists()) {
             throw new java.util.NoSuchElementException("Org not found: " + orgId);
         }
@@ -297,7 +300,7 @@ public class UsageService {
             // Remove the override — revert to unlimited
             update.put("usageLimitOverride", FieldValue.delete());
         }
-        db.collection("organizations").document(orgId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .set(update, SetOptions.merge())
                 .get();
 

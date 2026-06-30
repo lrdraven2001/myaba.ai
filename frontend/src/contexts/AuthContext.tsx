@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { User } from 'firebase/auth';
+import type { User, MultiFactorResolver } from 'firebase/auth';
 import type { AppUser, UserRole, UserPurpose } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,12 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Re-read the Firebase user + claims (call after a profile / email / MFA change). */
   refreshUser: () => Promise<void>;
+  /** True when a sign-in is paused awaiting a second-factor (TOTP) code. */
+  mfaChallengePending: boolean;
+  /** Complete a paused sign-in with the 6-digit authenticator code. */
+  resolveMfaSignIn: (code: string) => Promise<void>;
+  /** Abandon a pending second-factor challenge. */
+  cancelMfa: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -69,15 +75,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Second-factor (TOTP) challenge state for an in-progress sign-in.
+  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
+
   const login = async (email: string, password: string) => {
     if (DEV_AUTH) {
       setCurrentUser({ ...DEV_USER, email });
       return;
     }
     const { auth } = await import('../lib/firebase');
-    const { signInWithEmailAndPassword } = await import('firebase/auth');
-    await signInWithEmailAndPassword(auth, email, password);
+    const { signInWithEmailAndPassword, getMultiFactorResolver } = await import('firebase/auth');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      // Enrolled-MFA users: pause and ask for the authenticator code.
+      if ((e as { code?: string })?.code === 'auth/multi-factor-auth-required') {
+        setMfaResolver(getMultiFactorResolver(auth, e as Parameters<typeof getMultiFactorResolver>[1]));
+        const err = new Error('mfa-required');
+        (err as { code?: string }).code = 'mfa-required';
+        throw err;
+      }
+      throw e;
+    }
   };
+
+  /** Resolve a paused sign-in with a TOTP code from the user's authenticator. */
+  const resolveMfaSignIn = async (code: string) => {
+    if (!mfaResolver) throw new Error('No multi-factor challenge in progress');
+    const { TotpMultiFactorGenerator } = await import('firebase/auth');
+    const hint = mfaResolver.hints[0]; // single TOTP factor per user
+    const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code);
+    await mfaResolver.resolveSignIn(assertion); // onAuthStateChanged picks up the user
+    setMfaResolver(null);
+  };
+
+  const cancelMfa = () => setMfaResolver(null);
 
   const register = async (email: string, password: string, displayName: string) => {
     if (DEV_AUTH) {
@@ -99,9 +131,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const { auth } = await import('../lib/firebase');
-    const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-    await signInWithPopup(auth, new GoogleAuthProvider());
-    // onAuthStateChanged above will pick up the resulting user automatically
+    const { signInWithPopup, GoogleAuthProvider, getMultiFactorResolver } = await import('firebase/auth');
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+      // onAuthStateChanged above will pick up the resulting user automatically
+    } catch (e) {
+      if ((e as { code?: string })?.code === 'auth/multi-factor-auth-required') {
+        setMfaResolver(getMultiFactorResolver(auth, e as Parameters<typeof getMultiFactorResolver>[1]));
+        const err = new Error('mfa-required');
+        (err as { code?: string }).code = 'mfa-required';
+        throw err;
+      }
+      throw e;
+    }
   };
 
   const logout = async () => {
@@ -136,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, register, loginWithGoogle, logout, refreshUser }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, login, register, loginWithGoogle, logout, refreshUser, mfaChallengePending: !!mfaResolver, resolveMfaSignIn, cancelMfa }}>
       {children}
     </AuthContext.Provider>
   );

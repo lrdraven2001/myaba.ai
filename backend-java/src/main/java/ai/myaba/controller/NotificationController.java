@@ -27,35 +27,22 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @GetMapping("/api/notifications")
-    public ResponseEntity<?> list(@AuthenticationPrincipal AppUser user) {
-        try {
-            List<Map<String, Object>> items = notificationService.list(user);
-            long unread = items.stream().filter(n -> !Boolean.TRUE.equals(n.get("read"))).count();
-            return ResponseEntity.ok(Map.of("items", items, "unread", unread));
-        } catch (Exception e) {
-            log.error("list notifications failed: {}", e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to load notifications"));
-        }
+    public ResponseEntity<?> list(@AuthenticationPrincipal AppUser user) throws Exception {
+        List<Map<String, Object>> items = notificationService.list(user);
+        long unread = items.stream().filter(n -> !Boolean.TRUE.equals(n.get("read"))).count();
+        return ResponseEntity.ok(Map.of("items", items, "unread", unread));
     }
 
     @PostMapping("/api/notifications/{id}/read")
-    public ResponseEntity<?> markRead(@PathVariable String id, @AuthenticationPrincipal AppUser user) {
-        try {
-            notificationService.markRead(user, id);
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to mark read"));
-        }
+    public ResponseEntity<?> markRead(@PathVariable String id, @AuthenticationPrincipal AppUser user) throws Exception {
+        notificationService.markRead(user, id);
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     @PostMapping("/api/notifications/read-all")
-    public ResponseEntity<?> markAllRead(@AuthenticationPrincipal AppUser user) {
-        try {
-            notificationService.markAllRead(user);
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to mark all read"));
-        }
+    public ResponseEntity<?> markAllRead(@AuthenticationPrincipal AppUser user) throws Exception {
+        notificationService.markAllRead(user);
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     /** Admin: send a system message to every active member of the org. */
@@ -63,7 +50,7 @@ public class NotificationController {
     public ResponseEntity<?> broadcast(
             @PathVariable String orgId,
             @RequestBody Map<String, String> body,
-            @AuthenticationPrincipal AppUser user) {
+            @AuthenticationPrincipal AppUser user) throws Exception {
 
         boolean admin = orgId.equals(user.getOrgId()) && UserRole.isAdmin(user.getRole());
         if (!admin) {
@@ -73,14 +60,9 @@ public class NotificationController {
         if (title == null || title.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "title is required"));
         }
-        try {
-            int sent = notificationService.broadcast(
-                    orgId, title.trim(), body.getOrDefault("body", ""),
-                    body.getOrDefault("level", "info"), user.getUid());
-            return ResponseEntity.ok(Map.of("sent", sent));
-        } catch (Exception e) {
-            log.error("broadcast failed for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to send notification"));
-        }
+        int sent = notificationService.broadcast(
+                orgId, title.trim(), body.getOrDefault("body", ""),
+                body.getOrDefault("level", "info"), user.getUid());
+        return ResponseEntity.ok(Map.of("sent", sent));
     }
 }

@@ -13,8 +13,10 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  /* Subtle warm off-white vs pure white — easier on the eyes in a clinical context */
-  background: #f4f7f9;
+  /* Soft brand-tinted canvas (blue → green) shown behind transparent gutters.
+     Kept very light so foreground text retains WCAG AA / 508 contrast. */
+  background: linear-gradient(165deg, #e6eff6 0%, #ebf4ed 100%);
+  background-attachment: fixed;
   color: #1a2e35;
 }
 

@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.PolicyRequest;
 import com.google.cloud.firestore.Firestore;
@@ -144,8 +147,8 @@ public class PolicyService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var query = db.collection("organizations").document(user.getOrgId())
-                .collection("policies").orderBy("category");
+        var query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.POLICIES).orderBy("category");
 
         List<Map<String, Object>> all = toList(query.get().get().getDocuments());
         if (user.isAdmin()) return all;
@@ -170,8 +173,8 @@ public class PolicyService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (String pid : policyIds) {
             try {
-                var snap = db.collection("organizations").document(orgId)
-                        .collection("policies").document(pid).get().get();
+                var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                        .collection(FirestoreCollections.POLICIES).document(pid).get().get();
                 if (snap.exists()) {
                     Map<String, Object> data = new HashMap<>(snap.getData());
                     data.put("id", snap.getId());
@@ -230,7 +233,7 @@ public class PolicyService {
                 .collect(Collectors.toList());
         }
         Firestore db = FirestoreClient.getFirestore();
-        var base = db.collection("organizations").document(orgId).collection("policies")
+        var base = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).collection(FirestoreCollections.POLICIES)
                 .whereEqualTo("isActive", true);
         var query = (purpose != null)
                 ? base.whereArrayContains("purposes", purpose)
@@ -254,7 +257,7 @@ public class PolicyService {
 
     /** Create a new policy. Caller must have already verified admin access. */
     public String createPolicy(AppUser user, PolicyRequest req) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> data = new HashMap<>();
         data.put("title",       req.getTitle());
         data.put("category",    req.getCategory());
@@ -291,8 +294,8 @@ public class PolicyService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(user.getOrgId())
-                .collection("policies").add(data).get();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.POLICIES).add(data).get();
         indexForRag(user.getOrgId(), ref.getId(), (String) data.get("title"),
                     (String) data.get("textContent"));
         return ref.getId();
@@ -321,7 +324,7 @@ public class PolicyService {
         if (req.getShared() != null)        updates.put("shared", req.getShared());
         if (req.getArchived() != null)      updates.put("archived", req.getArchived());
         if (req.getLinkedIds() != null)     updates.put("linkedIds", req.getLinkedIds());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
             policy.putAll(updates);
@@ -333,8 +336,8 @@ public class PolicyService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-                .collection("policies").document(policyId).update(updates).get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.POLICIES).document(policyId).update(updates).get();
         if (updates.containsKey("textContent")) {
             // Re-fetch merged title for RAG
             Map<String, Object> merged = fetchPolicy(user.getOrgId(), policyId);
@@ -352,8 +355,8 @@ public class PolicyService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-                .collection("policies").document(policyId).delete().get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.POLICIES).document(policyId).delete().get();
         if (policyRagService != null) policyRagService.removePolicy(user.getOrgId(), policyId);
     }
 
@@ -366,8 +369,8 @@ public class PolicyService {
             return p;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
-                .collection("policies").document(policyId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.POLICIES).document(policyId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Policy not found: " + policyId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());

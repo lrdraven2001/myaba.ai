@@ -1,5 +1,7 @@
 package ai.myaba.controller;
 
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ClientRequest;
 import ai.myaba.model.dto.UserRole;
@@ -198,8 +200,8 @@ public class ClientController {
             Firestore db = FirestoreClient.getFirestore();
             List<QueryDocumentSnapshot> docs = db
                     .collection("orgs").document(user.getOrgId())
-                    .collection("clients").document(clientId)
-                    .collection("documents")
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS)
                     .orderBy("createdAtMs", com.google.cloud.firestore.Query.Direction.DESCENDING)
                     .limit(50)
                     .get().get().getDocuments();
@@ -246,8 +248,8 @@ public class ClientController {
             Firestore db = FirestoreClient.getFirestore();
             com.google.cloud.firestore.DocumentSnapshot snap = db
                     .collection("orgs").document(user.getOrgId())
-                    .collection("clients").document(clientId)
-                    .collection("documents").document(docId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS).document(docId)
                     .get().get();
             if (!snap.exists()) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Document not found"));

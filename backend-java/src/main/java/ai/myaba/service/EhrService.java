@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.EhrClientRecord;
 import ai.myaba.model.dto.EhrConnectionStatus;
 import ai.myaba.service.ehr.EhrConnector;
@@ -108,7 +111,7 @@ public class EhrService {
         String encryptedCredentials = encrypt(serializeCredentials(credentials));
         Map<String, Object> doc = new HashMap<>();
         doc.put("status",      "connected");
-        doc.put("connectedAt", Instant.now().toString());
+        doc.put("connectedAt", TimestampUtil.now());
         doc.put("credentials", encryptedCredentials);
         doc.put("errorMessage", null);
         // Store non-secret metadata alongside (subdomain for CentralReach)
@@ -116,7 +119,7 @@ public class EhrService {
             doc.put("subdomain", credentials.get("subdomain"));
         }
 
-        firestore().collection("organizations").document(orgId)
+        firestore().collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection(COLLECTION).document(ehrType)
                 .set(doc, SetOptions.merge())
                 .get();
@@ -138,7 +141,7 @@ public class EhrService {
         doc.put("connectedAt", null);
         doc.put("errorMessage", null);
 
-        firestore().collection("organizations").document(orgId)
+        firestore().collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection(COLLECTION).document(ehrType)
                 .set(doc, SetOptions.merge())
                 .get();
@@ -176,7 +179,7 @@ public class EhrService {
         Firestore db = firestore();
         Map<String, Object> updates = new HashMap<>();
         updates.put("ehrLinks." + ehrType + ".ehrId",     ehrClientId);
-        updates.put("ehrLinks." + ehrType + ".linkedAt",  Instant.now().toString());
+        updates.put("ehrLinks." + ehrType + ".linkedAt",  TimestampUtil.now());
         updates.put("ehrLinks." + ehrType + ".lastSyncAt", record.getSyncedAt());
 
         // Merge safe demographic fields — only fill blanks, never overwrite
@@ -194,15 +197,15 @@ public class EhrService {
         if (record.getDiagnosisDescriptions() != null && !record.getDiagnosisDescriptions().isEmpty())
             updates.put("diagnosis", String.join(", ", record.getDiagnosisDescriptions()));
 
-        db.collection("organizations").document(orgId)
-                .collection("clients").document(myabaClientId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.CLIENTS).document(myabaClientId)
                 .update(updates)
                 .get();
 
         // Update lastSyncAt on the integration doc
-        db.collection("organizations").document(orgId)
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection(COLLECTION).document(ehrType)
-                .update(Map.of("lastSyncAt", Instant.now().toString()))
+                .update(Map.of("lastSyncAt", TimestampUtil.now()))
                 .get();
 
         log.info("EHR client synced: org={} type={} ehrId={} clientId={}",
@@ -221,7 +224,7 @@ public class EhrService {
 
     private EhrConnectionStatus loadStatus(String orgId, EhrConnector connector) {
         try {
-            var snap = firestore().collection("organizations").document(orgId)
+            var snap = firestore().collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection(COLLECTION).document(connector.getEhrType())
                     .get().get();
 
@@ -258,7 +261,7 @@ public class EhrService {
     }
 
     private Map<String, String> loadCredentials(String orgId, String ehrType) throws Exception {
-        var snap = firestore().collection("organizations").document(orgId)
+        var snap = firestore().collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection(COLLECTION).document(ehrType)
                 .get().get();
 

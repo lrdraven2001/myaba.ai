@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.firebase.cloud.FirestoreClient;
@@ -61,7 +64,7 @@ public class PolicyRagService {
         // Firestore: delete old chunks for this policy, write new ones
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var colRef = db.collection("organizations").document(orgId)
+            var colRef = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                            .collection("policyChunks");
 
             // Delete existing chunks for this policyId
@@ -76,7 +79,7 @@ public class PolicyRagService {
                 data.put("chunkIndex",  c.index());
                 data.put("text",        c.text());
                 data.put("keywords",    new ArrayList<>(c.keywords()));
-                data.put("indexedAt",   Instant.now().toString());
+                data.put("indexedAt",   TimestampUtil.now());
                 colRef.add(data).get();
             }
         } catch (Exception e) {
@@ -95,7 +98,7 @@ public class PolicyRagService {
         }
         try {
             Firestore db = FirestoreClient.getFirestore();
-            var docs = db.collection("organizations").document(orgId)
+            var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                          .collection("policyChunks")
                          .whereEqualTo("policyId", policyId)
                          .get().get().getDocuments();
@@ -353,7 +356,7 @@ public class PolicyRagService {
         try {
             Firestore db = FirestoreClient.getFirestore();
             List<QueryDocumentSnapshot> docs = db
-                    .collection("organizations").document(orgId)
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection("policyChunks")
                     .whereEqualTo("policyId", policyId)
                     .get().get().getDocuments();

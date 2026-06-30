@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.FederationConfigRequest;
 import com.google.cloud.firestore.Firestore;
 import com.google.firebase.auth.FirebaseAuth;
@@ -53,7 +56,7 @@ public class FederationService {
                     .collect(Collectors.toList());
         }
         Firestore db = FirestoreClient.getFirestore();
-        return db.collection("organizations").document(orgId)
+        return db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                  .collection("federationConfigs")
                  .get().get().getDocuments().stream()
                  .map(d -> {
@@ -71,7 +74,7 @@ public class FederationService {
      */
     public String createConfig(String orgId, FederationConfigRequest req) throws Exception {
         validateRequest(req);
-        String now      = Instant.now().toString();
+        String now      = TimestampUtil.now();
         String configId = "fed-" + UUID.randomUUID().toString().substring(0, 8);
 
         Map<String, Object> data = buildConfigData(orgId, configId, req, now, now);
@@ -81,7 +84,7 @@ public class FederationService {
             log.info("Dev: created federation config {} ({}) for org {}", configId, req.getType(), orgId);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("federationConfigs").document(configId).set(data).get();
             provisionFirebaseProvider(orgId, req);
         }
@@ -93,7 +96,7 @@ public class FederationService {
     public void updateConfig(String orgId, String configId, FederationConfigRequest req) throws Exception {
         validateRequest(req);
         Map<String, Object> existing = fetchConfig(orgId, configId);
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
 
         Map<String, Object> updated = buildConfigData(orgId, configId, req,
                 (String) existing.get("createdAt"), now);
@@ -102,7 +105,7 @@ public class FederationService {
             devConfigs.put(configId, updated);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("federationConfigs").document(configId).set(updated).get();
             updateFirebaseProvider(orgId, req);
         }
@@ -118,7 +121,7 @@ public class FederationService {
             devConfigs.remove(configId);
         } else {
             Firestore db = FirestoreClient.getFirestore();
-            db.collection("organizations").document(orgId)
+            db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection("federationConfigs").document(configId).delete().get();
             deleteFirebaseProvider(orgId, type);
         }
@@ -203,7 +206,7 @@ public class FederationService {
             return c;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                      .collection("federationConfigs").document(configId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Federation config not found: " + configId);
         Map<String, Object> data = new HashMap<>(snap.getData());

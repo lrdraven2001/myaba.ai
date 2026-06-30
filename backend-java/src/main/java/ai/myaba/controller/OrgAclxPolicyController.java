@@ -1,10 +1,10 @@
 package ai.myaba.controller;
 
 import ai.myaba.model.dto.AppUser;
+import ai.myaba.security.AuthorizationUtil;
 import ai.myaba.service.OrgAclxPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -38,15 +38,8 @@ public class OrgAclxPolicyController {
     public ResponseEntity<?> getPolicy(
             @AuthenticationPrincipal AppUser user,
             @PathVariable String orgId) {
-        try {
-            verifyOrgAccess(user, orgId);
-            return ResponseEntity.ok(policyService.getPolicy(orgId));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("getPolicy failed for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to load org policy"));
-        }
+        AuthorizationUtil.verifyOrgMembership(user, orgId);
+        return ResponseEntity.ok(policyService.getPolicy(orgId));
     }
 
     // ── Add / replace a rule ──────────────────────────────────────────────────
@@ -60,27 +53,18 @@ public class OrgAclxPolicyController {
             @AuthenticationPrincipal AppUser user,
             @PathVariable String orgId,
             @RequestBody Map<String, String> body) {
-        try {
-            verifyOrgAccess(user, orgId);
-            String type         = body.getOrDefault("type",        "").strip().toUpperCase();
-            String slug         = body.getOrDefault("slug",        "").strip();
-            String description  = body.getOrDefault("description", "").strip();
-            String sourceItemId = body.get("sourceReviewItemId");
+        AuthorizationUtil.verifyOrgMembership(user, orgId);
+        String type         = body.getOrDefault("type",        "").strip().toUpperCase();
+        String slug         = body.getOrDefault("slug",        "").strip();
+        String description  = body.getOrDefault("description", "").strip();
+        String sourceItemId = body.get("sourceReviewItemId");
 
-            if (slug.isBlank())        return ResponseEntity.badRequest().body(Map.of("error", "slug is required"));
-            if (description.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "description is required"));
+        if (slug.isBlank())        return ResponseEntity.badRequest().body(Map.of("error", "slug is required"));
+        if (description.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "description is required"));
 
-            Map<String, Object> rule = policyService.addRule(user, type, slug, description, sourceItemId);
-            log.info("ACLX policy rule added: org={} type={} slug={}", orgId, type, slug);
-            return ResponseEntity.ok(rule);
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("addRule failed for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to save policy rule"));
-        }
+        Map<String, Object> rule = policyService.addRule(user, type, slug, description, sourceItemId);
+        log.info("ACLX policy rule added: org={} type={} slug={}", orgId, type, slug);
+        return ResponseEntity.ok(rule);
     }
 
     // ── Delete a rule ─────────────────────────────────────────────────────────
@@ -90,17 +74,10 @@ public class OrgAclxPolicyController {
             @AuthenticationPrincipal AppUser user,
             @PathVariable String orgId,
             @PathVariable String ruleId) {
-        try {
-            verifyOrgAccess(user, orgId);
-            policyService.removeRule(user, ruleId);
-            log.info("ACLX policy rule removed: org={} ruleId={}", orgId, ruleId);
-            return ResponseEntity.noContent().build();
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("removeRule failed for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to remove policy rule"));
-        }
+        AuthorizationUtil.verifyOrgMembership(user, orgId);
+        policyService.removeRule(user, ruleId);
+        log.info("ACLX policy rule removed: org={} ruleId={}", orgId, ruleId);
+        return ResponseEntity.noContent().build();
     }
 
     // ── Set sensitivity threshold ─────────────────────────────────────────────
@@ -111,30 +88,13 @@ public class OrgAclxPolicyController {
             @AuthenticationPrincipal AppUser user,
             @PathVariable String orgId,
             @RequestBody Map<String, String> body) {
-        try {
-            verifyOrgAccess(user, orgId);
-            String sensitivity = body.getOrDefault("sensitivity", "").strip().toUpperCase();
-            if (sensitivity.isBlank())
-                return ResponseEntity.badRequest().body(Map.of("error", "sensitivity is required"));
+        AuthorizationUtil.verifyOrgMembership(user, orgId);
+        String sensitivity = body.getOrDefault("sensitivity", "").strip().toUpperCase();
+        if (sensitivity.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "sensitivity is required"));
 
-            policyService.setEscalateAtSensitivity(user, sensitivity);
-            log.info("ACLX escalation threshold set: org={} sensitivity={}", orgId, sensitivity);
-            return ResponseEntity.noContent().build();
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("setSensitivity failed for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update sensitivity threshold"));
-        }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private void verifyOrgAccess(AppUser user, String orgId) {
-        if (!user.getOrgId().equals(orgId)) {
-            throw new SecurityException("Access denied: org mismatch");
-        }
+        policyService.setEscalateAtSensitivity(user, sensitivity);
+        log.info("ACLX escalation threshold set: org={} sensitivity={}", orgId, sensitivity);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
@@ -178,10 +181,10 @@ public class ChatService {
         Firestore db = FirestoreClient.getFirestore();
         Query query;
         if (user.isAdmin()) {
-            query = db.collection("organizations").document(user.getOrgId())
+            query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                     .collection("chats").orderBy("updatedAt", Query.Direction.DESCENDING);
         } else {
-            query = db.collection("organizations").document(user.getOrgId())
+            query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                     .collection("chats")
                     .whereArrayContains("memberIds", user.getUid())
                     .orderBy("updatedAt", Query.Direction.DESCENDING);
@@ -209,7 +212,7 @@ public class ChatService {
         }
         Firestore db = FirestoreClient.getFirestore();
         List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(user.getOrgId())
+                .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId)
                 .collection("messages").orderBy("createdAt").get().get().getDocuments();
         return toList(docs);
@@ -224,7 +227,7 @@ public class ChatService {
     public String createChat(AppUser user, String title, String clientId,
                               String projectId, String projectLabel,
                               List<String> policyIds) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> data = new HashMap<>();
         data.put("title",        title);
         data.put("orgId",        user.getOrgId());
@@ -246,7 +249,7 @@ public class ChatService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(user.getOrgId())
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").add(data).get();
         return ref.getId();
     }
@@ -303,7 +306,7 @@ public class ChatService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var chatRef = db.collection("organizations").document(user.getOrgId())
+        var chatRef = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId);
         var messagesRef = chatRef.collection("messages");
 
@@ -335,14 +338,14 @@ public class ChatService {
     public void updateChatTitle(AppUser user, String chatId, String newTitle) throws Exception {
         Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
         if (!canManageChat(user, chat)) throw new SecurityException("Cannot update chat: " + chatId);
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         if (devMode) {
             chat.put("title", newTitle);
             chat.put("updatedAt", now);
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId)
                 .update(Map.of("title", newTitle, "updatedAt", now)).get();
     }
@@ -352,14 +355,14 @@ public class ChatService {
         Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
         if (!canManageChat(user, chat)) throw new SecurityException("Cannot update chat: " + chatId);
         String cid = clientId != null ? clientId.trim() : "";
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         if (devMode) {
             chat.put("clientId", cid);
             chat.put("updatedAt", now);
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId)
                 .update(Map.of("clientId", cid, "updatedAt", now)).get();
     }
@@ -377,13 +380,13 @@ public class ChatService {
         }
         // Firestore: delete subcollection messages first, then the chat doc
         Firestore db = FirestoreClient.getFirestore();
-        var msgsSnap = db.collection("organizations").document(user.getOrgId())
+        var msgsSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId)
                 .collection("messages").get().get();
         for (var doc : msgsSnap.getDocuments()) {
             doc.getReference().delete().get();
         }
-        db.collection("organizations").document(user.getOrgId())
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection("chats").document(chatId).delete().get();
     }
 
@@ -396,7 +399,7 @@ public class ChatService {
             return c;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection("chats").document(chatId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Chat not found: " + chatId);
         Map<String, Object> data = new HashMap<>(snap.getData());

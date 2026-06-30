@@ -8,6 +8,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import { ALL_ROLE_LABELS as ROLE_LABELS } from '../types';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
 
@@ -22,18 +23,6 @@ interface TeamMember {
   supervisorId?: string;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  ORG_SUPER_ADMIN:   'Practice Administrator',
-  CLINICAL_DIRECTOR: 'Clinical Director',
-  ORG_ADMIN:         'Practice Administrator',
-  TREATING_BCBA:     'Treating BCBA',
-  SUPERVISING_BCBA:  'Clinical Supervisor',
-  BCBA_STUDENT:      'BCBA Student',
-  RBT:               'Behavior Technician',
-  GENERAL_STAFF:     'General Staff',
-  SCHEDULING_ADMIN:  'Scheduling Admin',
-  BILLING_ADMIN:     'Billing Admin',
-};
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   ORG_SUPER_ADMIN:   { bg: '#ede9fe', text: '#6d28d9' },

@@ -1,5 +1,8 @@
 package ai.myaba.service;
 
+import ai.myaba.util.TimestampUtil;
+import ai.myaba.util.FirestoreCollections;
+
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.TemplateRequest;
 import ai.myaba.model.dto.UserRole;
@@ -137,8 +140,8 @@ public class TemplateService {
 
         Firestore db = FirestoreClient.getFirestore();
         List<QueryDocumentSnapshot> docs = db
-                .collection("organizations").document(user.getOrgId())
-                .collection("templates")
+                .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.TEMPLATES)
                 .orderBy("category")
                 .get().get().getDocuments();
 
@@ -159,7 +162,7 @@ public class TemplateService {
 
     /** Create a new template. Caller must have already verified admin access. */
     public String createTemplate(AppUser user, TemplateRequest req) throws Exception {
-        String now = Instant.now().toString();
+        String now = TimestampUtil.now();
         Map<String, Object> data = new HashMap<>();
         data.put("title",          req.getTitle());
         data.put("category",       req.getCategory());
@@ -178,8 +181,8 @@ public class TemplateService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        var ref = db.collection("organizations").document(user.getOrgId())
-                .collection("templates").add(data).get();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.TEMPLATES).add(data).get();
         return ref.getId();
     }
 
@@ -191,7 +194,7 @@ public class TemplateService {
         if (req.getCategory() != null)       updates.put("category", req.getCategory());
         if (req.getContent() != null)        updates.put("content", req.getContent());
         if (req.getVisibleToRoles() != null) updates.put("visibleToRoles", req.getVisibleToRoles());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
             template.putAll(updates);
@@ -199,8 +202,8 @@ public class TemplateService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-                .collection("templates").document(templateId).update(updates).get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.TEMPLATES).document(templateId).update(updates).get();
     }
 
     /** Delete a template. Caller must have already verified admin access. */
@@ -211,8 +214,8 @@ public class TemplateService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection("organizations").document(user.getOrgId())
-                .collection("templates").document(templateId).delete().get();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.TEMPLATES).document(templateId).delete().get();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -224,8 +227,8 @@ public class TemplateService {
             return t;
         }
         Firestore db = FirestoreClient.getFirestore();
-        var snap = db.collection("organizations").document(orgId)
-                .collection("templates").document(templateId).get().get();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.TEMPLATES).document(templateId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Template not found: " + templateId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());

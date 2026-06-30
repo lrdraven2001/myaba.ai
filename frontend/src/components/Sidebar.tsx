@@ -7,7 +7,6 @@ import {
   faUsersCog,
   faCog,
   faProjectDiagram,
-  faSearch,
   faShieldAlt,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,7 +21,6 @@ interface SidebarProps {
 
 const navItems: { view: View; icon: typeof faCommentDots; label: string; color: string }[] = [
   { view: 'chat',      icon: faCommentDots,    label: 'Chat',      color: '#3F9B2F' },
-  { view: 'search',    icon: faSearch,         label: 'Search',    color: '#1E88FF' },
   { view: 'projects',  icon: faProjectDiagram, label: 'Projects',  color: '#F5A623' },
   { view: 'clients',   icon: faUsers,          label: 'Clients',   color: '#7ED957' },
   { view: 'documents', icon: faFileAlt,        label: 'Resources', color: '#1E88FF' },
@@ -44,14 +42,26 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
       .catch(() => {});
   }, [currentUser?.orgId]);
 
+  // Live-update the org name when it's changed in Settings (no UI refresh needed).
+  useEffect(() => {
+    const onOrgUpdated = (e: Event) => {
+      const name = (e as CustomEvent<{ name?: string }>).detail?.name;
+      if (name) setOrgName(name);
+    };
+    window.addEventListener('org:updated', onOrgUpdated);
+    return () => window.removeEventListener('org:updated', onOrgUpdated);
+  }, []);
+
   const navBtn = (
     isActive: boolean,
     onClick: () => void,
     iconEl: React.ReactNode,
     label: string,
     extraStyle?: React.CSSProperties,
+    keyId?: string,
   ) => (
     <button
+      key={keyId}
       onClick={onClick}
       style={{
         display: 'flex',
@@ -88,7 +98,8 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
         className="flex flex-col"
         style={{
           width: 195,
-          background: '#F8FBFC',
+          /* Soft brand gradient (blue → green); dark nav text keeps AA contrast. */
+          background: 'linear-gradient(180deg, #eaf3fb 0%, #e7f3eb 100%)',
           height: '100%',       /* fill the flex row exactly — no more, no less */
           flexShrink: 0,
           borderRight: '1px solid #DCE7EE',
@@ -98,7 +109,7 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
         }}
       >
         {/* ── Logo card — sticky so it never scrolls out of view ── */}
-        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE', position: 'sticky', top: 0, background: '#F8FBFC', zIndex: 10 }}>
+        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE', position: 'sticky', top: 0, background: '#eaf3fb', zIndex: 10 }}>
           <div
             style={{
               display: 'flex',
@@ -107,7 +118,7 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
               background: 'white',
               borderRadius: 12,
               padding: '8px 10px',
-              boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+              border: '1px solid #DCE7EE',
             }}
           >
             <img
@@ -149,6 +160,8 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
                 style={{ fontSize: 19, color: isActive ? color : '#A8B4BF', flexShrink: 0, width: 22 }}
               />,
               label,
+              undefined,
+              view,
             );
           })}
 

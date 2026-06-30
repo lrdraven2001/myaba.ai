@@ -12,9 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
  * REST endpoints for enterprise federation (OIDC/SAML IdP) configuration.
@@ -38,21 +36,14 @@ public class FederationController {
     @GetMapping
     public ResponseEntity<?> getConfigs(
             @PathVariable String orgId,
-            @AuthenticationPrincipal AppUser user) {
+            @AuthenticationPrincipal AppUser user) throws Exception {
 
         if (!isSuperAdminOf(user, orgId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "ORG_SUPER_ADMIN required for federation configuration"));
         }
 
-        try {
-            List<Map<String, Object>> configs = federationService.getConfigs(orgId);
-            return ResponseEntity.ok(configs);
-        } catch (Exception e) {
-            log.error("Failed to list federation configs for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to retrieve federation configurations"));
-        }
+        return ResponseEntity.ok(federationService.getConfigs(orgId));
     }
 
     // ── Create config ─────────────────────────────────────────────────────────
@@ -61,25 +52,16 @@ public class FederationController {
     public ResponseEntity<?> createConfig(
             @PathVariable String orgId,
             @Valid @RequestBody FederationConfigRequest req,
-            @AuthenticationPrincipal AppUser user) {
+            @AuthenticationPrincipal AppUser user) throws Exception {
 
         if (!isSuperAdminOf(user, orgId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "ORG_SUPER_ADMIN required for federation configuration"));
         }
 
-        try {
-            String configId = federationService.createConfig(orgId, req);
-            log.info("Created federation config {} ({}) for org {}", configId, req.getType(), orgId);
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(Map.of("configId", configId));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Failed to create federation config for org {}: {}", orgId, e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to create federation configuration: " + e.getMessage()));
-        }
+        String configId = federationService.createConfig(orgId, req);
+        log.info("Created federation config {} ({}) for org {}", configId, req.getType(), orgId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("configId", configId));
     }
 
     // ── Update config ─────────────────────────────────────────────────────────
@@ -89,26 +71,15 @@ public class FederationController {
             @PathVariable String orgId,
             @PathVariable String configId,
             @Valid @RequestBody FederationConfigRequest req,
-            @AuthenticationPrincipal AppUser user) {
+            @AuthenticationPrincipal AppUser user) throws Exception {
 
         if (!isSuperAdminOf(user, orgId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "ORG_SUPER_ADMIN required for federation configuration"));
         }
 
-        try {
-            federationService.updateConfig(orgId, configId, req);
-            return ResponseEntity.noContent().build();
-        } catch (NoSuchElementException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Failed to update federation config {} for org {}: {}", configId, orgId, e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to update federation configuration: " + e.getMessage()));
-        }
+        federationService.updateConfig(orgId, configId, req);
+        return ResponseEntity.noContent().build();
     }
 
     // ── Delete config ─────────────────────────────────────────────────────────
@@ -117,24 +88,15 @@ public class FederationController {
     public ResponseEntity<?> deleteConfig(
             @PathVariable String orgId,
             @PathVariable String configId,
-            @AuthenticationPrincipal AppUser user) {
+            @AuthenticationPrincipal AppUser user) throws Exception {
 
         if (!isSuperAdminOf(user, orgId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "ORG_SUPER_ADMIN required for federation configuration"));
         }
 
-        try {
-            federationService.deleteConfig(orgId, configId);
-            return ResponseEntity.noContent().build();
-        } catch (NoSuchElementException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Failed to delete federation config {} for org {}: {}", configId, orgId, e.getMessage());
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to delete federation configuration"));
-        }
+        federationService.deleteConfig(orgId, configId);
+        return ResponseEntity.noContent().build();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
