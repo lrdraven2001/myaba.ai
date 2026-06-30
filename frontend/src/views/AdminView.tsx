@@ -55,9 +55,9 @@ export default function AdminView() {
 
   // ── AI config state ──────────────────────────────────────────────────────
 
-  const [anthropicKey, setAnthropicKey]   = useState('');
+  const [apiKeyVal, setApiKeyVal]   = useState('');
   const [showKey, setShowKey]             = useState(false);
-  const [model, setModel]                 = useState('claude-sonnet-4-6');
+  const [model, setModel]                 = useState('gemini-3.1-flash-lite');
   const [maxTokens, setMaxTokens]         = useState('4000');
   const [testStatus, setTestStatus]       = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [aiSave, setAiSave]               = useState<SaveStatus>({ state: 'idle' });
@@ -101,8 +101,8 @@ export default function AdminView() {
     try {
       await api.updateOrgSettings(orgId, {
         platformConfig: {
-          anthropicModel: model,
-          anthropicMaxTokens: parseInt(maxTokens, 10),
+          geminiModel: model,
+          geminiMaxTokens: parseInt(maxTokens, 10),
           // Note: API key is NOT sent here — set it in application-local.yml (dev)
           // or as a Cloud Run environment variable / Secret Manager (production).
         },
@@ -218,22 +218,17 @@ export default function AdminView() {
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
               <div className="px-6 py-4 flex items-center gap-3">
                 <FontAwesomeIcon icon={faRobot} style={{ color: '#1E88FF', fontSize: 16 }} />
-                <h2 className="font-semibold text-gray-900">Anthropic API Key</h2>
+                <h2 className="font-semibold text-gray-900">Gemini Model (Vertex AI)</h2>
               </div>
 
               <div className="px-6 py-4 space-y-4">
                 <div className="rounded-lg p-4 text-sm" style={{ background: '#FFF8E1', borderLeft: '4px solid #F5A623' }}>
-                  <p className="font-medium text-amber-800 mb-1">Where to set the key</p>
+                  <p className="font-medium text-amber-800 mb-1">Authentication</p>
                   <p className="text-amber-700 leading-relaxed">
-                    <strong>Local dev:</strong> set <code className="bg-amber-100 px-1 rounded">anthropic.api-key</code> in{' '}
-                    <code className="bg-amber-100 px-1 rounded">backend-java/src/main/resources/application-local.yml</code>
-                    {' '}(gitignored).
-                    <br />
-                    <strong>Production:</strong> inject as a{' '}
-                    <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY</code> environment variable in Cloud Run,
-                    or store in <strong>Google Secret Manager</strong> and bind it via{' '}
-                    <code className="bg-amber-100 px-1 rounded">--set-secrets</code>.
-                    The key field below is for verifying connectivity only — it is never persisted to the database.
+                    Gemini runs on <strong>Vertex AI</strong> and authenticates with the runtime
+                    service account via <strong>Application Default Credentials</strong> — there is
+                    no API key to set. The SA needs <code className="bg-amber-100 px-1 rounded">roles/aiplatform.user</code>.
+                    Locally, run <code className="bg-amber-100 px-1 rounded">gcloud auth application-default login</code> once.
                   </p>
                 </div>
 
@@ -245,9 +240,9 @@ export default function AdminView() {
                     <div className="relative flex-1">
                       <input
                         type={showKey ? 'text' : 'password'}
-                        value={anthropicKey}
-                        onChange={(e) => setAnthropicKey(e.target.value)}
-                        placeholder="sk-ant-api03-..."
+                        value={apiKeyVal}
+                        onChange={(e) => setApiKeyVal(e.target.value)}
+                        placeholder="(none — Gemini uses ADC)"
                         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200"
                         style={{ paddingRight: 36 }}
                       />
@@ -260,7 +255,7 @@ export default function AdminView() {
                     </div>
                     <button
                       onClick={testApiKey}
-                      disabled={!anthropicKey.trim() || testStatus === 'testing'}
+                      disabled={!apiKeyVal.trim() || testStatus === 'testing'}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
                       style={{
                         borderColor: testStatus === 'ok' ? '#3F9B2F' : testStatus === 'fail' ? '#DC2626' : '#E5E7EB',
@@ -295,9 +290,9 @@ export default function AdminView() {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
-                    <option value="claude-sonnet-4-6">claude-sonnet-4-6  (recommended — fast + accurate)</option>
-                    <option value="claude-opus-4-5">claude-opus-4-5  (highest quality, slower)</option>
-                    <option value="claude-haiku-4-5">claude-haiku-4-5  (fastest, lightweight tasks)</option>
+                    <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite  (fast — chat + light docs)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro  (reasoning — signable clinical docs)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash  (balanced)</option>
                   </select>
                 </div>
                 <div>

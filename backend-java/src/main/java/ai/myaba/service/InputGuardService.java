@@ -13,7 +13,7 @@ import java.util.Optional;
  * Orchestrates all pre-flight input guards in priority order.
  *
  * <p>Every chat message passes through this service before any tokens are sent to
- * Claude.  Guards run sequentially, lowest {@link InputGuard#order()} first, and
+ * Gemini.  Guards run sequentially, lowest {@link InputGuard#order()} first, and
  * evaluation stops at the first violation.
  *
  * <h3>Guard registry</h3>

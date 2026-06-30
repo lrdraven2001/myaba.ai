@@ -13,50 +13,24 @@ spring:
       max-file-size: 25MB
       max-request-size: 26MB
 
-# ── AI Provider ────────────────────────────────────────────────────────────
-# ai.provider=vertex    → Claude via Vertex AI (uses Google ADC, no API key)
-# ai.provider=gemini    → Gemini via Vertex AI (uses Google ADC, no API key)
-# ai.provider=anthropic → Anthropic direct (local dev; requires ANTHROPIC_API_KEY)
-#
-# In production on Cloud Run, set AI_PROVIDER in env vars.
-# Vertex AI (vertex/gemini) is covered by the Google Cloud BAA — no separate Anthropic BAA needed.
-ai:
-  provider: ${AI_PROVIDER:gemini}
-
-# ── Anthropic direct (local dev only) ─────────────────────────────────────
-# Only used when ai.provider=anthropic.
-# Set ANTHROPIC_API_KEY in .env (gitignored). Never commit a real key.
-anthropic:
-  api-key: ${ANTHROPIC_API_KEY:}
-  base-url: https://api.anthropic.com
-  max-tokens: 4000
-
-# ── Vertex AI (production / HIPAA BAA path) ───────────────────────────────
-# Only used when ai.provider=vertex.
-# Authentication is via Application Default Credentials (ADC):
-#   - Cloud Run: service account attached to the revision (no env vars needed)
+# ── AI: Gemini via Vertex AI ──────────────────────────────────────────────
+# Gemini is the only model provider. It runs on Vertex AI under the project's
+# service account (Application Default Credentials — no API key) and is covered
+# by the Google Cloud BAA. Required IAM role on the SA: roles/aiplatform.user.
+#   - Cloud Run: service account attached to the revision
 #   - Local dev: run `gcloud auth application-default login` once
-#
-# Required IAM role on the service account: roles/aiplatform.user
-#
-# Find current model names at:
-#   GCP Console → Vertex AI → Model Garden → Anthropic Claude → View details
+
+# GCP project for Vertex AI (serves Gemini). Set via VERTEX_PROJECT_ID on Cloud Run.
 vertex:
   project-id: ${VERTEX_PROJECT_ID:}
-  location:   ${VERTEX_LOCATION:us-east5}
-  # Model name in Vertex "publisher/model@version" format.
-  # Update this when Anthropic releases new model versions in Model Garden.
-  model:      ${VERTEX_MODEL:claude-sonnet-4@20250514}
 
-# ── Gemini via Vertex AI ──────────────────────────────────────────────────
-# Only used when ai.provider=gemini. Same GCP project / ADC as vertex, but a
-# DIFFERENT region. Must be a concrete region (e.g. us-central1) or "global" —
-# the "us"/"eu" multi-region values are NOT valid Vertex hostnames. Gemini is
-# NOT served from Anthropic's "us-east5". us-central1 keeps data in the US.
-# Model names: GCP Console → Vertex AI → Model Garden → Gemini.
+# Gemini location must be a concrete region (e.g. us-central1) or "global" — the
+# "us"/"eu" multi-region values are NOT valid Vertex hostnames. us-central1 keeps
+# data in the US. Model names: GCP Console → Vertex AI → Model Garden → Gemini.
 gemini:
   location: ${GEMINI_LOCATION:global}
   model:    ${GEMINI_MODEL:gemini-2.5-flash}        # legacy single-model fallback
+  max-tokens: ${GEMINI_MAX_TOKENS:4000}
   # Tiered models: fast (chat + light docs) vs reasoning (signable clinical documents).
   model-fast:      ${GEMINI_MODEL_FAST:gemini-3.1-flash-lite}
   model-reasoning: ${GEMINI_MODEL_REASONING:gemini-2.5-pro}

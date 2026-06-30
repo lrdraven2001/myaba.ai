@@ -13,7 +13,7 @@ import type { NewChatData } from '../components/chat/NewChatModal';
 import FileAttachModal from '../components/chat/FileAttachModal';
 
 // ── Lightweight markdown renderer ────────────────────────────────────────────
-// Handles the patterns Claude commonly produces: headers, bold, italic,
+// Handles the patterns the model commonly produces: headers, bold, italic,
 // inline code, fenced code blocks, numbered/bulleted lists, and hr.
 // No external dependency needed.
 function MarkdownContent({ text }: { text: string }) {

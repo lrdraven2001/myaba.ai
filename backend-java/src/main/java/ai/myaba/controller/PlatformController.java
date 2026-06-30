@@ -101,7 +101,6 @@ public class PlatformController {
             @AuthenticationPrincipal AppUser user) {
         if (!isSuperAdmin(user)) return forbidden();
         // Never persist raw API keys to storage — reject key fields
-        updates.remove("anthropicApiKey");
         updates.remove("apiKey");
         updates.remove("dlpApiKey");
         platformService.updatePlatformConfig(updates);

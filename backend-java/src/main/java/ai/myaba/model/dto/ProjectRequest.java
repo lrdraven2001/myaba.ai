@@ -12,7 +12,7 @@ public class ProjectRequest {
     private String title;
     private String description;
     /**
-     * Custom system prompt injected into every Claude call made within this project.
+     * Custom system prompt injected into every Gemini call made within this project.
      * Think of it like project-level instructions — "You are helping a BCBA team review…"
      */
     private String instructions;

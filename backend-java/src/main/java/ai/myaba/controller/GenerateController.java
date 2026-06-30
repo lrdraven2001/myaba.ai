@@ -134,7 +134,7 @@ public class GenerateController {
             }
         }
 
-        // Usage limit check — after auth/hard-block/DLP (no tokens spent yet), before Claude
+        // Usage limit check — after auth/hard-block/DLP (no tokens spent yet), before Gemini
         if (!usageService.isWithinLimit(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
                     "error", "Monthly AI request limit reached for your plan. " +
@@ -185,7 +185,7 @@ public class GenerateController {
             rawOutput = contentNormalizationService.preferDisplayNames(rawOutput, List.of(client), true);
         }
 
-        // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
+        // Record usage — Gemini was called, tokens were spent regardless of ACLX outcome
         usageService.recordRequest(user.getOrgId(), "document");
 
         // Layer 3+4: ACLX output governance
@@ -480,7 +480,7 @@ public class GenerateController {
             }
         }
 
-        // Usage limit check — after auth/hard-block/input-guard, before Claude
+        // Usage limit check — after auth/hard-block/input-guard, before Gemini
         if (!usageService.isWithinLimit(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
                     "error", "Monthly AI request limit reached for your plan. " +
@@ -489,7 +489,7 @@ public class GenerateController {
             ));
         }
 
-        // Build message list for Claude
+        // Build message list for Gemini
         List<Map<String, String>> messages = new ArrayList<>();
         if (req.getHistory() != null) {
             req.getHistory().forEach(m ->
@@ -514,7 +514,7 @@ public class GenerateController {
             rawReply = contentNormalizationService.preferDisplayNames(rawReply, clientsById.values(), true);
         }
 
-        // Record usage — Claude was called, tokens were spent regardless of ACLX outcome
+        // Record usage — Gemini was called, tokens were spent regardless of ACLX outcome
         usageService.recordRequest(user.getOrgId(), "chat");
 
         // Layer 3+4: ACLX output governance (passes all client IDs for cross-client rules)
@@ -887,7 +887,7 @@ public class GenerateController {
     }
 
     /**
-     * Build the Claude system prompt for a chat request.
+     * Build the Gemini system prompt for a chat request.
      * Layers (in order):
      *   0. Base ABA clinical identity — always present
      *   1. Client context — when the chat has a clientId on file
@@ -975,7 +975,7 @@ public class GenerateController {
 
     /**
      * Format a client record into a structured context block for the system prompt.
-     * Only includes fields that are non-blank so Claude isn't given empty noise.
+     * Only includes fields that are non-blank so Gemini isn't given empty noise.
      */
     private String buildClientContextBlock(Map<String, Object> client) {
         StringBuilder sb = new StringBuilder();

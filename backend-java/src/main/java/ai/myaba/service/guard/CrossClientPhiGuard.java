@@ -14,7 +14,7 @@ import java.util.Optional;
 /**
  * Input guard against cross-client PHI references in chat messages.
  *
- * <p>Before a chat message is forwarded to Claude this guard checks whether the
+ * <p>Before a chat message is forwarded to Gemini this guard checks whether the
  * user's text references a client that is <em>not</em> in the current chat's
  * authorized scope.  The canonical trigger is a clinician typing something like
  * {@code "make a schedule like Jeff's for Jane"} inside Jane's chat — Jeff's PHI
@@ -25,7 +25,7 @@ import java.util.Optional;
  *   <li><strong>Input scan (this guard)</strong> — catches explicit name references
  *       before any tokens are spent and returns a redirect to the template workflow.</li>
  *   <li><strong>Context scoping</strong> — only records belonging to the chat's
- *       {@code clientIds} are injected into the Claude system prompt.</li>
+ *       {@code clientIds} are injected into the Gemini system prompt.</li>
  *   <li><strong>ACLX output detection</strong> — HIPAA Minimum Necessary check
  *       (45 CFR §164.514(d)) flags cross-patient PHI in the AI response.</li>
  * </ol>

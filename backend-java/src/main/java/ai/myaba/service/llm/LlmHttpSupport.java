@@ -15,9 +15,9 @@ import java.util.Collections;
 /**
  * Shared HTTP + Google ADC plumbing used by every {@link LlmProvider}.
  *
- * <p>Kept provider-agnostic so {@code ClaudeService}, {@code GeminiService}, and any
- * future provider reuse the same connection handling and short-lived credential
- * minting instead of duplicating it.
+ * <p>Kept provider-agnostic so {@code GeminiService} and any future provider reuse
+ * the same connection handling and short-lived credential minting instead of
+ * duplicating it.
  */
 @Component
 @RequiredArgsConstructor
@@ -61,11 +61,9 @@ public class LlmHttpSupport {
      *
      * @param endpoint    full URL
      * @param bearerToken value for the {@code Authorization} header, or {@code null}
-     * @param apiKey      Anthropic {@code x-api-key} value, or {@code null}
      */
     public HttpURLConnection openConnection(String endpoint,
-                                            String bearerToken,
-                                            String apiKey) throws IOException {
+                                            String bearerToken) throws IOException {
         HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(15_000);
@@ -74,10 +72,6 @@ public class LlmHttpSupport {
         conn.setRequestProperty("Content-Type", "application/json");
         if (bearerToken != null) {
             conn.setRequestProperty("Authorization", bearerToken);
-        }
-        if (apiKey != null) {
-            conn.setRequestProperty("x-api-key", apiKey);
-            conn.setRequestProperty("anthropic-version", "2023-06-01");
         }
         return conn;
     }

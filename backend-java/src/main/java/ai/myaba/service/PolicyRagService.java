@@ -109,7 +109,7 @@ public class PolicyRagService {
     }
 
     /**
-     * Build the policy section of a Claude system prompt.
+     * Build the policy section of a Gemini system prompt.
      *
      * <ul>
      *   <li>If the combined text of all requested policies is short enough, returns

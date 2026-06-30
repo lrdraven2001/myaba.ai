@@ -9,7 +9,7 @@ import java.util.Optional;
  * Contract for a single input guard in the pre-flight check pipeline.
  *
  * <p>Each guard is a Spring {@code @Component} that examines the raw chat message
- * before any tokens are sent to Claude.  Guards run in priority order (lowest
+ * before any tokens are sent to Gemini.  Guards run in priority order (lowest
  * {@link #order()} first) and the first violation wins — subsequent guards are
  * not evaluated.
  *

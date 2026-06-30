@@ -390,7 +390,7 @@ public class AclxService {
     }
 
     /**
-     * Evaluate user input text through ACLX before forwarding to Claude.
+     * Evaluate user input text through ACLX before forwarding to Gemini.
      *
      * <p>Sends the raw user message as if it were AI output — ACLX's HIPAA
      * detectors will catch SSNs, cross-client PHI, and other sensitive content
@@ -403,7 +403,7 @@ public class AclxService {
      *
      * @param inputText user's raw message text
      * @param user      requesting identity (for identity-aware detection)
-     * @return ACLX evaluation result; ALLOW means safe to forward to Claude
+     * @return ACLX evaluation result; ALLOW means safe to forward to Gemini
      */
     public AclxResponse evaluateInput(String inputText, AppUser user) {
         if (!enabled || inputText == null || inputText.isBlank()) {

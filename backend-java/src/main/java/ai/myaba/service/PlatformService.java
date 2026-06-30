@@ -43,8 +43,8 @@ public class PlatformService {
         if (!devMode) return;
 
         // ── Platform config ───────────────────────────────────────────────────
-        devConfig.put("anthropicModel",      "claude-sonnet-4-6");
-        devConfig.put("anthropicMaxTokens",  4000);
+        devConfig.put("geminiModelFast",      "gemini-3.1-flash-lite");
+        devConfig.put("geminiModelReasoning", "gemini-2.5-pro");
         devConfig.put("aclxEnabled",         false);
         devConfig.put("aclxGatewayUrl",      "http://localhost:8080");
         devConfig.put("dlpEnabled",          false);

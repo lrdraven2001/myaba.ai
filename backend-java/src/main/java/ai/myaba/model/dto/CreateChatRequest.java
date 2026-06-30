@@ -12,6 +12,6 @@ public class CreateChatRequest {
     private String clientId;         // null for project / general chats
     private String projectId;        // link to an existing project
     private String projectLabel;     // label when no projectId yet (new project chat)
-    /** Policy IDs whose text will be injected into the Claude system prompt for this chat. */
+    /** Policy IDs whose text will be injected into the Gemini system prompt for this chat. */
     private List<String> policyIds;
 }

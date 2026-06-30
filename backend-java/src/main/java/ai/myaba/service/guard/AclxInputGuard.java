@@ -13,10 +13,10 @@ import java.util.Optional;
 
 /**
  * Pre-flight input guard that evaluates the user's message through the ACLX
- * governance layer before forwarding it to Claude.
+ * governance layer before forwarding it to Gemini.
  *
  * <p>This guard runs after the local regex guards (prompt injection, sensitive
- * identifiers, cross-client PHI) and before any Claude tokens are spent.
+ * identifiers, cross-client PHI) and before any Gemini tokens are spent.
  * It provides ACLX's full DLP pipeline on user input — including cloud DLP
  * when {@code ENABLE_CLOUD_DLP=true} on the gateway — without duplicating
  * the local pattern logic.
@@ -68,7 +68,7 @@ public class AclxInputGuard implements InputGuard {
 
         if ("ESCALATE".equals(decision)) {
             // ESCALATE on input means "flag for review" — not a hard block.
-            // The message is allowed through; the output guard runs after Claude responds
+            // The message is allowed through; the output guard runs after Gemini responds
             // and will escalate the AI response to the review queue if needed.
             // Blocking user input on ESCALATE is too aggressive and prevents legitimate
             // messages from being processed when the org has no custom ACLX policy yet.

@@ -303,7 +303,7 @@ export interface Project {
   id: string;
   title: string;
   description: string;
-  /** Custom system prompt injected into every Claude call made within this project. */
+  /** Custom system prompt injected into every model call made within this project. */
   instructions?: string;
   orgId: string;
   ownerId: string;

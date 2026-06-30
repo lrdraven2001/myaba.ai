@@ -37,6 +37,6 @@ public interface LlmProvider {
         return complete(system, messages);
     }
 
-    /** Identifier used in logs, e.g. {@code "claude"} or {@code "gemini"}. */
+    /** Identifier used in logs, e.g. {@code "gemini"}. */
     String name();
 }

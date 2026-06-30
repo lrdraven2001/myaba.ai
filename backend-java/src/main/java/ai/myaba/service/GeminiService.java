@@ -15,21 +15,17 @@ import java.util.Map;
 /**
  * Gemini transport — calls Gemini via Vertex AI {@code generateContent}.
  *
- * <p>Uses the same GCP project, region, and Google ADC credentials as the Claude
- * Vertex path ({@link ClaudeService}), so it sits inside the same Google Cloud BAA
- * boundary — no separate vendor agreement is required.
+ * <p>Authenticates with Google ADC (the runtime service account), so it sits inside
+ * the Google Cloud BAA boundary — no separate vendor agreement or API key required.
  *
  * <p>This is a pure {@link LlmProvider} transport — it holds no prompt templates or
- * document orchestration (that lives in {@link AiService}). It is always available
- * as a bean; whether it is the <em>active</em> provider depends on
- * {@code ai.provider}. Set {@code AI_PROVIDER=gemini} to make it active.
+ * document orchestration (that lives in {@link AiService}).
  *
- * <h3>Schema differences from Claude</h3>
- * Gemini uses a different request/response shape:
+ * <h3>Gemini request/response schema</h3>
  * <ul>
  *   <li>system prompt → {@code systemInstruction.parts[].text}</li>
  *   <li>messages → {@code contents[]} with {@code role} of {@code user}/{@code model}
- *       (the Anthropic {@code assistant} role maps to {@code model}) and
+ *       (the internal {@code assistant} role maps to {@code model}) and
  *       {@code parts[].text} instead of a flat {@code content} string</li>
  *   <li>response text → {@code candidates[0].content.parts[0].text}</li>
  * </ul>
@@ -41,11 +37,10 @@ public class GeminiService implements LlmProvider {
     /** GCP project ID — required for Vertex AI. */
     private final String vertexProjectId;
     /**
-     * Gemini's Vertex region — separate from Claude's. Must be a concrete region
+     * Gemini's Vertex region. Must be a concrete region
      * (e.g. {@code us-central1} → host {@code us-central1-aiplatform.googleapis.com})
      * or {@code global} ({@code aiplatform.googleapis.com}). The {@code us}/{@code eu}
-     * multi-region values are NOT valid Vertex hostname prefixes. Gemini is NOT served
-     * from Anthropic's {@code us-east5}, which is why region is a per-model setting.
+     * multi-region values are NOT valid Vertex hostname prefixes.
      */
     private final String geminiLocation;
     /** Tier 1 — fast/cheap model (chat + lightweight docs), e.g. {@code gemini-3.1-flash-lite}. */
@@ -67,7 +62,7 @@ public class GeminiService implements LlmProvider {
             // Fast tier defaults to gemini.model-fast, then legacy gemini.model, then Flash-Lite.
             @Value("${gemini.model-fast:${gemini.model:gemini-3.1-flash-lite}}") String geminiModelFast,
             @Value("${gemini.model-reasoning:gemini-2.5-pro}")                   String geminiModelReasoning,
-            @Value("${anthropic.max-tokens:4000}")            int maxTokens,
+            @Value("${gemini.max-tokens:4000}")               int maxTokens,
             @Value("${gemini.max-tokens-reasoning:32768}")    int reasoningMaxTokens) {
         this.mapper               = mapper;
         this.http                 = http;
@@ -89,7 +84,7 @@ public class GeminiService implements LlmProvider {
      * {@code https://{host}/v1/projects/{projectId}/locations/{location}/
      * publishers/google/models/{model}:generateContent}
      *
-     * <p>Auth is the same short-lived ADC bearer token the Claude Vertex path uses.
+     * <p>Auth is a short-lived Google ADC bearer token (the runtime service account).
      */
     @Override
     public String complete(String system, List<Map<String, String>> messages) {
@@ -131,7 +126,7 @@ public class GeminiService implements LlmProvider {
                     .formatted(http.vertexHost(geminiLocation), vertexProjectId, geminiLocation)
                     + "/publishers/google/models/%s:generateContent".formatted(model);
 
-            // Map Anthropic-style messages → Gemini contents.
+            // Map internal assistant/user messages → Gemini contents.
             // role: "assistant" → "model"; everything else → "user".
             List<Map<String, Object>> contents = new ArrayList<>();
             for (Map<String, String> m : messages) {
@@ -148,7 +143,7 @@ public class GeminiService implements LlmProvider {
                     "generationConfig", generationConfig
             );
 
-            HttpURLConnection conn = http.openConnection(endpoint, "Bearer " + token, null);
+            HttpURLConnection conn = http.openConnection(endpoint, "Bearer " + token);
             http.sendBody(conn, body);
 
             int status = conn.getResponseCode();

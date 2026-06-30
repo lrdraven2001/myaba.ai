@@ -43,8 +43,6 @@ spec:
               value: "prod"
 
             # ── AI: tiered Gemini on Vertex (ADC = runtime service account) ──
-            - name: AI_PROVIDER
-              value: "gemini"
             - name: VERTEX_PROJECT_ID
               value: "myapaai"
             - name: GEMINI_LOCATION

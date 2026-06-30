@@ -608,7 +608,7 @@ function ProjectDetailView({
                   onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
                 />
                 <p className="text-xs text-gray-400 mt-1.5">
-                  These instructions are injected into every Claude conversation in this project.
+                  These instructions are injected into every model conversation in this project.
                 </p>
                 {instructionsDirty && (
                   <button
@@ -1172,7 +1172,7 @@ function AddKnowledgeDocModal({
               value={content}
               onChange={(e) => setContent(e.target.value)}
             />
-            <p className="text-xs text-gray-400 mt-1.5">Claude will reference this document in every chat in this project.</p>
+            <p className="text-xs text-gray-400 mt-1.5">The model will reference this document in every chat in this project.</p>
           </div>
         </div>
 

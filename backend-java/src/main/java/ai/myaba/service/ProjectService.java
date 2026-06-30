@@ -358,7 +358,7 @@ public class ProjectService {
     // ── System prompt builder ─────────────────────────────────────────────
 
     /**
-     * Build the Claude system prompt fragment for a project.
+     * Build the Gemini system prompt fragment for a project.
      * Combines the project's custom instructions with all attached knowledge documents.
      * Returns an empty string if the project has no instructions and no knowledge docs.
      */

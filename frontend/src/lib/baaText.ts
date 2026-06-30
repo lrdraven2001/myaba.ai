@@ -61,7 +61,7 @@ ARTICLE 2 — DESCRIPTION OF SERVICES AND PHI FLOWS
 
   (c) Document Storage. PHI and clinical documents are stored in Google Cloud Firestore, a managed NoSQL database service operated by Google LLC under Google's HIPAA Business Associate Agreement with Business Associate. Firestore data is encrypted at rest (AES-256) and in transit (TLS 1.2+). Each Covered Entity's data is logically isolated by a unique organization identifier.
 
-  (d) AI Processing Pipeline. When a user requests AI-assisted documentation generation, the request (including relevant PHI context) is transmitted to Google Cloud Vertex AI, which hosts Anthropic's Claude large language model. This transmission occurs within Google Cloud infrastructure under Google's HIPAA BAA, which covers Vertex AI. Anthropic does not receive PHI via a direct API connection; all AI calls flow exclusively through Vertex AI.
+  (d) AI Processing Pipeline. When a user requests AI-assisted documentation generation, the request (including relevant PHI context) is transmitted to Google Cloud Vertex AI, which hosts Google's Gemini large language model. This transmission occurs within Google Cloud infrastructure under Google's HIPAA BAA, which covers Vertex AI. No third-party AI vendor receives PHI; all AI calls flow exclusively through Google Cloud Vertex AI.
 
   (e) Output Governance Layer (ACLX). All AI-generated content is evaluated by the ACLX output governance system (also operated by Business Associate) prior to delivery to the end user. ACLX analyzes AI output for potential PHI exposure, HIPAA compliance risks, and clinical accuracy indicators, and may redact, block, or escalate content for human review.
 
@@ -118,11 +118,9 @@ ARTICLE 4 — OBLIGATIONS OF BUSINESS ASSOCIATE
   SUBPROCESSOR          | SERVICE                          | LOCATION
   ──────────────────────|──────────────────────────────────|─────────────────
   Google LLC            | Firebase Auth, Firestore,        | United States
-                        | Vertex AI (Claude hosting),      |
+                        | Vertex AI (Gemini model hosting),|
                         | Cloud Run (API hosting),         |
                         | Cloud Logging (audit logs)       |
-  Anthropic, PBC        | Claude LLM (via Vertex AI only;  | United States
-                        | no direct PHI transmission)      |
 
 4.6  HHS Access. Business Associate shall make its internal practices, books, and records relating to the use and disclosure of PHI available to the Secretary of HHS for purposes of determining compliance with HIPAA Rules.
 

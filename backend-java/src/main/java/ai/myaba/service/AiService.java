@@ -10,19 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Provider-agnostic AI generation facade.
+ * AI generation facade.
  *
  * <p>Owns the clinical prompt templates and document orchestration, and delegates
- * the actual model call to the {@link LlmProvider} selected by {@code ai.provider}:
- *
- * <ul>
- *   <li>{@code vertex} / {@code anthropic} → {@link ClaudeService} (Claude)</li>
- *   <li>{@code gemini} → {@link GeminiService} (Gemini via Vertex AI)</li>
- * </ul>
- *
- * <p>Both providers are always wired as beans, so switching is a config change only
- * ({@code AI_PROVIDER=...}) — no code changes and no redeploy of provider code.
- * Callers depend on this facade rather than any concrete provider.
+ * the actual model call to {@link GeminiService} (Gemini via Vertex AI — covered by
+ * the Google Cloud BAA). Callers depend on this facade rather than the concrete
+ * provider.
  */
 @Service
 @Slf4j
@@ -105,27 +98,20 @@ public class AiService {
             """
     );
 
-    private final ClaudeService claudeService;
     private final GeminiService geminiService;
-    private final String aiProvider;
 
-    public AiService(ClaudeService claudeService,
-                     GeminiService geminiService,
-                     @Value("${ai.provider:vertex}") String aiProvider) {
-        this.claudeService = claudeService;
+    public AiService(GeminiService geminiService) {
         this.geminiService = geminiService;
-        this.aiProvider    = aiProvider;
     }
 
     @PostConstruct
     void logActiveProvider() {
-        LlmProvider p = provider();
-        log.info("AiService initialized: ai.provider={} → {} transport", aiProvider, p.name());
+        log.info("AiService initialized: {} transport", geminiService.name());
     }
 
-    /** Select the active transport based on {@code ai.provider}. */
+    /** The active LLM transport (Gemini via Vertex AI). */
     private LlmProvider provider() {
-        return "gemini".equalsIgnoreCase(aiProvider) ? geminiService : claudeService;
+        return geminiService;
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
