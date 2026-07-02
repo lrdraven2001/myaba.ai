@@ -102,6 +102,12 @@ public class PolicyRequest {
     /** When true, the resource is archived (hidden from active lists, kept for restore). */
     private Boolean archived;
 
+    /**
+     * When true, the resource is HIPAA-marked: it can only be archived, and hard
+     * deletion is allowed no sooner than 7 days after archiving (enforced server-side).
+     */
+    private Boolean hipaaMarked;
+
     /** IDs of templates/clients this resource is linked to (drives the "Linked to" count). */
     private List<String> linkedIds;
 }

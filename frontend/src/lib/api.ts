@@ -127,6 +127,8 @@ export interface ResourceInput {
   documentType?: string;
   customized?: boolean;
   clientId?: string;
+  /** Archive-first: HIPAA-marked resources can only be deleted 7 days after archiving. */
+  hipaaMarked?: boolean;
   description?: string;
   /** Topical category pill (Billing | Clinical | Supervision | …). */
   topicCategory?: string;

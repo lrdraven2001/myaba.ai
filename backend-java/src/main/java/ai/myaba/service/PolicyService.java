@@ -278,6 +278,7 @@ public class PolicyService {
         if (req.getFolder() != null) data.put("folder", req.getFolder());
         data.put("shared",        req.getShared()   != null ? req.getShared()   : true);
         data.put("archived",      req.getArchived() != null ? req.getArchived() : false);
+        data.put("hipaaMarked",   req.getHipaaMarked() != null ? req.getHipaaMarked() : false);
         data.put("linkedIds",     req.getLinkedIds() != null ? req.getLinkedIds() : List.of());
         data.put("orgId",       user.getOrgId());
         data.put("createdBy",   user.getUid());
@@ -322,7 +323,12 @@ public class PolicyService {
         if (req.getUrl() != null)           updates.put("url", req.getUrl());
         if (req.getFolder() != null)        updates.put("folder", req.getFolder());
         if (req.getShared() != null)        updates.put("shared", req.getShared());
-        if (req.getArchived() != null)      updates.put("archived", req.getArchived());
+        if (req.getArchived() != null) {
+            updates.put("archived", req.getArchived());
+            // Stamp when archiving; clear on restore. Drives the HIPAA 7-day delete gate.
+            updates.put("archivedAt", req.getArchived() ? TimestampUtil.now() : null);
+        }
+        if (req.getHipaaMarked() != null)   updates.put("hipaaMarked", req.getHipaaMarked());
         if (req.getLinkedIds() != null)     updates.put("linkedIds", req.getLinkedIds());
         updates.put("updatedAt", TimestampUtil.now());
 
@@ -348,7 +354,8 @@ public class PolicyService {
 
     /** Delete a policy. Caller must have already verified admin access. */
     public void deletePolicy(AppUser user, String policyId) throws Exception {
-        fetchPolicy(user.getOrgId(), policyId); // ensure it exists
+        Map<String, Object> policy = fetchPolicy(user.getOrgId(), policyId); // ensure it exists
+        enforceHipaaDeleteGate(policy);
         if (devMode) {
             devPolicies.remove(policyId);
             if (policyRagService != null) policyRagService.removePolicy(user.getOrgId(), policyId);
@@ -361,6 +368,41 @@ public class PolicyService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    /** Retention window before a HIPAA-marked resource may be hard-deleted from the archive. */
+    private static final long HIPAA_DELETE_WAIT_DAYS = 7;
+
+    /**
+     * HIPAA-marked resources are archive-first: they must be archived, and hard
+     * deletion only unlocks {@value #HIPAA_DELETE_WAIT_DAYS} days after archiving.
+     *
+     * @throws IllegalArgumentException (→ HTTP 400) when the gate blocks deletion
+     */
+    private void enforceHipaaDeleteGate(Map<String, Object> policy) {
+        if (!Boolean.TRUE.equals(policy.get("hipaaMarked"))) return;
+        if (!Boolean.TRUE.equals(policy.get("archived"))) {
+            throw new IllegalArgumentException(
+                    "This item is HIPAA-marked — archive it first. Deletion unlocks "
+                    + HIPAA_DELETE_WAIT_DAYS + " days after archiving.");
+        }
+        Object archivedAt = policy.get("archivedAt");
+        java.time.Instant since;
+        try {
+            since = java.time.Instant.parse(String.valueOf(archivedAt));
+        } catch (Exception e) {
+            // No/invalid stamp (archived before this feature) — start the clock now.
+            throw new IllegalArgumentException(
+                    "This HIPAA-marked item has no archive timestamp yet — re-archive it to start the "
+                    + HIPAA_DELETE_WAIT_DAYS + "-day deletion window.");
+        }
+        java.time.Instant unlocksAt = since.plus(HIPAA_DELETE_WAIT_DAYS, java.time.temporal.ChronoUnit.DAYS);
+        if (java.time.Instant.now().isBefore(unlocksAt)) {
+            long daysLeft = java.time.Duration.between(java.time.Instant.now(), unlocksAt).toDays() + 1;
+            throw new IllegalArgumentException(
+                    "This HIPAA-marked item was archived less than " + HIPAA_DELETE_WAIT_DAYS
+                    + " days ago — deletion unlocks in about " + daysLeft + " day(s).");
+        }
+    }
 
     private Map<String, Object> fetchPolicy(String orgId, String policyId) throws Exception {
         if (devMode) {

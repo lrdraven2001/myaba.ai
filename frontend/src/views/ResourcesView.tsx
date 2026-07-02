@@ -40,6 +40,10 @@ interface Resource {
   folder?: string;
   shared?: boolean;
   archived?: boolean;
+  /** ISO timestamp set when archived — drives the HIPAA 7-day delete gate. */
+  archivedAt?: string;
+  /** Archive-first: delete unlocks 7 days after archiving (server-enforced). */
+  hipaaMarked?: boolean;
   linkedIds?: string[];
   clientId?: string;
   textContent?: string;
@@ -307,7 +311,11 @@ function ResourceManager({
 
   // ── Actions ──
   const archive = async (r: Resource, val: boolean) => { await api.setResourceArchived(r.id, val).catch(() => {}); setSelectedId(null); onChanged(); };
-  const del     = async (r: Resource) => { await api.deletePolicy(r.id).catch(() => {}); setSelectedId(null); onChanged(); };
+  // Surface delete failures — the server may refuse (e.g. HIPAA 7-day archive gate).
+  const del     = async (r: Resource) => {
+    try { await api.deletePolicy(r.id); } catch (e) { alert(e instanceof Error ? e.message : 'Delete failed.'); }
+    setSelectedId(null); onChanged();
+  };
 
   const openAdd = () => {
     if (tab === 'templates') setForm({ open: true, custom: true });
@@ -522,8 +530,23 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
   onSelect: (id: string) => void; onArchive: (r: Resource) => void; onDelete: (r: Resource) => void;
   onEdit: (r: Resource) => void; isAdmin: boolean;
 }) {
-  const [menuId, setMenuId] = useState<string | null>(null);
+  // Menu uses fixed positioning (anchored to the trigger's rect) so it can't be
+  // clipped by the table's overflow-hidden container.
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const menuId = menu?.id ?? null;
   const showSourceType = tab === 'library';
+
+  /** Delete rules for HIPAA-marked rows: archive-first, unlock 7 days later. */
+  const deleteState = (r: Resource): { allowed: boolean; label: string } => {
+    if (!r.hipaaMarked) return { allowed: true, label: 'Delete' };
+    if (!r.archived) return { allowed: false, label: 'Delete (archive first)' };
+    if (!r.archivedAt) return { allowed: false, label: 'Delete (re-archive to start 7-day clock)' };
+    const unlockMs = new Date(r.archivedAt).getTime() + 7 * 24 * 3600 * 1000;
+    const daysLeft = Math.ceil((unlockMs - Date.now()) / (24 * 3600 * 1000));
+    return daysLeft > 0
+      ? { allowed: false, label: `Delete (in ${daysLeft}d)` }
+      : { allowed: true, label: 'Delete' };
+  };
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <table className="w-full text-sm">
@@ -591,15 +614,29 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
                 </td>
                 <td className="px-3 py-3 text-right relative" onClick={(e) => e.stopPropagation()}>
                   {isAdmin && (
-                    <button onClick={() => setMenuId(menuId === r.id ? null : r.id)} className="w-7 h-7 rounded hover:bg-gray-100 text-gray-400">
+                    <button
+                      onClick={(e) => {
+                        if (menuId === r.id) { setMenu(null); return; }
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setMenu({ id: r.id, x: rect.right, y: rect.bottom + 4 });
+                      }}
+                      className="w-7 h-7 rounded hover:bg-gray-100 text-gray-400"
+                    >
                       <FontAwesomeIcon icon={faEllipsisH} style={{ fontSize: 13 }} />
                     </button>
                   )}
-                  {menuId === r.id && (
-                    <div className="absolute right-3 top-10 z-20 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-40 text-left" onMouseLeave={() => setMenuId(null)}>
-                      <MenuItem icon={faPen} label="Edit" onClick={() => { setMenuId(null); onEdit(r); }} />
-                      <MenuItem icon={r.archived ? faRotateLeft : faBoxArchive} label={r.archived ? 'Restore' : 'Archive'} onClick={() => { setMenuId(null); onArchive(r); }} />
-                      <MenuItem icon={faTrash} label="Delete" danger onClick={() => { setMenuId(null); onDelete(r); }} />
+                  {menuId === r.id && menu && (
+                    <div
+                      className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-56 text-left"
+                      style={{ top: menu.y, left: Math.max(8, menu.x - 224) }}
+                      onMouseLeave={() => setMenu(null)}
+                    >
+                      <MenuItem icon={faPen} label="Edit" onClick={() => { setMenu(null); onEdit(r); }} />
+                      <MenuItem icon={r.archived ? faRotateLeft : faBoxArchive} label={r.archived ? 'Restore' : 'Archive'} onClick={() => { setMenu(null); onArchive(r); }} />
+                      {(() => { const d = deleteState(r); return (
+                        <MenuItem icon={faTrash} label={d.label} danger disabled={!d.allowed}
+                          onClick={() => { if (!d.allowed) return; setMenu(null); onDelete(r); }} />
+                      ); })()}
                     </div>
                   )}
                 </td>
@@ -612,9 +649,15 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
   );
 }
 
-function MenuItem({ icon, label, onClick, danger }: { icon: typeof faPen; label: string; onClick: () => void; danger?: boolean }) {
+function MenuItem({ icon, label, onClick, danger, disabled }: { icon: typeof faPen; label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-gray-50" style={{ color: danger ? '#DC2626' : '#374151' }}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? 'HIPAA-marked — archive first; deletion unlocks 7 days after archiving.' : undefined}
+      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:cursor-not-allowed"
+      style={{ color: disabled ? '#9CA3AF' : danger ? '#DC2626' : '#374151' }}
+    >
       <FontAwesomeIcon icon={icon} style={{ fontSize: 12, width: 14 }} /> {label}
     </button>
   );
@@ -783,17 +826,26 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
   const [folder, setFolder]     = useState(editing?.folder ?? '');
   const [shared] = useState(editing?.shared ?? true);
   const [content, setContent]   = useState(editing?.textContent ?? (presetDoc ? defaultTemplateFor(presetDoc) : ''));
+  const [hipaaMarked, setHipaaMarked] = useState(editing?.hipaaMarked ?? false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
 
-  const uploadDocx = async (f: File) => {
+  // Upload any supported document (Word/PDF/Excel/text) — extracted server-side.
+  const uploadFile = async (f: File) => {
     setUploading(true); setError('');
     try {
-      const text = await api.extractTemplateDocx(f);
-      setContent(text); setFileType('DOCX'); setSource('UPLOAD');
-      if (!title) setTitle(f.name.replace(/\.docx$/i, ''));
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to read Word file.'); }
+      if (/\.(txt|md|text)$/i.test(f.name)) {
+        setContent(await f.text());
+      } else {
+        const { text } = await api.extractAttachment(f);
+        if (!text.trim()) { setError(`No readable text found in “${f.name}”.`); setUploading(false); return; }
+        setContent(text);
+      }
+      setFileType(/\.docx$/i.test(f.name) ? 'DOCX' : /\.pdf$/i.test(f.name) ? 'PDF' : 'TEXT');
+      setSource('UPLOAD');
+      if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to read the file.'); }
     finally { setUploading(false); }
   };
 
@@ -820,6 +872,7 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
       url: url.trim() || undefined,
       folder: folder.trim() || undefined,
       shared,
+      hipaaMarked,
       isActive: true,
     };
     try {
@@ -891,18 +944,27 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
             <Field label="Link URL"><input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} placeholder="https://…" /></Field>
           )}
 
-          {/* Word upload for templates + library docs */}
-          {(isTemplate || tab === 'library') && (
-            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer" style={{ borderColor: '#1E88FF', color: '#1E88FF' }}>
-              <FontAwesomeIcon icon={uploading ? faSpinner : faWordUpload} className={uploading ? 'animate-spin' : ''} />
-              {uploading ? 'Reading…' : 'Upload Word (.docx)'}
-              <input type="file" accept=".docx" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDocx(f); e.target.value = ''; }} />
-            </label>
-          )}
+          {/* Document upload — all buckets (templates, policies, library, grounding) */}
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer" style={{ borderColor: '#1E88FF', color: '#1E88FF' }}>
+            <FontAwesomeIcon icon={uploading ? faSpinner : faWordUpload} className={uploading ? 'animate-spin' : ''} />
+            {uploading ? 'Reading…' : 'Upload document (Word / PDF / Excel / text)'}
+            <input type="file" accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }} />
+          </label>
 
           <Field label="Content">
             <textarea rows={7} value={content} onChange={(e) => setContent(e.target.value)} className={`${inputCls} font-mono`} style={{ resize: 'vertical', lineHeight: 1.6 }} placeholder="Paste or type the content here…" />
           </Field>
+
+          {/* HIPAA marking — archive-first lifecycle */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" className="mt-0.5 accent-teal-700" checked={hipaaMarked} onChange={(e) => setHipaaMarked(e.target.checked)} />
+            <span className="text-sm text-gray-700">
+              Contains HIPAA-sensitive content
+              <span className="block text-xs text-gray-400 mt-0.5">
+                HIPAA-marked items can only be archived; deletion unlocks 7 days after archiving.
+              </span>
+            </span>
+          </label>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
