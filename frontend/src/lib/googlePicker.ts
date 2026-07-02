@@ -123,3 +123,48 @@ export async function openDrivePicker(mode: 'file' | 'folder' = 'folder'): Promi
   const token = await getAccessToken();
   return showPicker(token, mode);
 }
+
+/** Result of picking + downloading a Drive file for import. */
+export interface DriveImport {
+  name: string;
+  /** Plain text — set for Google-native Docs/Sheets (exported directly). */
+  text?: string;
+  /** Binary upload — set for regular files (docx/pdf/xlsx/…); extract server-side. */
+  file?: File;
+}
+
+const GOOGLE_DOC   = 'application/vnd.google-apps.document';
+const GOOGLE_SHEET = 'application/vnd.google-apps.spreadsheet';
+
+/**
+ * Pick a file from Google Drive and download its content for import (null if
+ * the user cancels). Google-native Docs/Sheets are exported as text/CSV;
+ * regular files come back as a File for server-side text extraction.
+ * @throws for unsupported Google-native types (Slides, Forms, …) or download errors.
+ */
+export async function importDriveFile(): Promise<DriveImport | null> {
+  if (!isPickerConfigured()) throw new Error('Google Drive Picker is not configured');
+  const token = await getAccessToken();
+  const item = await showPicker(token, 'file');
+  if (!item) return null;
+
+  const auth = { headers: { Authorization: `Bearer ${token}` } };
+
+  if (item.mimeType.startsWith('application/vnd.google-apps')) {
+    const exportMime = item.mimeType === GOOGLE_DOC ? 'text/plain'
+                     : item.mimeType === GOOGLE_SHEET ? 'text/csv'
+                     : null;
+    if (!exportMime) {
+      throw new Error(`"${item.name}" is a Google ${item.mimeType.split('.').pop()} — only Docs, Sheets, and regular files can be imported.`);
+    }
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${item.id}/export?mimeType=${encodeURIComponent(exportMime)}`, auth);
+    if (!res.ok) throw new Error(`Could not read "${item.name}" from Drive (HTTP ${res.status}).`);
+    return { name: item.name, text: await res.text() };
+  }
+
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${item.id}?alt=media`, auth);
+  if (!res.ok) throw new Error(`Could not download "${item.name}" from Drive (HTTP ${res.status}).`);
+  const blob = await res.blob();
+  return { name: item.name, file: new File([blob], item.name, { type: blob.type }) };
+}

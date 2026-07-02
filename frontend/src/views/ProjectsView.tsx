@@ -6,7 +6,9 @@ import {
   faCheck, faShieldAlt, faUsers, faChevronDown, faChevronRight,
   faArrowLeft, faExclamationTriangle, faUpload, faBookOpen,
 } from '@fortawesome/free-solid-svg-icons';
+import { faGoogleDrive } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
+import { importDriveFile, isPickerConfigured } from '../lib/googlePicker';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminRole } from '../types';
 import type { Project, ProjectKnowledgeDoc, Chat } from '../types';
@@ -1144,6 +1146,26 @@ function AddKnowledgeDocModal({
   const [fileError, setFileError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Import a file straight from Google Drive (Docs/Sheets export as text;
+  // regular files go through the backend extractor). Hidden when the Drive
+  // Picker isn't configured.
+  const handleDriveImport = async () => {
+    setFileError('');
+    setReading(true);
+    try {
+      const picked = await importDriveFile();
+      if (!picked) return; // user cancelled
+      if (!title) setTitle(picked.name.replace(/\.[^.]+$/, ''));
+      const text = picked.text ?? (picked.file ? (await api.extractAttachment(picked.file)).text : '');
+      if (!text.trim()) { setFileError(`No readable text found in “${picked.name}”.`); return; }
+      setContent(text);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Could not import from Google Drive.');
+    } finally {
+      setReading(false);
+    }
+  };
+
   // Word/PDF/Excel go through the backend extractor; plain text reads locally.
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1214,14 +1236,26 @@ function AddKnowledgeDocModal({
               <label className="text-xs font-medium text-gray-500">
                 Content <span className="text-red-400">*</span>
               </label>
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={reading}
-                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors disabled:opacity-60"
-              >
-                <FontAwesomeIcon icon={reading ? faSpinner : faUpload} className={reading ? 'animate-spin' : ''} style={{ fontSize: 10 }} />
-                {reading ? 'Reading file…' : 'Upload file'}
-              </button>
+              <div className="flex items-center gap-1.5">
+                {isPickerConfigured() && (
+                  <button
+                    onClick={handleDriveImport}
+                    disabled={reading}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors disabled:opacity-60"
+                  >
+                    <FontAwesomeIcon icon={faGoogleDrive} style={{ fontSize: 10 }} />
+                    Google Drive
+                  </button>
+                )}
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={reading}
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors disabled:opacity-60"
+                >
+                  <FontAwesomeIcon icon={reading ? faSpinner : faUpload} className={reading ? 'animate-spin' : ''} style={{ fontSize: 10 }} />
+                  {reading ? 'Reading…' : 'Upload file'}
+                </button>
+              </div>
             </div>
             <input ref={fileRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
             {fileError && <p className="text-xs text-red-500 mb-1.5">{fileError}</p>}
