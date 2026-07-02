@@ -618,7 +618,11 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
                       onClick={(e) => {
                         if (menuId === r.id) { setMenu(null); return; }
                         const rect = e.currentTarget.getBoundingClientRect();
-                        setMenu({ id: r.id, x: rect.right, y: rect.bottom + 4 });
+                        // Flip the menu above the trigger when there isn't room below
+                        // (e.g. the last row, near the bottom of the viewport).
+                        const MENU_H = 128;
+                        const openUp = rect.bottom + MENU_H > window.innerHeight - 8;
+                        setMenu({ id: r.id, x: rect.right, y: openUp ? rect.top - MENU_H : rect.bottom + 4 });
                       }}
                       className="w-7 h-7 rounded hover:bg-gray-100 text-gray-400"
                     >
