@@ -86,6 +86,7 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
   const [showSortMenu, setShowSortMenu]     = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showNewClient, setShowNewClient]   = useState(false);
+  const [orgMembers, setOrgMembers]         = useState<MemberLike[]>([]);
 
   // Load clients + insurance companies
   useEffect(() => {
@@ -98,6 +99,8 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
       api.getInsuranceCompanies(currentUser.orgId)
         .then((r) => setInsurers(r.companies ?? []))
         .catch(() => {});
+      // Org members — used to render actual team-member names on client rows.
+      api.getOrgMembers(currentUser.orgId).then(setOrgMembers).catch(() => {});
     }
   }, [currentUser?.orgId]);
 
@@ -527,6 +530,7 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
                 <ClientRow
                   key={client.id}
                   client={client}
+                  members={orgMembers}
                   onSelect={handleSelectClient}
                   onStartChat={onStartChat ? () => onStartChat(client.id) : undefined}
                   onArchive={(archived) => handleArchiveClient(client, archived)}
@@ -567,19 +571,32 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
 // ── Client row ────────────────────────────────────────────────────────────────
 
 function ClientRow({
-  client, onSelect, onStartChat, onArchive, onExport, exporting,
+  client, members, onSelect, onStartChat, onArchive, onExport, exporting,
 }: {
   client: Client;
+  members?: MemberLike[];
   onSelect: (c: Client) => void;
   onStartChat?: () => void;
   onArchive?: (archived: boolean) => void;
   onExport?: () => void;
   exporting?: boolean;
 }) {
-  const teamCount = new Set(
+  // Distinct assigned team members, treating BCBA first, resolved to names.
+  const teamIds = Array.from(new Set(
     [client.treatingBcbaId, client.supervisingBcbaId, ...(client.supervisorIds ?? []), ...(client.rbtIds ?? [])]
-      .filter(Boolean),
-  ).size;
+      .filter((id): id is string => Boolean(id)),
+  ));
+  const memberName = (uid: string) => {
+    const m = members?.find((x) => x.id === uid);
+    const full = m?.name || m?.displayName || m?.email || '';
+    if (!full) return null; // unknown/deactivated uid — skip rather than show a raw id
+    if (full.includes('@')) return full.split('@')[0];
+    const parts = full.trim().split(/\s+/);
+    return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+  };
+  const teamNames = teamIds.map(memberName).filter((n): n is string => Boolean(n));
+  const shownNames = teamNames.slice(0, 3);
+  const moreCount = teamNames.length - shownNames.length;
   return (
     <div
       className="w-full bg-white rounded-xl px-5 py-4 flex items-center gap-4 transition-all group"
@@ -616,12 +633,28 @@ function ClientRow({
           {client.dateOfBirth && client.primaryInsurance && <span>•</span>}
           {client.primaryInsurance && <span>{client.primaryInsurance}</span>}
         </div>
-        {/* Treatment-team + last-updated pills */}
+        {/* Treatment-team (named) + last-updated pills */}
         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#EEF7EA', color: '#2E7D22' }}>
-            <FontAwesomeIcon icon={faUsers} style={{ fontSize: 9 }} />
-            {teamCount} on team
-          </span>
+          {shownNames.length === 0 ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700">
+              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 9 }} />
+              Unassigned
+            </span>
+          ) : (
+            <>
+              {shownNames.map((n) => (
+                <span key={n} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#EEF7EA', color: '#2E7D22' }}>
+                  <FontAwesomeIcon icon={faUsers} style={{ fontSize: 9 }} />
+                  {n}
+                </span>
+              ))}
+              {moreCount > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500">
+                  +{moreCount} more
+                </span>
+              )}
+            </>
+          )}
           {client.updatedAt && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-500">
               Updated {new Date(client.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
