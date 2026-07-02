@@ -182,10 +182,11 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
   const roleLabel = invitePreview?.role?.replace(/_/g, ' ') ?? '';
 
   return (
+    <div style={{ height: '100vh', overflowY: 'auto', background: '#F0F7FA' }}>
     <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      minHeight: '100%', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#F0F7FA', padding: '32px 16px',
+      padding: '32px 16px', boxSizing: 'border-box',
     }}>
       {/* Logo */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
@@ -400,6 +401,7 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
       <p style={{ fontSize: 11, color: '#A8B4BF', marginTop: 20 }}>
         HIPAA-compliant platform · All data encrypted in transit
       </p>
+    </div>
     </div>
   );
 }

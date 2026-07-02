@@ -134,6 +134,17 @@ public class OrgController {
                     .body(Map.of("error", "Admin access required"));
         }
 
+        // Server-side floor on data retention — never trust the client. 30-day
+        // minimum; audit logs keep their own HIPAA 6-year floor regardless.
+        Object retention = settings.get("retentionDays");
+        if (retention != null) {
+            if (!(retention instanceof Number n) || n.intValue() < 30) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "retentionDays must be a number of at least 30 (days)"));
+            }
+            settings.put("retentionDays", n.intValue());
+        }
+
         try {
             orgService.updateOrgSettings(orgId, settings);
             return ResponseEntity.noContent().build();

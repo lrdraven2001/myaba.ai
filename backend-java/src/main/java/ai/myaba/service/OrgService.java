@@ -314,6 +314,57 @@ public class OrgService {
         }
     }
 
+    /**
+     * Lists all Pathfinder allowlist entries (platform-admin console).
+     * Each entry: { email, approvedBy, approvedAt, note, used, usedByUid, usedAt, orgId }.
+     */
+    public List<Map<String, Object>> listApprovedCreators() throws Exception {
+        if (devMode) return new ArrayList<>();
+        Firestore db = FirestoreClient.getFirestore();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var doc : db.collection(APPROVED_CREATORS).get().get().getDocuments()) {
+            Map<String, Object> entry = new HashMap<>(doc.getData());
+            entry.put("email", doc.getId());
+            out.add(entry);
+        }
+        out.sort((a, b) -> String.valueOf(b.getOrDefault("approvedAt", ""))
+                .compareTo(String.valueOf(a.getOrDefault("approvedAt", ""))));
+        return out;
+    }
+
+    /**
+     * Adds (or re-approves) an email on the Pathfinder allowlist. Re-adding a
+     * consumed entry resets {@code used=false} so the same email can provision
+     * again — useful after test runs or a botched setup.
+     *
+     * @throws IllegalArgumentException on a malformed email
+     */
+    public void addApprovedCreator(String email, String note, String approvedByUid) throws Exception {
+        String id = email == null ? "" : email.trim().toLowerCase();
+        if (!id.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("Invalid email address: " + email);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("approvedBy", approvedByUid);
+        data.put("approvedAt", TimestampUtil.now());
+        data.put("note",       note != null ? note : "");
+        data.put("used",       false);
+        if (devMode) return;
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection(APPROVED_CREATORS).document(id).set(data).get();
+        log.info("Approved-creator entry added/reset: {} (by {})", id, approvedByUid);
+    }
+
+    /** Removes an email from the Pathfinder allowlist. Idempotent. */
+    public void revokeApprovedCreator(String email) throws Exception {
+        String id = email == null ? "" : email.trim().toLowerCase();
+        if (id.isBlank()) throw new IllegalArgumentException("Email is required");
+        if (devMode) return;
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection(APPROVED_CREATORS).document(id).delete().get();
+        log.info("Approved-creator entry revoked: {}", id);
+    }
+
     /** Marks an approved-creator entry consumed after a successful org creation. */
     private void markOrgCreatorUsed(String email, String uid, String orgId) {
         if (email == null || email.isBlank()) return;

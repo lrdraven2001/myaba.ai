@@ -135,6 +135,15 @@ rate-limit:
 retention:
   audit-log-days: ${RETENTION_AUDIT_LOG_DAYS:2555}
 
+# ── Platform admin (vendor tier) ──────────────────────────────────────────
+# Comma-separated emails of vendor operators allowed to use /api/platform
+# (the admin.myaba.ai console). This is a SEPARATE tier from customer roles —
+# ORG_SUPER_ADMIN does NOT grant platform access. Fails closed when unset.
+#   gcloud run services update myaba-api \
+#     --update-env-vars PLATFORM_ADMIN_EMAILS=chris@cbhunt.net
+platform:
+  admin-emails: ${PLATFORM_ADMIN_EMAILS:}
+
 # ── Dev mode ──────────────────────────────────────────────────────────────
 # Set DEV_AUTH=true to skip Firebase token verification and use a stub user.
 # NEVER enable in production.
