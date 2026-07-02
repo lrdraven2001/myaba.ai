@@ -108,13 +108,14 @@ export default function LoginView({ invitePreview }: Props = {}) {
   const isRegister = mode === 'register';
 
   return (
+    <div style={{ height: '100vh', overflowY: 'auto', background: '#F0F7FA' }}>
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100%',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#F0F7FA',
       padding: 24,
+      boxSizing: 'border-box',
     }}>
       {/* Second-factor (TOTP) challenge — shown when an enrolled-MFA sign-in is paused */}
       {mfaChallengePending && (
@@ -394,6 +395,7 @@ export default function LoginView({ invitePreview }: Props = {}) {
             : 'Pathfinder Beta · Access by invitation only'}
         </p>
       </div>
+    </div>
     </div>
   );
 }
