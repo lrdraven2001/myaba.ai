@@ -27,10 +27,12 @@ if (!DEV_AUTH) {
   db      = getFirestore(app);
   storage = getStorage(app);
 
-  // Connect to local emulators when the URL env var is present.
-  // This is set in docker-compose.yml for local dev and unset in production.
+  // Connect to local emulators when the URL env var is present — DEV BUILDS ONLY.
+  // The import.meta.env.DEV guard is a hard stop: Vite loads .env.local into
+  // production builds too, and a leaked emulator URL once routed PRODUCTION
+  // sign-in to the emulator. Keep emulator config in .env.development.local.
   const authEmulatorUrl = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL;
-  if (authEmulatorUrl) {
+  if (authEmulatorUrl && import.meta.env.DEV) {
     // disableWarnings suppresses the console banner — still secure, just noisy
     connectAuthEmulator(auth, authEmulatorUrl, { disableWarnings: true });
     // Firestore emulator always runs alongside auth emulator in local stack

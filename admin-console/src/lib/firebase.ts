@@ -18,7 +18,9 @@ if (!DEV_AUTH) {
     appId:             import.meta.env.VITE_FIREBASE_APP_ID,
   });
   auth = getAuth(app);
-  if (EMULATOR_URL) {
+  // DEV guard is a hard stop — Vite loads .env.local into production builds
+  // too; emulator config must never reach a deployed bundle.
+  if (EMULATOR_URL && import.meta.env.DEV) {
     connectAuthEmulator(auth, EMULATOR_URL, { disableWarnings: true });
   }
 } else {
