@@ -37,6 +37,25 @@
         },
         { "source": "**", "destination": "/index.html" }
       ]
+    },
+    {
+      "target": "admin",
+      "public": "admin-console/dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "/api/**",
+          "run": {
+            "serviceId": "myaba-api",
+            "region": "us-central1"
+          }
+        },
+        { "source": "**", "destination": "/index.html" }
+      ]
     }
   ],
   "emulators": {

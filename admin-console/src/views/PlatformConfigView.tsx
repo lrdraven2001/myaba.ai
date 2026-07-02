@@ -31,13 +31,11 @@ export default function PlatformConfigView() {
   const [cfg, setCfg]       = useState<PlatformConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // AI state
-  const [model, setModel]         = useState('claude-sonnet-4-6');
-  const [maxTokens, setMaxTokens] = useState('4000');
-  const [apiKey, setApiKey]       = useState('');
-  const [showKey, setShowKey]     = useState(false);
+  // AI state — Gemini on Vertex AI (ADC, no API key). Models are set via
+  // GEMINI_MODEL_FAST / GEMINI_MODEL_REASONING env vars; shown here read-only.
+  const [modelFast, setModelFast]           = useState('gemini-3.1-flash-lite');
+  const [modelReasoning, setModelReasoning] = useState('gemini-2.5-pro');
   const [testState, setTestState] = useState<'idle'|'testing'|'ok'|'fail'>('idle');
-  const [aiSave, setAiSave]       = useState<SaveState>('idle');
 
   // DLP state
   const [dlpEnabled, setDlpEnabled]     = useState(false);
@@ -60,15 +58,15 @@ export default function PlatformConfigView() {
       try {
         const c = await api.getPlatformConfig();
         setCfg(c);
-        setModel(c.anthropicModel);
-        setMaxTokens(String(c.anthropicMaxTokens));
-        setDlpEnabled(c.dlpEnabled);
-        setGcpProject(c.dlpGcpProjectId);
-        setGcpLocation(c.dlpLocation);
-        setDlpLikelihood(c.dlpLikelihood);
-        setDlpInfoTypes(c.dlpInfoTypes);
-        setAclxEnabled(c.aclxEnabled);
-        setAclxUrl(c.aclxGatewayUrl);
+        if (c.geminiModelFast)      setModelFast(c.geminiModelFast);
+        if (c.geminiModelReasoning) setModelReasoning(c.geminiModelReasoning);
+        setDlpEnabled(c.dlpEnabled ?? false);
+        setGcpProject(c.dlpGcpProjectId ?? '');
+        setGcpLocation(c.dlpLocation ?? 'global');
+        setDlpLikelihood(c.dlpLikelihood ?? 'LIKELY');
+        if (c.dlpInfoTypes?.length) setDlpInfoTypes(c.dlpInfoTypes);
+        setAclxEnabled(c.aclxEnabled ?? false);
+        setAclxUrl(c.aclxGatewayUrl ?? 'http://localhost:8080');
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
@@ -81,15 +79,6 @@ export default function PlatformConfigView() {
     try { await api.ping(); setTestState('ok'); }
     catch { setTestState('fail'); }
     setTimeout(() => setTestState('idle'), 4000);
-  };
-
-  const saveAi = async () => {
-    setAiSave('saving');
-    try {
-      await api.updatePlatformConfig({ anthropicModel: model, anthropicMaxTokens: parseInt(maxTokens, 10) });
-      setAiSave('saved');
-    } catch { setAiSave('error'); }
-    setTimeout(() => setAiSave('idle'), 3000);
   };
 
   const saveDlp = async () => {
@@ -157,22 +146,29 @@ export default function PlatformConfigView() {
             {tab === 'ai' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <InfoBox icon={faInfoCircle} color="#1D4ED8" bg="#EFF6FF">
-                  The Anthropic API key is never stored in the database.
-                  Set it as <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>ANTHROPIC_API_KEY</code> in
-                  your Cloud Run service, or in <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>application-local.yml</code> for local dev.
-                  Use the field below only to verify connectivity.
+                  Gemini runs on Vertex AI under the service account (Application Default
+                  Credentials — no API key), covered by the Google Cloud BAA. Models are
+                  configured via <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>GEMINI_MODEL_FAST</code> /{' '}
+                  <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>GEMINI_MODEL_REASONING</code>{' '}
+                  env vars on the Cloud Run service; the values below are informational.
                 </InfoBox>
 
-                <Card title="API Key Verification">
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input type={showKey ? 'text' : 'password'} value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="sk-ant-api03-…"
-                        style={{ width: '100%', padding: '9px 36px 9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none', color: '#111827' }} />
-                      <button onClick={() => setShowKey(!showKey)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}>
-                        <FontAwesomeIcon icon={showKey ? faEyeSlash : faEye} style={{ fontSize: 13 }} />
-                      </button>
-                    </div>
+                <Card title="Model Tiers">
+                  <Field label="Fast tier (chat + light documents)">
+                    <input value={modelFast} readOnly
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none', color: '#6B7280', background: '#F9FAFB' }} />
+                  </Field>
+                  <Field label="Reasoning tier (signable clinical documents)" style={{ marginTop: 12 }}>
+                    <input value={modelReasoning} readOnly
+                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none', color: '#6B7280', background: '#F9FAFB' }} />
+                  </Field>
+                </Card>
+
+                <Card title="API Connectivity">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <p style={{ fontSize: 13, color: '#6B7280', margin: 0, flex: 1 }}>
+                      Verify the API backend is reachable from this console.
+                    </p>
                     <ActionButton
                       onClick={testConnection}
                       disabled={testState === 'testing'}
@@ -181,24 +177,6 @@ export default function PlatformConfigView() {
                       label={testState === 'testing' ? 'Testing…' : testState === 'ok' ? 'Connected' : testState === 'fail' ? 'Failed' : 'Test'}
                     />
                   </div>
-                </Card>
-
-                <Card title="Model Settings">
-                  <Field label="Model">
-                    <select value={model} onChange={(e) => setModel(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, color: '#111827', outline: 'none' }}>
-                      <option value="claude-sonnet-4-6">claude-sonnet-4-6  (recommended)</option>
-                      <option value="claude-opus-4-5">claude-opus-4-5  (highest quality)</option>
-                      <option value="claude-haiku-4-5">claude-haiku-4-5  (fastest)</option>
-                    </select>
-                  </Field>
-                  <Field label="Max Output Tokens">
-                    <input type="number" min={256} max={16000} step={256} value={maxTokens}
-                      onChange={(e) => setMaxTokens(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, outline: 'none' }} />
-                    <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>Default 4000. BIPs/FBAs may need 8000.</p>
-                  </Field>
-                  <SaveRow saveState={aiSave} onSave={saveAi} />
                 </Card>
               </div>
             )}

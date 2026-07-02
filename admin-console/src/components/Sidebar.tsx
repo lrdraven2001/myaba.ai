@@ -5,6 +5,7 @@ import {
   faCog,
   faHeartbeat,
   faSignOutAlt,
+  faUserPlus,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import type { View } from '../App';
@@ -15,10 +16,11 @@ interface SidebarProps {
 }
 
 const NAV: { view: View; icon: typeof faBuilding; label: string; color: string }[] = [
-  { view: 'tenants', icon: faBuilding,  label: 'Tenants', color: '#60A5FA' },
-  { view: 'usage',   icon: faChartBar,  label: 'Usage',   color: '#4ADE80' },
-  { view: 'config',  icon: faCog,       label: 'Config',  color: '#FBBF24' },
-  { view: 'health',  icon: faHeartbeat, label: 'Health',  color: '#F87171' },
+  { view: 'creators', icon: faUserPlus,  label: 'Org Invitations', color: '#A78BFA' },
+  { view: 'tenants',  icon: faBuilding,  label: 'Tenants',         color: '#60A5FA' },
+  { view: 'usage',    icon: faChartBar,  label: 'Usage',           color: '#4ADE80' },
+  { view: 'config',   icon: faCog,       label: 'Config',          color: '#FBBF24' },
+  { view: 'health',   icon: faHeartbeat, label: 'Health',          color: '#F87171' },
 ];
 
 export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
@@ -115,7 +117,7 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
             <div style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {currentUser?.displayName}
             </div>
-            <div style={{ fontSize: 11, color: '#475569' }}>Super Admin</div>
+            <div style={{ fontSize: 11, color: '#475569' }}>Platform Operator</div>
           </div>
         </div>
         <button

@@ -13,13 +13,6 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function fmtBytes(b: number) {
-  if (b >= 1_000_000_000) return `${(b / 1_000_000_000).toFixed(1)} GB`;
-  if (b >= 1_000_000)     return `${(b / 1_000_000).toFixed(1)} MB`;
-  if (b >= 1_000)         return `${(b / 1_000).toFixed(0)} KB`;
-  return `${b} B`;
-}
-
 function fmtNum(n: number) {
   return n.toLocaleString();
 }
@@ -157,7 +150,7 @@ export default function TenantsView() {
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
             {/* Table header */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 40px', padding: '10px 16px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-              {['Organization', 'Plan', 'Status', 'Members', 'AI Calls', 'Storage', ''].map((h) => (
+              {['Organization', 'Plan', 'Status', 'Members', 'AI Calls', 'Documents', ''].map((h) => (
                 <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</div>
               ))}
             </div>
@@ -206,8 +199,8 @@ export default function TenantsView() {
                   {/* AI calls */}
                   <div style={{ fontSize: 13, color: '#374151' }}>{fmtNum(t.aiCalls ?? 0)}</div>
 
-                  {/* Storage */}
-                  <div style={{ fontSize: 13, color: '#374151' }}>{fmtBytes(t.storageBytes ?? 0)}</div>
+                  {/* Documents generated this month */}
+                  <div style={{ fontSize: 13, color: '#374151' }}>{fmtNum(t.documentCount ?? 0)}</div>
 
                   {/* Actions menu */}
                   <div style={{ position: 'relative' }}>

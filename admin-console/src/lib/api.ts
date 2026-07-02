@@ -8,7 +8,20 @@ async function getHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser;
   if (!user) throw new Error('Not authenticated');
   const token = await user.getIdToken();
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  // Custom header (not Authorization): the Firebase Hosting → Cloud Run edge
+  // strips/consumes a Bearer token in the Authorization header, so the token
+  // must ride in a header the edge leaves untouched (same as the main app).
+  return { 'Content-Type': 'application/json', 'X-Firebase-Token': token };
+}
+
+/** API error that preserves the HTTP status — used to detect 403 (not a platform admin). */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -19,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw new ApiError(err.error || `HTTP ${res.status}`, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -35,16 +48,17 @@ export interface Tenant {
   createdAt: string;
   memberCount: number;
   adminEmail: string;
+  baaAccepted?: boolean;
   aiCalls?: number;
-  aiTokens?: number;
-  storageBytes?: number;
+  documentCount?: number;
+  chatCount?: number;
 }
 
 export interface UsageSummary {
   month: string;
   totalAiCalls: number;
-  totalAiTokens: number;
-  totalStorage: number;
+  totalDocuments: number;
+  totalChats: number;
   orgCount: number;
   rows: UsageRow[];
 }
@@ -55,21 +69,22 @@ export interface UsageRow {
   plan: string;
   status: string;
   aiCalls: number;
-  aiTokens: number;
-  storageBytes: number;
+  documentCount: number;
+  chatCount: number;
   memberCount: number;
 }
 
+/** Platform config document — all fields optional (empty until first save). */
 export interface PlatformConfig {
-  anthropicModel: string;
-  anthropicMaxTokens: number;
-  aclxEnabled: boolean;
-  aclxGatewayUrl: string;
-  dlpEnabled: boolean;
-  dlpGcpProjectId: string;
-  dlpLocation: string;
-  dlpLikelihood: string;
-  dlpInfoTypes: string[];
+  geminiModelFast?: string;
+  geminiModelReasoning?: string;
+  aclxEnabled?: boolean;
+  aclxGatewayUrl?: string;
+  dlpEnabled?: boolean;
+  dlpGcpProjectId?: string;
+  dlpLocation?: string;
+  dlpLikelihood?: string;
+  dlpInfoTypes?: string[];
 }
 
 export interface HealthReport {
@@ -87,6 +102,18 @@ export interface ServiceHealth {
   latencyMs: number;
 }
 
+/** One Pathfinder allowlist entry (doc id = the email). */
+export interface ApprovedCreator {
+  email: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  note?: string;
+  used?: boolean;
+  usedByUid?: string;
+  usedAt?: string;
+  orgId?: string;
+}
+
 // ── API surface ───────────────────────────────────────────────────────────────
 
 export const api = {
@@ -101,6 +128,23 @@ export const api = {
     request<{ orgId: string; status: string }>(`/platform/tenants/${orgId}/status`, {
       method: 'PUT',
       body:   JSON.stringify({ status }),
+    }),
+
+  // ── Pathfinder approved creators ─────────────────────────────────────────
+
+  getApprovedCreators: () =>
+    request<{ creators: ApprovedCreator[] }>('/platform/approved-creators'),
+
+  /** Add or re-approve an email (re-adding a used entry resets it). */
+  addApprovedCreator: (email: string, note?: string) =>
+    request<{ success: boolean }>('/platform/approved-creators', {
+      method: 'POST',
+      body:   JSON.stringify({ email, note }),
+    }),
+
+  revokeApprovedCreator: (email: string) =>
+    request<{ success: boolean }>(`/platform/approved-creators/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
     }),
 
   // ── Platform config ──────────────────────────────────────────────────────

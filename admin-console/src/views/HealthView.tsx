@@ -38,7 +38,7 @@ function ServiceCard({ s }: { s: ServiceHealth }) {
       <div style={{ fontSize: 12, color: '#6B7280' }}>{s.message}</div>
 
       {s.latencyMs > 0 && (
-        <div style={{ display: 'flex', align: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: Math.min(s.latencyMs, 200), height: 4, background: s.latencyMs < 100 ? '#4ADE80' : s.latencyMs < 500 ? '#FBBF24' : '#F87171', borderRadius: 2 }} />
           <span style={{ fontSize: 11, color: '#9CA3AF' }}>{s.latencyMs}ms</span>
         </div>

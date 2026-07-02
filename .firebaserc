@@ -10,6 +10,9 @@
         ],
         "app": [
           "myaba-app"
+        ],
+        "admin": [
+          "myaba-admin"
         ]
       }
     }
