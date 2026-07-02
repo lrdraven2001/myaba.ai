@@ -105,7 +105,7 @@ public class ClientController {
                     .body(Map.of("error", "Only clinical staff or admins can create client records"));
         }
         try {
-            String clientId = clientService.createClient(user.getOrgId(), user.getUid(), req);
+            String clientId = clientService.createClient(user.getOrgId(), user.getUid(), user.isAdmin(), req);
             auditService.log("CLIENT_CREATED", user.getOrgId(), user.getUid(), clientId, null, null, null, null);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("clientId", clientId));
         } catch (Exception e) {

@@ -222,7 +222,9 @@ public class OfficePuzzleImportService {
 
             try {
                 ClientRequest req = buildRequest(cells, colIndex);
-                String clientId = clientService.createClient(orgId, createdByUid, req);
+                // Bulk import never auto-assigns the importer as treating BCBA —
+                // assignments happen afterwards per client (creatorIsAdmin=true).
+                String clientId = clientService.createClient(orgId, createdByUid, true, req);
                 importedNames.add(req.getFirstName() + " " + req.getLastName());
                 imported++;
                 log.debug("OfficePuzzle import: created client {} (row {})", clientId, rowNum + 1);

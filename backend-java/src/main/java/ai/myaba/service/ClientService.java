@@ -187,11 +187,14 @@ public class ClientService {
     /**
      * Create a new client record.
      *
-     * The requesting user becomes the treating BCBA unless {@code req.treatingBcbaId}
-     * is explicitly set (ORG_ADMIN assigning to a different BCBA).
+     * A CLINICAL creator becomes the treating BCBA unless {@code req.treatingBcbaId}
+     * is explicitly set. ADMIN creators are NOT auto-assigned — admins see every
+     * client anyway, and auto-assignment made them show up on the treatment team
+     * ("1 on team") for clients they never joined.
      */
-    public String createClient(String orgId, String createdByUid, ClientRequest req) throws Exception {
-        Map<String, Object> data = buildClientData(req, createdByUid);
+    public String createClient(String orgId, String createdByUid, boolean creatorIsAdmin,
+                               ClientRequest req) throws Exception {
+        Map<String, Object> data = buildClientData(req, creatorIsAdmin ? null : createdByUid);
         data.put("createdBy", createdByUid);
         data.put("createdAt", TimestampUtil.now());
         data.put("orgId", orgId);
@@ -302,7 +305,8 @@ public class ClientService {
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private Map<String, Object> buildClientData(ClientRequest req, String createdByUid) {
+    /** @param defaultTreatingUid creator uid to self-assign as treating BCBA, or null for no default (admin creators). */
+    private Map<String, Object> buildClientData(ClientRequest req, String defaultTreatingUid) {
         Map<String, Object> data = new HashMap<>();
         data.put("firstName",        req.getFirstName());
         data.put("lastName",         req.getLastName());
@@ -317,9 +321,10 @@ public class ClientService {
         if (req.getEhrProvider() != null) data.put("ehrProvider", req.getEhrProvider());
         if (req.getEhrCaseId() != null)   data.put("ehrCaseId", req.getEhrCaseId());
 
-        // Authorization assignments
+        // Authorization assignments — explicit assignment wins; otherwise the
+        // clinical creator self-assigns, and admin creators leave it unassigned.
         String treating = (req.getTreatingBcbaId() != null && !req.getTreatingBcbaId().isBlank())
-                ? req.getTreatingBcbaId() : createdByUid;
+                ? req.getTreatingBcbaId() : (defaultTreatingUid != null ? defaultTreatingUid : "");
         String supervising = req.getSupervisingBcbaId();
         List<String> rbtIds    = req.getRbtIds()    != null ? req.getRbtIds()    : List.of();
         List<String> viewerIds = req.getViewerIds() != null ? req.getViewerIds() : List.of();

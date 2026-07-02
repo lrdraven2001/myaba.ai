@@ -520,9 +520,9 @@ function ProjectDetailView({
       {/* ── Body: chat history + sidebar ── */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* Left: chat history */}
+        {/* Left: chat history — fills the space up to the knowledge sidebar */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-2xl">
+          <div className="w-full">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
               Chats in this project
             </p>
@@ -996,6 +996,17 @@ function ProjectAccessModal({
               </div>
             )}
 
+            {/* No one available to add — say why instead of hiding the control */}
+            {canManage && availableToAdd.length === 0 && (
+              <p className="mt-3 text-xs text-gray-400 leading-relaxed">
+                {orgMembers.filter((m) => m.active && m.id !== project.ownerId).length === 0
+                  ? 'No other members in your organization yet — invite teammates from the Team page, then share this project with them here.'
+                  : containsPhi
+                    ? 'Everyone eligible already has access. (PHI is on, so non-clinical roles can’t be added.)'
+                    : 'Everyone in your organization already has access.'}
+              </p>
+            )}
+
             {containsPhi && (
               <p className="mt-3 text-xs flex items-start gap-1.5" style={{ color: '#92400e' }}>
                 <FontAwesomeIcon icon={faExclamationTriangle} style={{ fontSize: 10, marginTop: 2, flexShrink: 0 }} />
@@ -1156,8 +1167,9 @@ function AddKnowledgeDocModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
+     <div className="min-h-full flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-gray-900">Add Knowledge Document</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -1218,6 +1230,7 @@ function AddKnowledgeDocModal({
           </button>
         </div>
       </div>
+     </div>
     </div>
   );
 }
