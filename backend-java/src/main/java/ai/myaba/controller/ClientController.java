@@ -9,6 +9,8 @@ import ai.myaba.service.AuditService;
 import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.ClientService;
+import ai.myaba.service.DocumentFormatService;
+import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.OrgService;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -36,6 +38,8 @@ public class ClientController {
     private final AuditService auditService;
     private final OrgService orgService;
     private final ChatService chatService;
+    private final DocumentFormatService documentFormatService;
+    private final DocumentPersistenceService documentPersistenceService;
 
     @org.springframework.beans.factory.annotation.Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -163,6 +167,53 @@ public class ClientController {
         } catch (Exception e) {
             log.error("archiveClient failed {}: {}", clientId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to archive client"));
+        }
+    }
+
+    // ── POST /api/clients/{clientId}/documents/upload ─────────────────────
+    // Direct document upload (Word/PDF/Excel/text). The file's text is
+    // extracted server-side and stored alongside AI-generated documents.
+
+    @PostMapping("/{clientId}/documents/upload")
+    public ResponseEntity<?> uploadClientDocument(
+            @PathVariable String clientId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "title", required = false) String title,
+            @AuthenticationPrincipal AppUser user) {
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canAccessClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to add documents for this client"));
+            }
+            String filename = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
+            String text;
+            try {
+                text = documentFormatService.extractText(filename, file.getBytes());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            }
+            if (text == null || text.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "No readable text found in \"" + filename + "\"."));
+            }
+            String docTitle = (title != null && !title.isBlank())
+                    ? title.trim()
+                    : filename.replaceAll("\\.[A-Za-z0-9]+$", "");
+            String docId = documentPersistenceService.persistUploaded(
+                    user.getOrgId(), clientId, user.getUid(), docTitle, filename, text);
+            if (docId == null) {
+                return ResponseEntity.internalServerError().body(Map.of("error", "Failed to save document"));
+            }
+            auditService.log("CLIENT_DOCUMENT_UPLOADED", user.getOrgId(), user.getUid(),
+                    clientId, docId, null, null, null);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(Map.of("docId", docId, "title", docTitle, "characters", text.length()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (Exception e) {
+            log.error("uploadClientDocument failed {}: {}", clientId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload document"));
         }
     }
 

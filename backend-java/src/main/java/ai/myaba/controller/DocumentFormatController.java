@@ -99,9 +99,10 @@ public class DocumentFormatController {
         String name = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
         String lower = name.toLowerCase();
         if (!(lower.endsWith(".docx") || lower.endsWith(".pdf") || lower.endsWith(".txt")
-                || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text"))) {
+                || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text")
+                || lower.endsWith(".xlsx") || lower.endsWith(".xls"))) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Unsupported file type. Upload a PDF, DOCX, or text file."));
+                    .body(Map.of("error", "Unsupported file type. Upload a Word (.docx), PDF, Excel (.xlsx/.xls), or text file."));
         }
         if (file.getSize() > 20L * 1024 * 1024) {
             return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));

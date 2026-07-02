@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSearch, faPlus, faChevronRight, faArrowLeft,
@@ -6,7 +6,7 @@ import {
   faFileAlt, faFolderOpen, faLink, faSpinner, faTimes,
   faRobot, faComments, faExternalLinkAlt,
   faUserNurse, faUsers, faCheck, faShieldAlt, faTrashAlt,
-  faBoxArchive, faBoxOpen, faFileExport,
+  faBoxArchive, faBoxOpen, faFileExport, faUpload,
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
@@ -923,6 +923,9 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
   const [members, setMembers] = useState<MemberLike[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const uploadRef = useRef<HTMLInputElement>(null);
   const pg = usePagination(docs, 8);
 
   useEffect(() => {
@@ -938,6 +941,23 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
   };
   useEffect(() => { loadDocs(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Direct file upload — text is extracted server-side and stored with the client.
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    setUploadError('');
+    setUploading(true);
+    try {
+      await api.uploadClientDocument(clientId, file);
+      loadDocs();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div>
       {/* Header + plain-language explanation of what this does */}
@@ -951,15 +971,29 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
             (see the <strong>Authorizations</strong> tab).
           </p>
         </div>
-        <button
-          onClick={() => setShowGenerate(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0"
-          style={{ background: '#1E88FF' }}
-        >
-          <FontAwesomeIcon icon={faRobot} className="text-xs" />
-          Generate Document
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => uploadRef.current?.click()}
+            disabled={uploading}
+            title="Upload a Word, PDF, Excel, or text document to this client's record"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-60"
+            style={{ borderColor: '#1E88FF', color: '#1E88FF', background: 'white' }}
+          >
+            <FontAwesomeIcon icon={uploading ? faSpinner : faUpload} className={`text-xs ${uploading ? 'animate-spin' : ''}`} />
+            {uploading ? 'Uploading…' : 'Upload'}
+          </button>
+          <input ref={uploadRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
+          <button
+            onClick={() => setShowGenerate(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+            style={{ background: '#1E88FF' }}
+          >
+            <FontAwesomeIcon icon={faRobot} className="text-xs" />
+            Generate Document
+          </button>
+        </div>
       </div>
+      {uploadError && <p className="text-sm text-red-500 -mt-3 mb-4">{uploadError}</p>}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -982,12 +1016,12 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{d.documentType ?? d.title ?? 'AI Document'}</p>
-                    <CreatedByPill createdBy={d.createdBy ?? d.addedBy ?? d.userId} members={members} />
+                    <p className="text-sm font-semibold text-gray-900 truncate">{d.title ?? d.documentType ?? 'AI Document'}</p>
+                    <CreatedByPill createdBy={d.createdBy ?? d.addedBy ?? d.authorUid ?? d.userId} members={members} />
                   </div>
                   {d.createdAt && (
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Generated {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {d.source === 'upload' ? 'Uploaded' : 'Generated'} {new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </p>
                   )}
                 </div>

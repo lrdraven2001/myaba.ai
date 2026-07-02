@@ -86,6 +86,13 @@
             <artifactId>openhtmltopdf-pdfbox</artifactId>
             <version>1.0.10</version>
         </dependency>
+        <!-- PDF text extraction for uploaded documents (version matches the
+             pdfbox that openhtmltopdf already pulls in transitively) -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.24</version>
+        </dependency>
     </dependencies>
 
     <build>

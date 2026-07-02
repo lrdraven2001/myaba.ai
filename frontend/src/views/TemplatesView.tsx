@@ -304,12 +304,31 @@ function TemplateFormModal({
     });
   };
 
-  const handleFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [reading, setReading] = useState(false);
+
+  // Word/PDF/Excel go through the backend extractor; plain text reads locally.
+  const handleFileRead = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setContent(ev.target?.result as string ?? '');
-    reader.readAsText(file);
+    setError('');
+    if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
+    if (/\.(txt|md|text)$/i.test(file.name)) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setContent(ev.target?.result as string ?? '');
+      reader.readAsText(file);
+      return;
+    }
+    setReading(true);
+    try {
+      const { text } = await api.extractAttachment(file);
+      if (!text.trim()) { setError(`No readable text found in “${file.name}”.`); return; }
+      setContent(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the file.');
+    } finally {
+      setReading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -401,12 +420,14 @@ function TemplateFormModal({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="text-xs text-teal-600 hover:underline flex items-center gap-1"
+                disabled={reading}
+                className="text-xs text-teal-600 hover:underline flex items-center gap-1 disabled:opacity-60"
               >
-                <FontAwesomeIcon icon={faCloudUploadAlt} /> Upload .txt / .md
+                <FontAwesomeIcon icon={reading ? faSpinner : faCloudUploadAlt} className={reading ? 'animate-spin' : ''} />
+                {reading ? 'Reading file…' : 'Upload file'}
               </button>
             </div>
-            <input ref={fileRef} type="file" accept=".txt,.md,.text" className="hidden" onChange={handleFileRead} />
+            <input ref={fileRef} type="file" accept=".txt,.md,.text,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFileRead} />
             <textarea
               rows={10}
               value={content}

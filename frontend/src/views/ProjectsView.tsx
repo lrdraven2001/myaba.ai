@@ -1140,15 +1140,33 @@ function AddKnowledgeDocModal({
   const [title, setTitle]     = useState('');
   const [content, setContent] = useState('');
   const [saving, setSaving]   = useState(false);
+  const [reading, setReading] = useState(false);
+  const [fileError, setFileError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Word/PDF/Excel go through the backend extractor; plain text reads locally.
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
+    setFileError('');
     if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
-    const reader = new FileReader();
-    reader.onload = (ev) => setContent(ev.target?.result as string ?? '');
-    reader.readAsText(file);
+    if (/\.(txt|md)$/i.test(file.name)) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setContent(ev.target?.result as string ?? '');
+      reader.readAsText(file);
+      return;
+    }
+    setReading(true);
+    try {
+      const { text } = await api.extractAttachment(file);
+      if (!text.trim()) { setFileError(`No readable text found in “${file.name}”.`); return; }
+      setContent(text);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Could not read the file.');
+    } finally {
+      setReading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -1198,13 +1216,15 @@ function AddKnowledgeDocModal({
               </label>
               <button
                 onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors"
+                disabled={reading}
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors disabled:opacity-60"
               >
-                <FontAwesomeIcon icon={faUpload} style={{ fontSize: 10 }} />
-                Upload .txt / .md
+                <FontAwesomeIcon icon={reading ? faSpinner : faUpload} className={reading ? 'animate-spin' : ''} style={{ fontSize: 10 }} />
+                {reading ? 'Reading file…' : 'Upload file'}
               </button>
             </div>
-            <input ref={fileRef} type="file" accept=".txt,.md" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+            {fileError && <p className="text-xs text-red-500 mb-1.5">{fileError}</p>}
             <textarea
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
               rows={10}

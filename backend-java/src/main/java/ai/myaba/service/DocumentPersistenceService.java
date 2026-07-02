@@ -102,6 +102,42 @@ public class DocumentPersistenceService {
         persistSync(orgId, clientId, authorUid, documentType, content, aclxResult);
     }
 
+    /**
+     * Persist a user-UPLOADED client document (Word/PDF/Excel/text — content is
+     * the extracted plain text). Same storage tree as AI-generated documents so
+     * it appears in the Documents tab, chat context, and the client export.
+     *
+     * @return Firestore document ID, or null on error
+     */
+    public String persistUploaded(String orgId, String clientId, String authorUid,
+                                  String title, String sourceFilename, String content) {
+        if (devMode) {
+            log.info("[DOC-DEV] uploaded: org={} client={} title={}", orgId, clientId, title);
+            return "dev-doc-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        }
+        try {
+            Map<String, Object> doc = buildDocumentRecord(
+                    orgId, clientId, authorUid, "uploaded_document", content, null);
+            doc.put("title", title);
+            doc.put("sourceFilename", sourceFilename);
+            doc.put("source", "upload");
+
+            Firestore db = FirestoreClient.getFirestore();
+            DocumentReference ref = db
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS)
+                    .add(doc)
+                    .get();
+            log.info("Uploaded document persisted: org={} client={} docId={}", orgId, clientId, ref.getId());
+            return ref.getId();
+        } catch (Exception e) {
+            log.error("Failed to persist uploaded document: org={} client={} error={}",
+                    orgId, clientId, e.getMessage());
+            return null;
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private Map<String, Object> buildDocumentRecord(

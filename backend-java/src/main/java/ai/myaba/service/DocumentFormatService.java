@@ -144,8 +144,9 @@ public class DocumentFormatService {
     }
 
     /**
-     * Extract plain text from an uploaded attachment for use as chat context.
-     * Supports .docx (POI), .pdf (PDFBox), and plain text (.txt/.md/.csv).
+     * Extract plain text from an uploaded document (chat attachments, knowledge
+     * docs, templates, client uploads). Supports .docx (POI), .pdf (PDFBox),
+     * .xlsx/.xls (POI), and plain text (.txt/.md/.csv).
      *
      * <p>No DLP de-identification is applied — clinical staff need the actual client
      * data they upload to operate on it. PHI governance happens at output time via
@@ -159,10 +160,46 @@ public class DocumentFormatService {
         if (lower.endsWith(".pdf")) {
             try (org.apache.pdfbox.pdmodel.PDDocument doc =
                          org.apache.pdfbox.pdmodel.PDDocument.load(bytes)) {
+                if (doc.isEncrypted()) {
+                    throw new IllegalArgumentException(
+                            "This PDF is password-protected — remove the password and re-upload.");
+                }
                 return new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+            }
+        }
+        if (lower.endsWith(".xlsx")) {
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                return extractSheetText(wb);
+            }
+        }
+        if (lower.endsWith(".xls")) {
+            try (Workbook wb = new org.apache.poi.hssf.usermodel.HSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                return extractSheetText(wb);
             }
         }
         // .txt, .md, .csv, .text, or unknown — read as UTF-8 text.
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Sheets become "── SheetName ──" sections with tab-separated rows. */
+    private String extractSheetText(Workbook wb) {
+        org.apache.poi.ss.usermodel.DataFormatter fmt = new org.apache.poi.ss.usermodel.DataFormatter();
+        StringBuilder out = new StringBuilder();
+        for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+            Sheet sheet = wb.getSheetAt(s);
+            if (wb.getNumberOfSheets() > 1) {
+                out.append("── ").append(sheet.getSheetName()).append(" ──\n");
+            }
+            for (Row row : sheet) {
+                StringBuilder line = new StringBuilder();
+                for (Cell cell : row) {
+                    if (line.length() > 0) line.append('\t');
+                    line.append(fmt.formatCellValue(cell));
+                }
+                if (!line.toString().trim().isEmpty()) out.append(line).append('\n');
+            }
+            out.append('\n');
+        }
+        return out.toString().trim();
     }
 }

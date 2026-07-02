@@ -797,7 +797,29 @@ export const api = {
     return (data.text as string) ?? '';
   },
 
-  /** Upload a chat attachment (PDF/DOCX/TXT) and get its extracted text for context. */
+  /**
+   * Upload a document directly to a client's record (Word/PDF/Excel/text).
+   * Text is extracted server-side and stored with the client's documents.
+   */
+  uploadClientDocument: async (clientId: string, file: File, title?: string):
+      Promise<{ docId: string; title: string; characters: number }> => {
+    const headers = await getAuthHeaders();
+    const h: Record<string, string> = {};
+    if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
+    const form = new FormData();
+    form.append('file', file);
+    if (title) form.append('title', title);
+    const res = await fetch(`${API_BASE}/clients/${clientId}/documents/upload`, {
+      method: 'POST', headers: h, body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Failed to upload document (HTTP ${res.status})`);
+    }
+    return res.json();
+  },
+
+  /** Upload a chat attachment (Word/PDF/Excel/text) and get its extracted text for context. */
   extractAttachment: async (file: File): Promise<{ name: string; text: string; chars: number }> => {
     const headers = await getAuthHeaders();
     const h: Record<string, string> = {};
