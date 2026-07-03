@@ -16,8 +16,20 @@ export default function LoginView() {
     setLoading(true);
     try {
       await loginWithGoogle();
-    } catch {
-      setError('Google sign-in failed or was cancelled.');
+    } catch (e) {
+      // Surface the real Firebase error code — a bare "failed or cancelled"
+      // hides the common auth/unauthorized-domain (domain not in the Auth
+      // authorized-domains list) and popup-blocked cases.
+      const code = (e as { code?: string })?.code ?? '';
+      if (code === 'auth/unauthorized-domain') {
+        setError('This domain isn’t authorized for sign-in. Add it in Firebase Console → Authentication → Settings → Authorized domains.');
+      } else if (code === 'auth/popup-blocked') {
+        setError('The sign-in popup was blocked — allow popups for this site and try again.');
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setError('Sign-in was cancelled.');
+      } else {
+        setError(`Google sign-in failed${code ? ` (${code})` : ''}.`);
+      }
     } finally {
       setLoading(false);
     }
