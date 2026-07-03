@@ -3,10 +3,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCog, faRobot, faShieldAlt, faCloud,
   faEye, faEyeSlash, faCheck, faExclamationTriangle,
-  faFlask, faSave, faInfoCircle,
+  faFlask, faSave, faInfoCircle, faCheckCircle, faTimesCircle, faSyncAlt, faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
-import type { PlatformConfig } from '../lib/api';
+import type { PlatformConfig, HealthReport, ServiceHealth } from '../lib/api';
 
 type TabId = 'ai' | 'dlp' | 'aclx';
 
@@ -47,10 +47,18 @@ export default function PlatformConfigView() {
   const [dlpKey, setDlpKey]             = useState('');
   const [dlpSave, setDlpSave]           = useState<SaveState>('idle');
 
-  // ACLX state
-  const [aclxEnabled, setAclxEnabled]   = useState(false);
-  const [aclxUrl, setAclxUrl]           = useState('http://localhost:8080');
-  const [aclxSave, setAclxSave]         = useState<SaveState>('idle');
+  // ACLX + DLP are controlled by deployment env vars (aclx.enabled / dlp.enabled),
+  // NOT by this UI. We show the REAL runtime state via a live health probe rather
+  // than an editable toggle that wouldn't actually change anything.
+  const [health, setHealth]         = useState<HealthReport | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+
+  const loadHealth = async () => {
+    setHealthLoading(true);
+    try { setHealth(await api.getHealth()); } catch { setHealth(null); }
+    finally { setHealthLoading(false); }
+  };
+  useEffect(() => { void loadHealth(); }, []);
 
   useEffect(() => {
     (async () => {
@@ -65,8 +73,6 @@ export default function PlatformConfigView() {
         setGcpLocation(c.dlpLocation ?? 'global');
         setDlpLikelihood(c.dlpLikelihood ?? 'LIKELY');
         if (c.dlpInfoTypes?.length) setDlpInfoTypes(c.dlpInfoTypes);
-        setAclxEnabled(c.aclxEnabled ?? false);
-        setAclxUrl(c.aclxGatewayUrl ?? 'http://localhost:8080');
       } catch { /* ignore */ }
       finally { setLoading(false); }
     })();
@@ -91,15 +97,6 @@ export default function PlatformConfigView() {
       setDlpSave('saved');
     } catch { setDlpSave('error'); }
     setTimeout(() => setDlpSave('idle'), 3000);
-  };
-
-  const saveAclx = async () => {
-    setAclxSave('saving');
-    try {
-      await api.updatePlatformConfig({ aclxEnabled, aclxGatewayUrl: aclxUrl });
-      setAclxSave('saved');
-    } catch { setAclxSave('error'); }
-    setTimeout(() => setAclxSave('idle'), 3000);
   };
 
   const toggleInfoType = (id: string) =>
@@ -185,14 +182,16 @@ export default function PlatformConfigView() {
             {tab === 'dlp' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <InfoBox icon={faInfoCircle} color="#1D4ED8" bg="#EFF6FF">
-                  Google Sensitive Data Protection scans AI outputs for PHI before delivery.{' '}
-                  <a href="https://cloud.google.com/sensitive-data-protection/docs/reference/rest" target="_blank" rel="noreferrer"
-                    style={{ color: '#1D4ED8' }}>API reference</a>.
-                  For Cloud Run, use Workload Identity (no key file). For local dev, set
-                  <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4, marginLeft: 4 }}>GOOGLE_APPLICATION_CREDENTIALS</code>.
+                  Two layers, don’t confuse them: the always-on <b>input guard</b> (blocks SSNs, payment
+                  cards, and driver’s licenses before the model, controlled by the{' '}
+                  <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>DLP_ENABLED</code> deployment flag)
+                  is shown by the live status below. The settings underneath configure <b>Google Cloud DLP</b> —
+                  an <i>optional</i> managed scanner that is not active unless you turn it on and supply a GCP project.
                 </InfoBox>
 
-                <Card title="Google DLP" headerRight={
+                <LiveStatus service={health?.dlp} loading={healthLoading} checkedAt={health?.checkedAt} onRefresh={loadHealth} />
+
+                <Card title="Google Cloud DLP (optional)" headerRight={
                   <Toggle enabled={dlpEnabled} onToggle={() => setDlpEnabled(!dlpEnabled)} label="Enable" />
                 }>
                   <div style={{ opacity: dlpEnabled ? 1 : 0.45, pointerEvents: dlpEnabled ? 'auto' : 'none' }}>
@@ -260,29 +259,16 @@ export default function PlatformConfigView() {
               </div>
             )}
 
-            {/* ── ACLX tab ─────────────────────────────────────────────── */}
+            {/* ── ACLX tab — live status (env-controlled, not editable here) ── */}
             {tab === 'aclx' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <InfoBox icon={faInfoCircle} color="#1D4ED8" bg="#EFF6FF">
-                  ACLX is the HIPAA output governance gateway. In dev mode it is disabled
-                  and all responses pass through. Enable this before going live with real PHI.
+                  ACLX is the HIPAA output-governance gateway. It’s enabled and pointed at its
+                  gateway via deployment config (<code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>ACLX_ENABLED</code> /{' '}
+                  <code style={{ background: '#DBEAFE', padding: '1px 4px', borderRadius: 4 }}>ACLX_GATEWAY_URL</code>) — a
+                  deploy-reviewed control, not a web toggle. The live status below is a real probe of the running service.
                 </InfoBox>
-
-                <Card title="ACLX Gateway" headerRight={
-                  <Toggle enabled={aclxEnabled} onToggle={() => setAclxEnabled(!aclxEnabled)} label="Enable" />
-                }>
-                  <div style={{ opacity: aclxEnabled ? 1 : 0.45, pointerEvents: aclxEnabled ? 'auto' : 'none' }}>
-                    <Field label="Gateway URL">
-                      <input value={aclxUrl} onChange={(e) => setAclxUrl(e.target.value)}
-                        placeholder="http://localhost:8080"
-                        style={{ width: '100%', padding: '9px 12px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', outline: 'none' }} />
-                      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
-                        For Cloud Run: use the internal service URL of your ACLX sidecar container.
-                      </p>
-                    </Field>
-                  </div>
-                  <SaveRow saveState={aclxSave} onSave={saveAclx} />
-                </Card>
+                <LiveStatus service={health?.aclx} loading={healthLoading} checkedAt={health?.checkedAt} onRefresh={loadHealth} />
               </div>
             )}
           </div>
@@ -293,6 +279,40 @@ export default function PlatformConfigView() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+/** Live service status from the /platform/health probe (real reachability, not a stored flag). */
+function LiveStatus({ service, loading, checkedAt, onRefresh }: {
+  service?: ServiceHealth; loading: boolean; checkedAt?: string; onRefresh: () => void;
+}) {
+  const up = service?.up ?? false;
+  return (
+    <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${loading ? '#E5E7EB' : up ? '#D1FAE5' : '#FEE2E2'}`, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {loading
+            ? <FontAwesomeIcon icon={faSpinner} spin style={{ color: '#9CA3AF', fontSize: 18 }} />
+            : <FontAwesomeIcon icon={up ? faCheckCircle : faTimesCircle} style={{ color: up ? '#16A34A' : '#DC2626', fontSize: 18 }} />}
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
+              {service?.name ?? 'Service'} — {loading ? 'checking…' : up ? 'Enabled & reachable' : 'Not reachable'}
+            </div>
+            {!loading && service?.message && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{service.message}</div>}
+          </div>
+        </div>
+        <button onClick={onRefresh} disabled={loading}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 14px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 8, cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13, color: '#374151' }}>
+          <FontAwesomeIcon icon={faSyncAlt} style={{ fontSize: 12 }} /> Recheck
+        </button>
+      </div>
+      {!loading && (
+        <div style={{ display: 'flex', gap: 20, padding: '10px 18px', borderTop: '1px solid #F3F4F6', fontSize: 12, color: '#9CA3AF' }}>
+          {service && service.latencyMs > 0 && <span>Latency: {service.latencyMs}ms</span>}
+          {checkedAt && <span>Checked: {new Date(checkedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Card({ title, children, headerRight }: { title: string; children: React.ReactNode; headerRight?: React.ReactNode }) {
   return (
