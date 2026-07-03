@@ -1,4 +1,5 @@
 .claude/
+.firebase/
 gcp-adc.json
 node_modules/
 .env
