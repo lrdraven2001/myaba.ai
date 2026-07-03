@@ -104,6 +104,54 @@ public class AclxService {
         }
     }
 
+    /**
+     * Authenticated reachability probe for the admin Health / Config panels.
+     *
+     * <p>Uses the same service-to-service ID token as {@link #evaluate}, so a
+     * private (IAM-gated) gateway returns its real status instead of the 403 an
+     * unauthenticated probe would get. Returns {@code {up, message, latencyMs}}.
+     */
+    public Map<String, Object> healthCheck() {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (!enabled) {
+            out.put("up", false);
+            out.put("message", "Disabled by configuration (ACLX_ENABLED=false)");
+            out.put("latencyMs", 0);
+            return out;
+        }
+        long start = System.currentTimeMillis();
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(gatewayUrl + "/health").openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3_000);
+            conn.setReadTimeout(5_000);
+            applyServiceAuth(conn);
+
+            int status = conn.getResponseCode();
+            int ms = (int) (System.currentTimeMillis() - start);
+            String message;
+            boolean up;
+            if (status >= 200 && status < 300) {
+                up = true;  message = "Responding normally";
+            } else if (status == 401 || status == 403) {
+                up = false; message = "Auth rejected (HTTP " + status + ") — check the API SA's run.invoker binding on the gateway";
+            } else if (status == 404 || status == 405) {
+                // IAM passed and the app is routing — just no GET /health endpoint.
+                up = true;  message = "Reachable & authenticated (no /health endpoint, HTTP " + status + ")";
+            } else {
+                up = status < 500; message = "HTTP " + status;
+            }
+            out.put("up", up);
+            out.put("message", message);
+            out.put("latencyMs", ms);
+        } catch (Exception e) {
+            out.put("up", false);
+            out.put("message", "Not reachable: " + e.getMessage());
+            out.put("latencyMs", (int) (System.currentTimeMillis() - start));
+        }
+        return out;
+    }
+
     /** Backward-compatible overload — no grounding sources, ACLX groundedness check skipped. */
     public AclxResponse evaluate(String aiResponse, AppUser user, String clientId) {
         return evaluate(aiResponse, user, clientId, null, List.of());

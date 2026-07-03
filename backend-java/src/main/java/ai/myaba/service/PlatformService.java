@@ -12,11 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -41,17 +36,13 @@ public class PlatformService {
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
 
-    @Value("${aclx.gateway-url:http://localhost:8080}")
-    private String aclxGatewayUrl;
-
-    @Value("${aclx.enabled:true}")
-    private boolean aclxEnabled;
-
     @Value("${dlp.enabled:false}")
     private boolean dlpEnabled;
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3)).build();
+    // ACLX health probe delegates here so it carries the same IAM ID token as
+    // real evaluate() calls (a private gateway 403s an unauthenticated probe).
+    @org.springframework.beans.factory.annotation.Autowired
+    private AclxService aclxService;
 
     // ── In-memory stores (dev only) ───────────────────────────────────────────
 
@@ -319,35 +310,20 @@ public class PlatformService {
             h.put("dlp",      probe("Google DLP",   false, "Not configured",           0));
             h.put("firebase", probe("Firebase Auth", true, "Dev bypass active",        0));
         } else {
-            h.put("aclx",     aclxEnabled ? probeAclx()
-                    : probe("ACLX Gateway", false, "Disabled by configuration", 0));
-            h.put("dlp",      probe("Google DLP", dlpEnabled,
-                    dlpEnabled ? "Pattern blocking enabled" : "Disabled by configuration", 0));
+            // Authenticated probe (carries the IAM ID token) — delegated to AclxService.
+            Map<String, Object> a = aclxService.healthCheck();
+            h.put("aclx", probe("ACLX Gateway",
+                    Boolean.TRUE.equals(a.get("up")),
+                    String.valueOf(a.get("message")),
+                    a.get("latencyMs") instanceof Number n ? n.intValue() : 0));
+            h.put("dlp",      probe("Input DLP Guard", dlpEnabled,
+                    dlpEnabled ? "Pattern blocking enabled (SSN, cards, licenses)" : "Disabled by configuration", 0));
             boolean fb = !FirebaseApp.getApps().isEmpty();
             h.put("firebase", probe("Firebase Auth", fb,
                     fb ? "Initialized" : "Not initialized", 0));
         }
         h.put("checkedAt", TimestampUtil.now());
         return h;
-    }
-
-    private Map<String, Object> probeAclx() {
-        long start = System.currentTimeMillis();
-        try {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(aclxGatewayUrl + "/health"))
-                    .timeout(Duration.ofSeconds(3)).GET().build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-            long ms = System.currentTimeMillis() - start;
-            boolean up = res.statusCode() >= 200 && res.statusCode() < 300;
-            return probe("ACLX Gateway", up, up ? "Responding normally" : "HTTP " + res.statusCode(), (int) ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return probe("ACLX Gateway", false, "Probe interrupted", 0);
-        } catch (Exception e) {
-            return probe("ACLX Gateway", false, "Not reachable: " + e.getMessage(),
-                    (int) (System.currentTimeMillis() - start));
-        }
     }
 
     private Map<String, Object> probe(String name, boolean up, String message, int latencyMs) {
