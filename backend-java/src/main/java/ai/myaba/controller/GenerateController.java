@@ -302,13 +302,16 @@ public class GenerateController {
                         !docReportOnly /* enforcing: hold; report-only: LOGGED */,
                         aclxResult);
                 if (docReportOnly) {
+                    // finalText is not populated on ESCALATE — deliver the raw output.
+                    String escText = aclxResult.getDecision().getFinalText();
+                    if (escText == null || escText.isBlank()) escText = rawOutput;
                     String escDocId = documentPersistenceService.persistSync(
                             user.getOrgId(), req.getClientId(), user.getUid(),
-                            req.getDocumentType(), aclxResult.getDecision().getFinalText(), aclxResult);
+                            req.getDocumentType(), escText, aclxResult);
                     yield ResponseEntity.ok(GenerateDocumentResponse.builder()
                             .success(true)
                             .documentType(req.getDocumentType())
-                            .content(aclxResult.getDecision().getFinalText())
+                            .content(escText)
                             .decision(decision)
                             .contentId(aclxResult.getContentId())
                             .contentLabel(aclxResult.getContentLabel())
@@ -665,8 +668,11 @@ public class GenerateController {
             reply = "This response has been flagged for a quick compliance review and will be available once approved. "
                   + "This is a routine safeguard, not necessarily a problem with your request.";
         } else {
-            // ALLOW, REDACT, or non-blocking ESCALATE
-            reply = aclxResult.getDecision().getFinalText();
+            // ALLOW, REDACT, or non-blocking ESCALATE. The gateway does not
+            // populate finalText on ESCALATE (content was meant to be held), so
+            // fall back to the raw reply — a null reply crashes the chat UI.
+            String ft = aclxResult.getDecision().getFinalText();
+            reply = (ft != null && !ft.isBlank()) ? ft : rawReply;
         }
 
         // Redaction count — surface to client when ACLX partially redacted the reply

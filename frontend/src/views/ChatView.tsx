@@ -128,7 +128,8 @@ const CODE_FENCE_RE = /```[a-z]*\n?([\s\S]*?)```/i;
  * <document>…</document> fence, then a single ``` code fence (some models use that),
  * else the whole text.
  */
-function extractDocumentBody(text: string): string {
+function extractDocumentBody(text: string | null | undefined): string {
+  if (!text) return '';
   const tag = text.match(DOC_TAG_RE);
   if (tag) return tag[1];
   const fence = text.match(CODE_FENCE_RE);
@@ -137,13 +138,14 @@ function extractDocumentBody(text: string): string {
 }
 
 /** True when the message contains a fenced document body (so export = just that). */
-function hasDocumentBody(text: string): boolean {
-  return DOC_TAG_RE.test(text) || CODE_FENCE_RE.test(text);
+function hasDocumentBody(text: string | null | undefined): boolean {
+  return !!text && (DOC_TAG_RE.test(text) || CODE_FENCE_RE.test(text));
 }
 
 /** Removes the <document> fence tags for display so the chat reads cleanly. */
-function stripDocumentTags(text: string): string {
-  return text.replace(/<\/?document>/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+function stripDocumentTags(text: string | null | undefined): string {
+  // Null-tolerant: a message persisted with no content must never crash the view.
+  return (text ?? '').replace(/<\/?document>/gi, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
@@ -286,7 +288,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         // set preview to last message text
         const last = mapped[mapped.length - 1];
         if (last) {
-          setPreviews((p) => ({ ...p, [activeChatId]: last.content.slice(0, 60) }));
+          setPreviews((p) => ({ ...p, [activeChatId]: (last.content ?? '').slice(0, 60) }));
         }
       } catch {
         // Backend down — start with empty message list
@@ -480,7 +482,8 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       const assistantMsg: ChatMessage = {
         id:           (Date.now() + 1).toString(),
         role:         'assistant',
-        content:      res.reply,
+        // Null-tolerant: a null reply (e.g. gateway edge case) must never crash the view.
+        content:      res.reply ?? '',
         timestamp:    new Date().toISOString(),
         aclxDecision: res.decision as ChatMessage['aclxDecision'],
       };
@@ -488,7 +491,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         ...prev,
         [activeChatId]: [...(prev[activeChatId] ?? []), assistantMsg],
       }));
-      setPreviews((prev) => ({ ...prev, [activeChatId]: res.reply.slice(0, 60) }));
+      setPreviews((prev) => ({ ...prev, [activeChatId]: (res.reply ?? '').slice(0, 60) }));
     } catch (err) {
       // ── Input guard block ─────────────────────────────────────────────────
       // The backend detected a policy violation and returned HTTP 422 with a

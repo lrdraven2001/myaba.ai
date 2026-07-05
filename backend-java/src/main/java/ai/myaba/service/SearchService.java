@@ -203,9 +203,11 @@ public class SearchService {
                 case "ALLOW", "REDACT" -> aclx.getDecision().getFinalText() != null
                         ? aclx.getDecision().getFinalText()
                         : rawSummary;
-                // ESCALATE in report-only mode delivers (logged above for feedback)
-                case "ESCALATE" -> searchReportOnly && aclx.getDecision().getFinalText() != null
-                        ? aclx.getDecision().getFinalText()
+                // ESCALATE in report-only mode delivers (logged above for feedback).
+                // finalText is not populated on ESCALATE — fall back to the raw summary.
+                case "ESCALATE" -> searchReportOnly
+                        ? (aclx.getDecision().getFinalText() != null
+                            ? aclx.getDecision().getFinalText() : rawSummary)
                         : "";
                 // BLOCK: always withhold; reason is audit-logged
                 default -> "";
