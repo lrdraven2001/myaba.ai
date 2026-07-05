@@ -24,9 +24,25 @@ import java.util.List;
  * Converts generated document text to/from Office formats using Apache POI.
  * Used for Word (.docx) export of generated documents and for reading Word
  * templates uploaded into the Agency Library.
+ *
+ * <p>Scanned PDFs (no extractable text layer) fall back to OCR: pages are
+ * rendered to images and transcribed by Gemini vision (Vertex, inside the BAA).
  */
 @Service
 public class DocumentFormatService {
+
+    /** Scanned-PDF OCR: page render resolution and caps. */
+    private static final int OCR_DPI            = 150;
+    private static final int OCR_MAX_PAGES      = 30;
+    private static final int OCR_PAGES_PER_CALL = 8;
+    /** Below this many non-whitespace chars per page, treat the PDF as scanned. */
+    private static final int MIN_TEXT_CHARS_PER_PAGE = 20;
+
+    private final GeminiService geminiService;
+
+    public DocumentFormatService(GeminiService geminiService) {
+        this.geminiService = geminiService;
+    }
 
     /**
      * Render a plain-text document into a .docx. Heuristics:
@@ -164,7 +180,15 @@ public class DocumentFormatService {
                     throw new IllegalArgumentException(
                             "This PDF is password-protected — remove the password and re-upload.");
                 }
-                return new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+                String text  = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+                int    pages = doc.getNumberOfPages();
+                int    dense = text == null ? 0 : text.replaceAll("\\s", "").length();
+                // Scanned PDF (no meaningful text layer) → render pages and OCR them.
+                if (pages > 0 && dense / pages < MIN_TEXT_CHARS_PER_PAGE) {
+                    String ocr = ocrPdf(doc, filename);
+                    if (ocr != null && !ocr.isBlank()) return ocr;
+                }
+                return text;
             }
         }
         if (lower.endsWith(".xlsx")) {
@@ -179,6 +203,44 @@ public class DocumentFormatService {
         }
         // .txt, .md, .csv, .text, or unknown — read as UTF-8 text.
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * OCR a scanned PDF: render each page to PNG at {@link #OCR_DPI} and transcribe
+     * batches of pages with Gemini vision. Capped at {@link #OCR_MAX_PAGES} pages —
+     * a truncation note is appended when a longer document is cut off.
+     */
+    private String ocrPdf(org.apache.pdfbox.pdmodel.PDDocument doc, String filename) throws Exception {
+        int totalPages = doc.getNumberOfPages();
+        int pages = Math.min(totalPages, OCR_MAX_PAGES);
+        org.apache.pdfbox.rendering.PDFRenderer renderer =
+                new org.apache.pdfbox.rendering.PDFRenderer(doc);
+
+        StringBuilder out = new StringBuilder();
+        for (int start = 0; start < pages; start += OCR_PAGES_PER_CALL) {
+            int end = Math.min(start + OCR_PAGES_PER_CALL, pages);
+            List<byte[]> pngs = new ArrayList<>();
+            for (int p = start; p < end; p++) {
+                java.awt.image.BufferedImage img = renderer.renderImageWithDPI(p, OCR_DPI);
+                ByteArrayOutputStream png = new ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(img, "png", png);
+                pngs.add(png.toByteArray());
+            }
+            String instruction = ("These are scanned pages %d-%d of the document \"%s\". "
+                    + "Transcribe ALL text on these pages verbatim, in reading order, as plain text. "
+                    + "Preserve headings, labels, list structure, and table rows (use one line per row "
+                    + "with cells separated by \" | \"). For handwriting, transcribe your best reading. "
+                    + "Mark anything illegible as [illegible]. Do not summarize, interpret, or omit anything.")
+                    .formatted(start + 1, end, filename);
+            String batch = geminiService.transcribeImages(instruction, pngs);
+            if (out.length() > 0) out.append("\n\n");
+            out.append(batch.trim());
+        }
+        if (totalPages > pages) {
+            out.append("\n\n[Document truncated: only the first ").append(pages)
+               .append(" of ").append(totalPages).append(" scanned pages were transcribed.]");
+        }
+        return out.toString();
     }
 
     /** Sheets become "── SheetName ──" sections with tab-separated rows. */

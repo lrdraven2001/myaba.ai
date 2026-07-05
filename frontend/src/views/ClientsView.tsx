@@ -957,6 +957,7 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [uploadError, setUploadError] = useState('');
   const uploadRef = useRef<HTMLInputElement>(null);
   const pg = usePagination(docs, 8);
@@ -974,21 +975,31 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
   };
   useEffect(() => { loadDocs(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Direct file upload — text is extracted server-side and stored with the client.
+  // Direct file upload — text is extracted server-side (scanned PDFs are OCR'd)
+  // and stored with the client. Multiple files upload sequentially, max 10 at a time.
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-selecting the same file
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-selecting the same file(s)
+    if (files.length === 0) return;
+    if (files.length > 10) {
+      setUploadError('You can upload up to 10 files at a time.');
+      return;
+    }
     setUploadError('');
     setUploading(true);
-    try {
-      await api.uploadClientDocument(clientId, file);
-      loadDocs();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
-    } finally {
-      setUploading(false);
+    const failures: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress(files.length > 1 ? `${i + 1} of ${files.length}` : '');
+      try {
+        await api.uploadClientDocument(clientId, files[i]);
+      } catch (err) {
+        failures.push(`${files[i].name}: ${err instanceof Error ? err.message : 'upload failed'}`);
+      }
     }
+    loadDocs();
+    if (failures.length > 0) setUploadError(failures.join(' — '));
+    setUploading(false);
+    setUploadProgress('');
   };
 
   return (
@@ -1008,14 +1019,14 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
           <button
             onClick={() => uploadRef.current?.click()}
             disabled={uploading}
-            title="Upload a Word, PDF, Excel, or text document to this client's record"
+            title="Upload Word, PDF, Excel, or text documents to this client's record — up to 10 at a time. Scanned PDFs are read automatically."
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-60"
             style={{ borderColor: '#1E88FF', color: '#1E88FF', background: 'white' }}
           >
             <FontAwesomeIcon icon={uploading ? faSpinner : faUpload} className={`text-xs ${uploading ? 'animate-spin' : ''}`} />
-            {uploading ? 'Uploading…' : 'Upload'}
+            {uploading ? (uploadProgress ? `Uploading ${uploadProgress}…` : 'Uploading…') : 'Upload'}
           </button>
-          <input ref={uploadRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
+          <input ref={uploadRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
           <button
             onClick={() => setShowGenerate(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"

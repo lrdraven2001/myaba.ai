@@ -88,14 +88,14 @@ public class GeminiService implements LlmProvider {
      */
     @Override
     public String complete(String system, List<Map<String, String>> messages) {
-        return callGemini(geminiModelFast, fastGenerationConfig(), system, messages);
+        return callGeminiMessages(geminiModelFast, fastGenerationConfig(), system, messages);
     }
 
     @Override
     public String complete(String system, List<Map<String, String>> messages, boolean reasoning) {
         return reasoning
-                ? callGemini(geminiModelReasoning, reasoningGenerationConfig(), system, messages)
-                : callGemini(geminiModelFast, fastGenerationConfig(), system, messages);
+                ? callGeminiMessages(geminiModelReasoning, reasoningGenerationConfig(), system, messages)
+                : callGeminiMessages(geminiModelFast, fastGenerationConfig(), system, messages);
     }
 
     /** Fast tier (Flash-Lite): thinking disabled for low latency, moderate output budget. */
@@ -132,9 +132,43 @@ public class GeminiService implements LlmProvider {
             Map.of("category", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold", "OFF"),
             Map.of("category", "HARM_CATEGORY_HARASSMENT",        "threshold", "OFF"));
 
+    /**
+     * Transcribe scanned document pages (PNG images) to plain text. Used as the OCR
+     * fallback for PDFs with no extractable text layer. Runs on the fast tier with
+     * thinking off — transcription is mechanical, and the images carry the cost.
+     */
+    public String transcribeImages(String instruction, List<byte[]> pngPages) {
+        List<Map<String, Object>> parts = new ArrayList<>();
+        parts.add(Map.of("text", instruction));
+        for (byte[] png : pngPages) {
+            parts.add(Map.of("inlineData", Map.of(
+                    "mimeType", "image/png",
+                    "data", java.util.Base64.getEncoder().encodeToString(png))));
+        }
+        return callGemini(geminiModelFast,
+                Map.of("maxOutputTokens", 32768, "thinkingConfig", Map.of("thinkingBudget", 0)),
+                "You transcribe scanned documents. Output only the transcription — no commentary.",
+                List.of(Map.of("role", "user", "parts", parts)));
+    }
+
+    private String callGeminiMessages(String model, Map<String, Object> generationConfig,
+                                      String system, List<Map<String, String>> messages) {
+        // Map internal assistant/user messages → Gemini contents.
+        // role: "assistant" → "model"; everything else → "user".
+        List<Map<String, Object>> contents = new ArrayList<>();
+        for (Map<String, String> m : messages) {
+            String role = "assistant".equalsIgnoreCase(m.get("role")) ? "model" : "user";
+            contents.add(Map.of(
+                    "role", role,
+                    "parts", List.of(Map.of("text", m.getOrDefault("content", "")))
+            ));
+        }
+        return callGemini(model, generationConfig, system, contents);
+    }
+
     @SuppressWarnings("unchecked")
     private String callGemini(String model, Map<String, Object> generationConfig,
-                              String system, List<Map<String, String>> messages) {
+                              String system, List<Map<String, Object>> contents) {
         if (vertexProjectId == null || vertexProjectId.isBlank()) {
             throw new IllegalStateException(
                     "ai.provider=gemini but VERTEX_PROJECT_ID is not set. " +
@@ -146,17 +180,6 @@ public class GeminiService implements LlmProvider {
             String endpoint = "https://%s/v1/projects/%s/locations/%s"
                     .formatted(http.vertexHost(geminiLocation), vertexProjectId, geminiLocation)
                     + "/publishers/google/models/%s:generateContent".formatted(model);
-
-            // Map internal assistant/user messages → Gemini contents.
-            // role: "assistant" → "model"; everything else → "user".
-            List<Map<String, Object>> contents = new ArrayList<>();
-            for (Map<String, String> m : messages) {
-                String role = "assistant".equalsIgnoreCase(m.get("role")) ? "model" : "user";
-                contents.add(Map.of(
-                        "role", role,
-                        "parts", List.of(Map.of("text", m.getOrDefault("content", "")))
-                ));
-            }
 
             Map<String, Object> body = Map.of(
                     "systemInstruction", Map.of("parts", List.of(Map.of("text", system))),
