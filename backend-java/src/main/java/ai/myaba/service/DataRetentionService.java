@@ -93,7 +93,32 @@ public class DataRetentionService {
             totalDeleted += batchDeleted;
         } while (batchDeleted == BATCH_SIZE);   // keep going if the batch was full
 
-        log.info("DataRetentionService: purge complete — {} auditLog documents deleted.", totalDeleted);
+        // Platform-level audit events (no org) live in their own collection.
+        int platformDeleted = 0;
+        do {
+            batchDeleted = purgePlatformBatch(cutoffMs);
+            platformDeleted += batchDeleted;
+        } while (batchDeleted == BATCH_SIZE);
+
+        log.info("DataRetentionService: purge complete — {} auditLog + {} platformAuditLog documents deleted.",
+                totalDeleted, platformDeleted);
+    }
+
+    private int purgePlatformBatch(long cutoffMs) {
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            List<QueryDocumentSnapshot> docs = db.collection("platformAuditLog")
+                    .whereLessThan("timestampMs", cutoffMs)
+                    .limit(BATCH_SIZE)
+                    .get().get().getDocuments();
+            return deleteAll(db, docs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 0;
+        } catch (Exception e) {
+            log.error("DataRetentionService platformAuditLog purge failed: {}", e.getMessage());
+            return 0;
+        }
     }
 
     // ── Per-org retention (settings.retentionDays) ───────────────────────────
@@ -211,7 +236,10 @@ public class DataRetentionService {
         try {
             Firestore db = FirestoreClient.getFirestore();
 
-            List<QueryDocumentSnapshot> docs = db.collection("auditLog")
+            // Collection-group query covers every org's auditLog subcollection AND
+            // the legacy top-level auditLog collection (same collection ID).
+            // Requires the COLLECTION_GROUP index on timestampMs (firestore.indexes.json).
+            List<QueryDocumentSnapshot> docs = db.collectionGroup("auditLog")
                     .whereLessThan("timestampMs", cutoffMs)
                     .limit(BATCH_SIZE)
                     .get()

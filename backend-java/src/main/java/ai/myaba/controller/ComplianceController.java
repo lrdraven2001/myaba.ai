@@ -47,6 +47,9 @@ public class ComplianceController {
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private ai.myaba.service.AuditService auditService;
+
     // ── GET /api/compliance/summary ───────────────────────────────────────────
 
     @GetMapping("/summary")
@@ -70,11 +73,9 @@ public class ComplianceController {
         try {
             long cutoffMs = Instant.now().minus(days, ChronoUnit.DAYS).toEpochMilli();
 
-            Firestore db = FirestoreClient.getFirestore();
-            List<QueryDocumentSnapshot> docs = db.collection("auditLog")
-                    .whereEqualTo("orgId", user.getOrgId())
-                    .whereGreaterThan("timestampMs", cutoffMs)
-                    .get().get().getDocuments();
+            // Per-org audit subcollection merged with legacy top-level rows.
+            List<Map<String, Object>> docs = auditService.readOrgAudit(
+                    user.getOrgId(), cutoffMs, null, 0);
 
             // Aggregate metrics
             Map<String, Long> decisionCounts = new LinkedHashMap<>();
@@ -86,8 +87,7 @@ public class ComplianceController {
             String latestPolicy   = null;
             List<Map<String, Object>> recentEscalations = new ArrayList<>();
 
-            for (QueryDocumentSnapshot doc : docs) {
-                Map<String, Object> data = doc.getData();
+            for (Map<String, Object> data : docs) {
 
                 // Decision distribution
                 String decision = (String) data.get("decision");
@@ -186,20 +186,16 @@ public class ComplianceController {
             long cutoffMs = Instant.now().minus(days, ChronoUnit.DAYS).toEpochMilli();
             int safeLimit = Math.min(limit, 200);
 
-            Firestore db = FirestoreClient.getFirestore();
-            List<QueryDocumentSnapshot> docs = db.collection("auditLog")
-                    .whereEqualTo("orgId", user.getOrgId())
-                    .whereGreaterThan("timestampMs", cutoffMs)
-                    .orderBy("timestampMs", com.google.cloud.firestore.Query.Direction.DESCENDING)
-                    .limit(safeLimit)
-                    .get().get().getDocuments();
+            // Per-org audit subcollection merged with legacy top-level rows,
+            // already sorted newest-first and capped.
+            List<Map<String, Object>> docs = auditService.readOrgAudit(
+                    user.getOrgId(), cutoffMs, null, safeLimit);
 
             List<Map<String, Object>> events = docs.stream()
-                    .map(doc -> {
-                        Map<String, Object> data = doc.getData();
+                    .map(data -> {
                         Map<String, Object> safe = new LinkedHashMap<>();
                         // Return metadata only — never client content or PHI
-                        safe.put("id",            doc.getId());
+                        safe.put("id",            data.get("id"));
                         safe.put("eventType",     data.get("eventType"));
                         safe.put("timestamp",     data.get("timestamp"));
                         safe.put("decision",      data.get("decision"));

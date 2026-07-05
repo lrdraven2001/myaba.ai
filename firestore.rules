@@ -105,6 +105,14 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // ── auditLog (per-org) ────────────────────────────────────────────────
+      // Never readable by clients — served via the backend Compliance API only.
+
+      match /auditLog/{docId} {
+        allow read:  if false;
+        allow write: if false;
+      }
+
       // ── inviteTokens ──────────────────────────────────────────────────────
       // The /invite page resolves a token before the user is fully logged in,
       // so we allow any authenticated user to read (just the token document).
@@ -151,10 +159,18 @@ service cloud.firestore {
       }
     }
 
-    // ── auditLog (flat top-level collection) ──────────────────────────────────
+    // ── auditLog (LEGACY flat top-level collection) ────────────────────────────
+    // Pre-migration rows; new events go to organizations/{orgId}/auditLog.
     // Never readable by clients — platform auditing only via backend.
 
     match /auditLog/{docId} {
+      allow read:  if false;
+      allow write: if false;
+    }
+
+    // ── platformAuditLog (vendor-level events, no org) ─────────────────────────
+
+    match /platformAuditLog/{docId} {
       allow read:  if false;
       allow write: if false;
     }

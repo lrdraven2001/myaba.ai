@@ -21,6 +21,61 @@ public class AuditService {
     private boolean devMode;
 
     /**
+     * Org-scoped audit events live under {@code organizations/{orgId}/auditLog}
+     * so tenant isolation is structural, not query-discipline. Platform-level
+     * events (no org, e.g. approved-creator changes) go to {@code platformAuditLog}.
+     * Legacy rows written to the old top-level {@code auditLog} collection are
+     * still read (merged) by {@link #readOrgAudit} and purged via the
+     * collection-group retention job until they age out.
+     */
+    private com.google.cloud.firestore.CollectionReference auditCollection(Firestore db, String orgId) {
+        if (orgId != null && !orgId.isBlank()) {
+            return db.collection("organizations").document(orgId).collection("auditLog");
+        }
+        return db.collection("platformAuditLog");
+    }
+
+    /**
+     * Read an org's audit entries, newest-first: the per-org subcollection merged
+     * with legacy top-level {@code auditLog} rows (filtered by orgId). Optional
+     * {@code userId} narrows to one member; optional {@code sinceMs} bounds the
+     * window; {@code limit <= 0} means unbounded. Each entry carries {@code id}.
+     */
+    public List<Map<String, Object>> readOrgAudit(String orgId, Long sinceMs,
+                                                  String userId, int limit) throws Exception {
+        Firestore db = FirestoreClient.getFirestore();
+        int cap = limit > 0 ? limit : Integer.MAX_VALUE;
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+
+        com.google.cloud.firestore.Query sub = auditCollection(db, orgId);
+        if (userId  != null) sub = sub.whereEqualTo("userId", userId);
+        if (sinceMs != null) sub = sub.whereGreaterThan("timestampMs", sinceMs);
+        if (limit > 0)       sub = sub.limit(cap);
+        for (var d : sub.get().get().getDocuments()) {
+            Map<String, Object> m = new HashMap<>(d.getData());
+            m.put("id", d.getId());
+            out.add(m);
+        }
+
+        // Legacy top-level collection (pre-migration rows) — same filters as the
+        // original queries, so no new index requirements.
+        com.google.cloud.firestore.Query legacy = db.collection("auditLog").whereEqualTo("orgId", orgId);
+        if (userId  != null) legacy = legacy.whereEqualTo("userId", userId);
+        if (sinceMs != null) legacy = legacy.whereGreaterThan("timestampMs", sinceMs);
+        if (limit > 0)       legacy = legacy.limit(cap);
+        for (var d : legacy.get().get().getDocuments()) {
+            Map<String, Object> m = new HashMap<>(d.getData());
+            m.put("id", d.getId());
+            out.add(m);
+        }
+
+        out.sort((a, b) -> Long.compare(
+                b.get("timestampMs") instanceof Number nb ? nb.longValue() : 0L,
+                a.get("timestampMs") instanceof Number na ? na.longValue() : 0L));
+        return out.size() > cap ? new java.util.ArrayList<>(out.subList(0, cap)) : out;
+    }
+
+    /**
      * Write an audit event to Firestore asynchronously so it never blocks
      * the API response path.
      *
@@ -132,7 +187,7 @@ public class AuditService {
                 }
             }
 
-            db.collection("auditLog").add(entry);
+            auditCollection(db, orgId).add(entry);
         } catch (Exception e) {
             log.error("Failed to write ACLX audit log: {}", e.getMessage());
         }
@@ -181,7 +236,7 @@ public class AuditService {
             entry.put("timestamp",     now.toString());
             entry.put("timestampMs",   now.toEpochMilli());  // used by DataRetentionService queries
 
-            db.collection("auditLog").add(entry);
+            auditCollection(db, orgId).add(entry);
         } catch (Exception e) {
             // Audit failure must never crash the request
             log.error("Failed to write audit log: {}", e.getMessage());

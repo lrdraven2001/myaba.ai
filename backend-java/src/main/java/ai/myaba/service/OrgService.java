@@ -63,6 +63,9 @@ public class OrgService {
     @Value("${app.base-url:http://localhost:5173}")
     private String appBaseUrl;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private AuditService auditService;
+
     private final Map<String, Map<String, Object>>        devOrgs       = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>>        devTokens     = new ConcurrentHashMap<>();
     /** orgId → list of member maps (dev mode only) */
@@ -824,18 +827,14 @@ public class OrgService {
     }
 
     /**
-     * Recent activity for a member, derived from the audit log (userId is globally unique,
-     * so this is implicitly org-scoped). Sorted newest-first in memory to avoid a composite
-     * index. Returns [] in dev mode (audit entries are logged, not persisted).
+     * Recent activity for a member, from the org's audit subcollection (merged
+     * with legacy top-level rows). Explicitly org-scoped — the previous
+     * userId-only query on the global log assumed uids never span orgs, which
+     * breaks if a user is removed from one org and invited to another.
      */
     public List<Map<String, Object>> getMemberActivity(String orgId, String uid) throws Exception {
         if (devMode) return List.of();
-        Firestore db = FirestoreClient.getFirestore();
-        List<QueryDocumentSnapshot> docs = db.collection("auditLog")
-                .whereEqualTo("userId", uid)
-                .limit(200)
-                .get().get().getDocuments();
-        return docs.stream()
+        return auditService.readOrgAudit(orgId, null, uid, 200).stream()
                 .map(d -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("eventType",  d.get("eventType"));
@@ -846,7 +845,6 @@ public class OrgService {
                     m.put("timestampMs", d.get("timestampMs"));
                     return m;
                 })
-                .sorted((a, b) -> Long.compare(asLong(b.get("timestampMs")), asLong(a.get("timestampMs"))))
                 .limit(50)
                 .collect(java.util.stream.Collectors.toList());
     }
