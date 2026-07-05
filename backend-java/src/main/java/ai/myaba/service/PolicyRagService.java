@@ -203,6 +203,8 @@ public class PolicyRagService {
                             .label(sc.chunk().policyTitle() + " (chunk " + (sc.chunk().index() + 1) + ")")
                             .distribution("INTERNAL")
                             .owner(orgId)
+                            // Without text the gateway groundedness check silently skips.
+                            .text(sc.chunk().text())
                             .build())
                     .collect(Collectors.toList());
 

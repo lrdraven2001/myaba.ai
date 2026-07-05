@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,6 +101,55 @@ public class DocumentPersistenceService {
     public void persist(String orgId, String clientId, String authorUid,
                         String documentType, String content, AclxResponse aclxResult) {
         persistSync(orgId, clientId, authorUid, documentType, content, aclxResult);
+    }
+
+    /**
+     * Load a client's stored documents (uploaded + AI-generated) for use as chat
+     * context and ACLX grounding sources, newest first, capped by count and a
+     * total character budget so a document-heavy client can't blow the prompt.
+     *
+     * <p>Returns entries of {@code {id, title, content}}. Callers must have
+     * already verified the user can access this client.
+     */
+    public List<Map<String, Object>> loadClientContextDocs(String orgId, String clientId,
+                                                           int maxDocs, int charBudget) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (devMode) return out;
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            var docs = db.collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS)
+                    .orderBy("createdAtMs", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                    .limit(Math.max(1, maxDocs))
+                    .get().get().getDocuments();
+
+            int budget = charBudget;
+            for (var doc : docs) {
+                String content = doc.getString("content");
+                if (content == null || content.isBlank()) continue;
+                String title = doc.getString("title");
+                if (title == null || title.isBlank()) {
+                    title = doc.getString("documentType");
+                    if (title == null || title.isBlank()) title = "Client document";
+                }
+                if (content.length() > budget) {
+                    if (budget < 500) break; // not enough room left to be useful
+                    content = content.substring(0, budget) + "\n…[truncated]";
+                }
+                budget -= content.length();
+
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("id",      doc.getId());
+                entry.put("title",   title);
+                entry.put("content", content);
+                out.add(entry);
+                if (budget <= 0) break;
+            }
+        } catch (Exception e) {
+            log.warn("loadClientContextDocs failed org={} client={}: {}", orgId, clientId, e.getMessage());
+        }
+        return out;
     }
 
     /**

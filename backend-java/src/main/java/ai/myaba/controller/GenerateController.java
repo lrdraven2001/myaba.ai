@@ -490,13 +490,37 @@ public class GenerateController {
             ));
         }
 
+        // ── Client documents as automatic chat context ───────────────────────────
+        // A client attached to the chat brings their stored documents (uploaded +
+        // AI-generated) along: newest first, capped, deduped against manual
+        // attachments. Single-client chats only — multi-client context would blow
+        // the prompt and trips ACLX cross-client synthesis rules by design.
+        List<ChatRequest.ContextDoc> effectiveContextDocs = new ArrayList<>();
+        if (req.getContextDocs() != null) effectiveContextDocs.addAll(req.getContextDocs());
+        List<Map<String, Object>> autoClientDocs = List.of();
+        if (req.getClientId() != null && !req.getClientId().isBlank() && allClientIds.size() <= 1) {
+            autoClientDocs = documentPersistenceService.loadClientContextDocs(
+                    user.getOrgId(), req.getClientId(), 8, 48_000);
+            java.util.Set<String> manualNames = effectiveContextDocs.stream()
+                    .map(d -> d.getName() == null ? "" : d.getName().trim().toLowerCase())
+                    .collect(java.util.stream.Collectors.toSet());
+            for (Map<String, Object> d : autoClientDocs) {
+                String title = String.valueOf(d.get("title"));
+                if (manualNames.contains(title.trim().toLowerCase())) continue;
+                ChatRequest.ContextDoc cd = new ChatRequest.ContextDoc();
+                cd.setName(title);
+                cd.setContent(String.valueOf(d.get("content")));
+                effectiveContextDocs.add(cd);
+            }
+        }
+
         // Build message list for Gemini
         List<Map<String, String>> messages = new ArrayList<>();
         if (req.getHistory() != null) {
             req.getHistory().forEach(m ->
                     messages.add(Map.of("role", m.getRole(), "content", m.getContent())));
         }
-        messages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), req.getContextDocs())));
+        messages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), effectiveContextDocs)));
 
         // Build policy-augmented system prompt (includes base clinical identity + client context)
         String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
@@ -519,9 +543,20 @@ public class GenerateController {
         usageService.recordRequest(user.getOrgId(), "chat");
 
         // Layer 3+4: ACLX output governance (passes all client IDs for cross-client rules)
-        List<ai.myaba.model.dto.AclxRequest.Source> chatGroundingSources =
+        List<ai.myaba.model.dto.AclxRequest.Source> chatGroundingSources = new ArrayList<>(
                 policyRagService.buildGroundingSources(
-                        req.getMessage(), user.getOrgId(), req.getClientId(), policyService);
+                        req.getMessage(), user.getOrgId(), req.getClientId(), policyService));
+        // The client's own documents ground the reply too — a narrative drawn from an
+        // attached assessment verifies against it instead of flagging as unsupported.
+        for (Map<String, Object> d : autoClientDocs) {
+            chatGroundingSources.add(ai.myaba.model.dto.AclxRequest.Source.builder()
+                    .id("clientdoc/" + d.get("id"))
+                    .label(String.valueOf(d.get("title")))
+                    .distribution("INTERNAL")
+                    .owner(user.getOrgId())
+                    .text(String.valueOf(d.get("content")))
+                    .build());
+        }
         AclxResponse aclxResult = aclxService.evaluate(
                 rawReply, user, req.getClientId(),
                 allClientIds.size() > 1 ? allClientIds : null, chatGroundingSources);

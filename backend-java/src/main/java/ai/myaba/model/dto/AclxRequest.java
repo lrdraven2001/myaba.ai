@@ -52,6 +52,11 @@ public class AclxRequest {
         private String label;
         private String distribution;
         private String owner;
+        /**
+         * Source content. When present, the ACLX groundedness detector verifies the
+         * AI response against it; without text the check is silently skipped.
+         */
+        private String text;
     }
 
     @Data
