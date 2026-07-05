@@ -832,25 +832,76 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
   const [content, setContent]   = useState(editing?.textContent ?? (presetDoc ? defaultTemplateFor(presetDoc) : ''));
   const [hipaaMarked, setHipaaMarked] = useState(editing?.hipaaMarked ?? false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
+
+  const extractFileText = async (f: File): Promise<string> => {
+    if (/\.(txt|md|text)$/i.test(f.name)) return f.text();
+    const { text } = await api.extractAttachment(f);
+    return text ?? '';
+  };
+
+  const fileTypeFor = (name: string) =>
+    /\.docx$/i.test(name) ? 'DOCX' : /\.pdf$/i.test(name) ? 'PDF' : 'TEXT';
 
   // Upload any supported document (Word/PDF/Excel/text) — extracted server-side.
   const uploadFile = async (f: File) => {
     setUploading(true); setError('');
     try {
-      if (/\.(txt|md|text)$/i.test(f.name)) {
-        setContent(await f.text());
-      } else {
-        const { text } = await api.extractAttachment(f);
-        if (!text.trim()) { setError(`No readable text found in “${f.name}”.`); setUploading(false); return; }
-        setContent(text);
-      }
-      setFileType(/\.docx$/i.test(f.name) ? 'DOCX' : /\.pdf$/i.test(f.name) ? 'PDF' : 'TEXT');
+      const text = await extractFileText(f);
+      if (!text.trim()) { setError(`No readable text found in “${f.name}”.`); setUploading(false); return; }
+      setContent(text);
+      setFileType(fileTypeFor(f.name));
       setSource('UPLOAD');
       if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to read the file.'); }
     finally { setUploading(false); }
+  };
+
+  // Multiple files (up to 10, new items only): each becomes its own resource,
+  // titled after its filename and using the form's current type/category settings.
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 1) { await uploadFile(files[0]); return; }
+    if (files.length > 10) { setError('You can add up to 10 files at a time.'); return; }
+    setUploading(true); setError('');
+    const bucket = tab === 'templates' || tab === 'library' ? 'LIBRARY' : tab === 'policies' ? 'POLICY' : 'GROUNDING';
+    const failures: string[] = [];
+    let addedCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress(`${i + 1} of ${files.length}`);
+      const f = files[i];
+      const docTitle = f.name.replace(/\.[^.]+$/, '');
+      try {
+        const text = await extractFileText(f);
+        if (!text.trim()) { failures.push(`${f.name}: no readable text`); continue; }
+        await api.createPolicy({
+          title: docTitle,
+          category: (isTemplate ? 'generation_template' : resourceType.toLowerCase()),
+          textContent: text,
+          description: description.trim(),
+          bucket,
+          resourceType: isTemplate ? 'GENERATION_TEMPLATE' : resourceType,
+          documentType: isTemplate ? slug(docTitle) : undefined,
+          customized: isTemplate ? true : undefined,
+          topicCategory: topicCategory || undefined,
+          fileType: fileTypeFor(f.name),
+          source: 'UPLOAD',
+          folder: folder.trim() || undefined,
+          shared,
+          hipaaMarked,
+          isActive: true,
+        });
+        addedCount++;
+      } catch (e: unknown) {
+        failures.push(`${f.name}: ${e instanceof Error ? e.message : 'failed'}`);
+      }
+    }
+    setUploading(false);
+    setUploadProgress('');
+    if (failures.length > 0) window.alert(`Some files could not be added:\n${failures.join('\n')}`);
+    if (addedCount > 0) onSaved(); // closes the modal and refreshes the list
+    else if (failures.length > 0) setError('No documents were added.');
   };
 
   const save = async () => {
@@ -951,8 +1002,10 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
           {/* Document upload — all buckets (templates, policies, library, grounding) */}
           <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer" style={{ borderColor: '#1E88FF', color: '#1E88FF' }}>
             <FontAwesomeIcon icon={uploading ? faSpinner : faWordUpload} className={uploading ? 'animate-spin' : ''} />
-            {uploading ? 'Reading…' : 'Upload document (Word / PDF / Excel / text)'}
-            <input type="file" accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }} />
+            {uploading
+              ? (uploadProgress ? `Adding ${uploadProgress}…` : 'Reading…')
+              : `Upload document${editing ? '' : 's'} (Word / PDF / Excel / text)`}
+            <input type="file" multiple={!editing} accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv" className="hidden" disabled={uploading} onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length > 0) { if (editing) uploadFile(fs[0]); else uploadFiles(fs); } e.target.value = ''; }} />
           </label>
 
           <Field label="Content">

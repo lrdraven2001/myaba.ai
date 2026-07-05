@@ -1143,6 +1143,7 @@ function AddKnowledgeDocModal({
   const [content, setContent] = useState('');
   const [saving, setSaving]   = useState(false);
   const [reading, setReading] = useState(false);
+  const [readProgress, setReadProgress] = useState('');
   const [fileError, setFileError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1167,28 +1168,62 @@ function AddKnowledgeDocModal({
   };
 
   // Word/PDF/Excel go through the backend extractor; plain text reads locally.
+  const extractFile = async (file: File): Promise<string> => {
+    if (/\.(txt|md)$/i.test(file.name)) return file.text();
+    const { text } = await api.extractAttachment(file);
+    return text ?? '';
+  };
+
+  // One file fills the form for review; multiple files (up to 10) each become
+  // their own knowledge document immediately, titled after the filename.
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-selecting the same file
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-selecting the same file(s)
+    if (files.length === 0) return;
+    if (files.length > 10) { setFileError('You can add up to 10 files at a time.'); return; }
     setFileError('');
-    if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
-    if (/\.(txt|md)$/i.test(file.name)) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setContent(ev.target?.result as string ?? '');
-      reader.readAsText(file);
+
+    if (files.length === 1) {
+      const file = files[0];
+      if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''));
+      setReading(true);
+      try {
+        const text = await extractFile(file);
+        if (!text.trim()) { setFileError(`No readable text found in “${file.name}”.`); return; }
+        setContent(text);
+      } catch (err) {
+        setFileError(err instanceof Error ? err.message : 'Could not read the file.');
+      } finally {
+        setReading(false);
+      }
       return;
     }
+
     setReading(true);
-    try {
-      const { text } = await api.extractAttachment(file);
-      if (!text.trim()) { setFileError(`No readable text found in “${file.name}”.`); return; }
-      setContent(text);
-    } catch (err) {
-      setFileError(err instanceof Error ? err.message : 'Could not read the file.');
-    } finally {
-      setReading(false);
+    const failures: string[] = [];
+    const added: ProjectKnowledgeDoc[] = [];
+    for (let i = 0; i < files.length; i++) {
+      setReadProgress(`${i + 1} of ${files.length}`);
+      const file = files[i];
+      const docTitle = file.name.replace(/\.[^.]+$/, '');
+      try {
+        const text = await extractFile(file);
+        if (!text.trim()) { failures.push(`${file.name}: no readable text`); continue; }
+        const { docId } = await api.addProjectKnowledge(projectId, docTitle, text.trim());
+        added.push({
+          id: docId, title: docTitle, textContent: text.trim(),
+          createdAt: new Date().toISOString(), createdBy: '',
+        });
+      } catch (err) {
+        failures.push(`${file.name}: ${err instanceof Error ? err.message : 'failed'}`);
+      }
     }
+    setReading(false);
+    setReadProgress('');
+    // onAdded closes the modal, so surface any per-file failures before delivering results.
+    if (failures.length > 0) window.alert(`Some files could not be added:\n${failures.join('\n')}`);
+    added.forEach(onAdded);
+    if (added.length === 0 && failures.length > 0) setFileError('No documents were added.');
   };
 
   const handleSave = async () => {
@@ -1253,11 +1288,11 @@ function AddKnowledgeDocModal({
                   className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-teal-400 hover:text-teal-700 transition-colors disabled:opacity-60"
                 >
                   <FontAwesomeIcon icon={reading ? faSpinner : faUpload} className={reading ? 'animate-spin' : ''} style={{ fontSize: 10 }} />
-                  {reading ? 'Reading…' : 'Upload file'}
+                  {reading ? (readProgress ? `Adding ${readProgress}…` : 'Reading…') : 'Upload files'}
                 </button>
               </div>
             </div>
-            <input ref={fileRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
             {fileError && <p className="text-xs text-red-500 mb-1.5">{fileError}</p>}
             <textarea
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
