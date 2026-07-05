@@ -172,7 +172,13 @@ public class ClientService {
         if (!firstName.isEmpty() && !lastName.isEmpty()) {
             ids.add(firstName + " " + lastName);
         }
-        // Add preferred name only when it differs from first name (avoids duplicates)
+        // First name on its own — clinical narratives usually say "James was
+        // alert…", and without this alias the ACLX cross-subject check couldn't
+        // attribute such mentions to the authorized client and escalated them.
+        if (!firstName.isEmpty()) {
+            ids.add(firstName);
+        }
+        // Preferred name when it differs from first name (avoids duplicates)
         if (!preferred.isEmpty() && !preferred.equalsIgnoreCase(firstName)) {
             ids.add(preferred);
         }
