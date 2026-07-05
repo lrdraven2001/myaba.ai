@@ -102,11 +102,12 @@ public class AuditService {
                 List<Map<String, Object>> findings = aclxResult.getDetectorFindings();
                 if (findings != null && !findings.isEmpty()) {
                     entry.put("aclxDetectorFindingCount", findings.size());
-                    // Store only non-PII metadata: detector name + matched flag
+                    // Store only non-PII metadata: detector name + triggered flag.
+                    // (Gateway findings use "triggered"; older records used "matched".)
                     entry.put("aclxDetectorSummary", findings.stream()
                             .map(f -> Map.of(
                                     "detector", f.getOrDefault("detector", "unknown"),
-                                    "matched",  f.getOrDefault("matched", false)))
+                                    "matched",  f.getOrDefault("triggered", f.getOrDefault("matched", false))))
                             .toList());
                 }
 
