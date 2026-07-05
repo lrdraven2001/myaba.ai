@@ -184,6 +184,7 @@ public class SearchService {
                         "SEARCH_SUMMARY",
                         user.getUid(),
                         primaryClientId,
+                        null, // search summaries aren't tied to a chat thread
                         rawSummary,
                         aclx.getDecision().getReason(),
                         aclx.getAclx() != null ? aclx.getAclx().getSensitivity() : null,

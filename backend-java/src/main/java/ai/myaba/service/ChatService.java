@@ -333,6 +333,46 @@ public class ChatService {
     }
 
     /**
+     * Deliver a reviewer's verdict into the chat: replace the "flagged for review"
+     * placeholder assistant message (matched by ACLX {@code contentId}) with
+     * {@code newContent} and set its decision so the UI renders it normally.
+     * Called from {@link ReviewQueueService} on approve/deny — no per-user auth
+     * here, the caller already requires admin. Returns true if a message updated.
+     */
+    public boolean updateReviewedResponse(String orgId, String chatId, String contentId,
+                                          String newContent, String decision) {
+        if (chatId == null || chatId.isBlank() || contentId == null || contentId.isBlank()) return false;
+        try {
+            if (devMode) {
+                List<Map<String, Object>> msgs = devMessages.get(chatId);
+                if (msgs == null) return false;
+                for (Map<String, Object> m : msgs) {
+                    if ("assistant".equals(m.get("role")) && contentId.equals(m.get("aclxContentId"))) {
+                        m.put("content", newContent);
+                        m.put("aclxDecision", decision);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            Firestore db = FirestoreClient.getFirestore();
+            var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection("chats").document(chatId).collection("messages")
+                    .whereEqualTo("aclxContentId", contentId).get().get().getDocuments();
+            for (var doc : docs) {
+                if ("assistant".equals(doc.getString("role"))) {
+                    doc.getReference().update(Map.of("content", newContent, "aclxDecision", decision)).get();
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("updateReviewedResponse failed chat={} contentId={}: {}", chatId, contentId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Update a chat's title (owner or admin only).
      */
     public void updateChatTitle(AppUser user, String chatId, String newTitle) throws Exception {

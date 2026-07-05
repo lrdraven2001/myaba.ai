@@ -62,9 +62,14 @@ import java.util.stream.Collectors;
 public class ReviewQueueService {
 
     private final AclxService aclxService;
+    private final ChatService chatService;
+    private final NotificationService notificationService;
 
-    public ReviewQueueService(AclxService aclxService) {
+    public ReviewQueueService(AclxService aclxService, ChatService chatService,
+                              NotificationService notificationService) {
         this.aclxService = aclxService;
+        this.chatService = chatService;
+        this.notificationService = notificationService;
     }
 
     @Value("${dev.auth-enabled:false}")
@@ -214,7 +219,7 @@ public class ReviewQueueService {
      *                        record detail).  Null-safe — extra fields are simply omitted.
      */
     public String enqueue(String orgId, String contentId, String eventType,
-                          String requestingUserId, String clientId,
+                          String requestingUserId, String clientId, String chatId,
                           String rawContent, String aclxReason,
                           String aclxSensitivity, String aclxCategory,
                           String authDenyReason, boolean blocking,
@@ -229,6 +234,7 @@ public class ReviewQueueService {
         item.put("eventType",        eventType);
         item.put("requestingUserId", requestingUserId);
         item.put("clientId",         clientId != null ? clientId : "");
+        item.put("chatId",           chatId != null ? chatId : "");
         item.put("rawContent",       rawContent != null ? rawContent : "");
         item.put("aclxReason",       aclxReason != null ? aclxReason : "");
         item.put("aclxSensitivity",  aclxSensitivity != null ? aclxSensitivity : "");
@@ -393,6 +399,7 @@ public class ReviewQueueService {
                     notes,
                     reviewer.getUid());
 
+            deliverVerdictToChat(item, reviewer, verdict);
             return item;
         }
 
@@ -422,10 +429,53 @@ public class ReviewQueueService {
         Map<String, Object> result = new HashMap<>(allData);
         result.put("id", itemId);
         result.putAll(updates);
+        deliverVerdictToChat(result, reviewer, verdict);
         return result;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Deliver a review verdict to the requesting user: on APPROVE, drop the held
+     * response text into the chat (replacing the "flagged for review" placeholder);
+     * on DENY, replace it with a clear notice. Either way, notify the user so they
+     * know the outcome — the reported bug was that an approved response had no path
+     * back to the chat. Best-effort: a missing chatId/message never fails the review.
+     */
+    private void deliverVerdictToChat(Map<String, Object> item, AppUser reviewer, String verdict) {
+        String orgId      = reviewer.getOrgId();
+        String chatId     = str(item.get("chatId"));
+        String contentId  = str(item.get("contentId"));
+        String rawContent = str(item.get("rawContent"));
+        String userId     = str(item.get("requestingUserId"));
+        boolean approved  = "APPROVED".equals(verdict);
+
+        boolean delivered = false;
+        if (!chatId.isBlank() && !contentId.isBlank()) {
+            String newContent = approved ? rawContent
+                    : "This response was reviewed and could not be released. Please rephrase your request or contact your administrator.";
+            delivered = chatService.updateReviewedResponse(orgId, chatId, contentId, newContent, verdict);
+        }
+
+        if (!userId.isBlank()) {
+            try {
+                if (approved) {
+                    notificationService.notify(orgId, userId, "Flagged response approved",
+                            delivered ? "A reviewer approved your flagged response — it's now available in your chat."
+                                      : "A reviewer approved your flagged response.",
+                            "success", "review", null, reviewer.getUid());
+                } else {
+                    notificationService.notify(orgId, userId, "Flagged response reviewed",
+                            "A reviewer could not release your flagged response. Please rephrase or contact your administrator.",
+                            "warning", "review", null, reviewer.getUid());
+                }
+            } catch (Exception e) {
+                log.warn("Review verdict notify failed for user {}: {}", userId, e.getMessage());
+            }
+        }
+    }
+
+    private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
 
     private void requireAdmin(AppUser user) {
         ai.myaba.security.AuthorizationUtil.requireAdmin(user);

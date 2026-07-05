@@ -277,6 +277,7 @@ public class GenerateController {
                         "DOCUMENT_GENERATED",
                         user.getUid(),
                         req.getClientId(),
+                        null, // no chat thread for document generation
                         rawOutput,
                         aclxResult.getDecision().getReason(),
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
@@ -563,6 +564,7 @@ public class GenerateController {
                     "CHAT_RESPONSE",
                     user.getUid(),
                     req.getClientId(),
+                    req.getChatId(), // link the review item to the chat so approval can deliver it back
                     rawReply,
                     aclxResult.getDecision().getReason(),
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,

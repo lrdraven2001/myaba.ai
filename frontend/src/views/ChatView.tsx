@@ -985,6 +985,8 @@ const ACLX_STYLES: Record<string, { bg: string; text: string; label: string }> =
   REDACT:   { bg: '#e0f2fe', text: '#0369a1', label: 'Some details redacted' },
   BLOCK:    { bg: '#FBF3E6', text: '#9A6A1C', label: 'Held by compliance safeguards' },
   ESCALATE: { bg: '#fef3c7', text: '#d97706', label: 'Flagged for review' },
+  APPROVED: { bg: '#dcfce7', text: '#166534', label: 'Approved after review' },
+  DENIED:   { bg: '#FBF3E6', text: '#9A6A1C', label: 'Not released by review' },
 };
 
 function AclxBadge({ decision }: { decision: string }) {
