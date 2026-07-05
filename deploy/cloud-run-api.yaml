@@ -74,6 +74,11 @@ spec:
             - name: CORS_ALLOWED_ORIGINS
               value: "https://app.myaba.ai,https://myaba.ai,https://myaba-app.web.app,https://myaba-ai.web.app,https://admin.myaba.ai,https://myaba-admin.web.app"
 
+            # ── Public app URL — invite links + SSO callback are built on this.
+            #    Without it the code default is http://localhost:5173. ──────────
+            - name: APP_BASE_URL
+              value: "https://app.myaba.ai"
+
             # ── Platform-admin tier: vendor operator emails for /api/platform
             #    (the admin.myaba.ai console). Comma-separated, case-insensitive,
             #    fails closed when empty. NOT a customer role. Lives here (not a

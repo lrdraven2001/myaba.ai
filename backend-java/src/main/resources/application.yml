@@ -135,6 +135,13 @@ rate-limit:
 retention:
   audit-log-days: ${RETENTION_AUDIT_LOG_DAYS:2555}
 
+# ── App base URL ──────────────────────────────────────────────────────────
+# Public URL of the customer app — used to build invite links and the SSO
+# callback. MUST be set in production (deploy/cloud-run-api.yaml sets
+# APP_BASE_URL=https://app.myaba.ai) or invites point at localhost.
+app:
+  base-url: ${APP_BASE_URL:http://localhost:5173}
+
 # ── Platform admin (vendor tier) ──────────────────────────────────────────
 # Comma-separated emails of vendor operators allowed to use /api/platform
 # (the admin.myaba.ai console). This is a SEPARATE tier from customer roles —
