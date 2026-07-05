@@ -555,6 +555,11 @@ public class GenerateController {
                     .distribution("INTERNAL")
                     .owner(user.getOrgId())
                     .text(String.valueOf(d.get("content")))
+                    // Declare what these are: PHI documents (sensitivity HIGH — or the
+                    // gateway flags them as under-marked sources) belonging to THIS
+                    // client (subject_id — so multiple docs about one patient aren't
+                    // mistaken for cross-patient synthesis).
+                    .metadata(Map.of("sensitivity", "HIGH", "subject_id", req.getClientId()))
                     .build());
         }
         AclxResponse aclxResult = aclxService.evaluate(

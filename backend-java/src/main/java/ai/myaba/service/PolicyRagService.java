@@ -205,6 +205,11 @@ public class PolicyRagService {
                             .owner(orgId)
                             // Without text the gateway groundedness check silently skips.
                             .text(sc.chunk().text())
+                            // Declare HIGH so clinical content inside org grounding docs
+                            // can't read as an "under-marked source" (over-declaring is
+                            // safe; observed > declared is what escalates). No subject_id:
+                            // org knowledge, not patient data.
+                            .metadata(java.util.Map.of("sensitivity", "HIGH"))
                             .build())
                     .collect(Collectors.toList());
 

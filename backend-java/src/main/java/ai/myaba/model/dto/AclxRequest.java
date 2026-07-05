@@ -57,6 +57,15 @@ public class AclxRequest {
          * AI response against it; without text the check is silently skipped.
          */
         private String text;
+        /**
+         * Gateway source metadata. Keys the gateway understands:
+         * {@code sensitivity} — declared sensitivity (PHI docs must declare HIGH or
+         * the source-evidence check flags them as under-marked and escalates);
+         * {@code subject_id} — the data subject (client) a source belongs to, so the
+         * synthesis detector can tell one patient's documents from cross-patient
+         * aggregation.
+         */
+        private Map<String, Object> metadata;
     }
 
     @Data
