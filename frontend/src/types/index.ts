@@ -237,6 +237,12 @@ export interface OrgSettings {
   preferClientDisplayName?: boolean;
   /** Org data-retention window in days (minimum 30). Audit/compliance logs keep a separate HIPAA 6-year floor. */
   retentionDays?: number;
+  /**
+   * ACLX report-only mode (pilot feedback gathering): ESCALATE decisions deliver
+   * the content and are logged for reviewer feedback instead of being withheld.
+   * Hard BLOCKs always enforce regardless.
+   */
+  aclxReportOnly?: boolean;
 }
 
 /** Acceptance status for a signed agreement (BAA, Service Contract). */

@@ -379,11 +379,13 @@ public class ReviewQueueService {
             Map<String, Object> item = devQueue.get(itemId);
             if (item == null) throw new NoSuchElementException("Review item not found: " + itemId);
             String itemStatus = (String) item.get("status");
-            if (!"PENDING".equals(itemStatus))
-                throw new IllegalStateException(
-                    "LOGGED".equals(itemStatus)
-                        ? "Item " + itemId + " is an audit-log entry and does not require review"
-                        : "Item " + itemId + " is not pending");
+            // PENDING items are blocking reviews; LOGGED items (report-only /
+            // non-blocking escalations) accept verdicts purely as feedback —
+            // the content was already delivered, so no chat delivery happens.
+            if (!"PENDING".equals(itemStatus) && !"LOGGED".equals(itemStatus))
+                throw new IllegalStateException("Item " + itemId + " has already been reviewed");
+            boolean wasLogged = "LOGGED".equals(itemStatus);
+            item.put("wasLogged",     wasLogged);
 
             item.put("status",        verdict);
             item.put("reviewedBy",    reviewer.getUid());
@@ -399,7 +401,7 @@ public class ReviewQueueService {
                     notes,
                     reviewer.getUid());
 
-            deliverVerdictToChat(item, reviewer, verdict);
+            if (!wasLogged) deliverVerdictToChat(item, reviewer, verdict);
             return item;
         }
 
@@ -408,9 +410,17 @@ public class ReviewQueueService {
                     .collection("reviewQueue").document(itemId);
         var snap = ref.get().get();
         if (!snap.exists()) throw new NoSuchElementException("Review item not found: " + itemId);
+        String priorStatus = snap.getString("status");
+        if (!"PENDING".equals(priorStatus) && !"LOGGED".equals(priorStatus)) {
+            throw new IllegalArgumentException("Item " + itemId + " has already been reviewed");
+        }
+        // LOGGED = report-only / non-blocking escalation: verdicts are pure
+        // feedback (content already delivered) — no chat delivery on approve.
+        boolean wasLogged = "LOGGED".equals(priorStatus);
 
         Map<String, Object> updates = new HashMap<>();
         updates.put("status",        verdict);
+        updates.put("wasLogged",     wasLogged);
         updates.put("reviewedBy",    reviewer.getUid());
         updates.put("reviewedAt",    TimestampUtil.now());
         updates.put("reviewerNotes", notes != null ? notes : "");
@@ -429,7 +439,7 @@ public class ReviewQueueService {
         Map<String, Object> result = new HashMap<>(allData);
         result.put("id", itemId);
         result.putAll(updates);
-        deliverVerdictToChat(result, reviewer, verdict);
+        if (!wasLogged) deliverVerdictToChat(result, reviewer, verdict);
         return result;
     }
 

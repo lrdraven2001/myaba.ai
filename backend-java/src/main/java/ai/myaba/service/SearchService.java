@@ -38,6 +38,7 @@ public class SearchService {
     private final AclxService         aclxService;
     private final AuditService        auditService;
     private final ReviewQueueService  reviewQueueService;
+    private final OrgService          orgService;
 
     private static final int MAX_HITS    = 40;
     private static final int SNIPPET_LEN = 220;
@@ -168,6 +169,9 @@ public class SearchService {
             auditService.logAclx("SEARCH_SUMMARY", user.getOrgId(), user.getUid(), primaryClientId,
                     null, aclx, null, null);
 
+            // Report-only mode: escalated summaries deliver and are LOGGED for
+            // reviewer feedback instead of being withheld.
+            boolean searchReportOnly = orgService.isAclxReportOnly(user.getOrgId());
             if ("ESCALATE".equals(summaryDecision)) {
                 // Extract authorization deny reason for reviewer context (null when no auth check)
                 String searchAuthDenyReason = null;
@@ -190,7 +194,7 @@ public class SearchService {
                         aclx.getAclx() != null ? aclx.getAclx().getSensitivity() : null,
                         aclx.getAclx() != null ? aclx.getAclx().getCategory()    : null,
                         searchAuthDenyReason,
-                        true /* search summary escalations always block */,
+                        !searchReportOnly /* enforcing: hold; report-only: LOGGED */,
                         aclx);
             }
 
@@ -199,7 +203,11 @@ public class SearchService {
                 case "ALLOW", "REDACT" -> aclx.getDecision().getFinalText() != null
                         ? aclx.getDecision().getFinalText()
                         : rawSummary;
-                // BLOCK / ESCALATE: withhold the synthesised text; reason is audit-logged
+                // ESCALATE in report-only mode delivers (logged above for feedback)
+                case "ESCALATE" -> searchReportOnly && aclx.getDecision().getFinalText() != null
+                        ? aclx.getDecision().getFinalText()
+                        : "";
+                // BLOCK: always withhold; reason is audit-logged
                 default -> "";
             };
         }

@@ -16,6 +16,7 @@ type Rule = {
 
 export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [preferNames, setPreferNames] = useState(false);
+  const [reportOnly, setReportOnly]   = useState(false);
   const [allow, setAllow]   = useState<Rule[]>([]);
   const [block, setBlock]   = useState<Rule[]>([]);
   const [query, setQuery]   = useState('');
@@ -31,13 +32,21 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
 
   useEffect(() => {
     if (!orgId) return;
-    api.getOrg(orgId).then((o) => setPreferNames(o.settings?.preferClientDisplayName ?? false)).catch(() => {});
+    api.getOrg(orgId).then((o) => {
+      setPreferNames(o.settings?.preferClientDisplayName ?? false);
+      setReportOnly(o.settings?.aclxReportOnly ?? false);
+    }).catch(() => {});
     loadPolicy();
   }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const togglePreferNames = async (next: boolean) => {
     setPreferNames(next);
     await api.updateOrgSettings(orgId, { preferClientDisplayName: next }).catch(() => {});
+  };
+
+  const toggleReportOnly = async (next: boolean) => {
+    setReportOnly(next);
+    await api.updateOrgSettings(orgId, { aclxReportOnly: next }).catch(() => setReportOnly(!next));
   };
 
   const removeRule = async (id: string) => {
@@ -63,6 +72,23 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
         description="Define what content is always permitted or always restricted for your organization, beyond the default compliance baseline."
         action={isAdmin ? <PrimaryButton icon={faPlus} onClick={() => setAdding(true)}>Add Rule</PrimaryButton> : undefined}
       />
+
+      {/* Enforcement mode */}
+      <SettingsCard icon={faShieldHalved} title="Compliance Enforcement" subtitle="How flagged AI responses are handled.">
+        <div className="border-t border-gray-100">
+          <SettingRow
+            icon={faCircleInfo}
+            title="Report-only mode"
+            description="When on, responses flagged for review are DELIVERED immediately and logged to the Review screen, where reviewers can still submit approve/deny feedback (which trains the compliance engine). Hard blocks — missing authorizations, security violations — are always enforced regardless. Intended for pilot/feedback phases; turn off for full enforcement."
+            control={
+              <div className="flex items-center gap-2.5">
+                <Badge tone={reportOnly ? 'amber' : 'green'}>{reportOnly ? 'Report-only' : 'Enforcing'}</Badge>
+                <Toggle checked={reportOnly} onChange={toggleReportOnly} disabled={!isAdmin} label="Report-only mode" />
+              </div>
+            }
+          />
+        </div>
+      </SettingsCard>
 
       {/* Output Formatting */}
       <SettingsCard icon={faRightLeft} title="Output Formatting" subtitle="Control how client names are handled in AI-generated outputs.">

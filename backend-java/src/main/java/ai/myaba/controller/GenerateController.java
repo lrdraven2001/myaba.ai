@@ -284,6 +284,9 @@ public class GenerateController {
             case "ESCALATE" -> {
                 auditService.logAclx("DOCUMENT_ESCALATED", user.getOrgId(), user.getUid(), req.getClientId(),
                         null, aclxResult, null, null);
+                // Report-only mode: deliver the document and log the escalation
+                // for reviewer feedback instead of holding it.
+                boolean docReportOnly = orgService.isAclxReportOnly(user.getOrgId());
                 String rqItemId = reviewQueueService.enqueue(
                         user.getOrgId(),
                         aclxResult.getContentId(),
@@ -296,8 +299,25 @@ public class GenerateController {
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                         aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
                         authDenyReason,
-                        true /* document escalations always block */,
+                        !docReportOnly /* enforcing: hold; report-only: LOGGED */,
                         aclxResult);
+                if (docReportOnly) {
+                    String escDocId = documentPersistenceService.persistSync(
+                            user.getOrgId(), req.getClientId(), user.getUid(),
+                            req.getDocumentType(), aclxResult.getDecision().getFinalText(), aclxResult);
+                    yield ResponseEntity.ok(GenerateDocumentResponse.builder()
+                            .success(true)
+                            .documentType(req.getDocumentType())
+                            .content(aclxResult.getDecision().getFinalText())
+                            .decision(decision)
+                            .contentId(aclxResult.getContentId())
+                            .contentLabel(aclxResult.getContentLabel())
+                            .documentId(escDocId)
+                            .reviewId(rqItemId)
+                            .message("Flagged by compliance (report-only mode) — delivered and logged for review feedback")
+                            .detectorFindings(sanitiseFindings(aclxResult.getDetectorFindings()))
+                            .build());
+                }
                 yield ResponseEntity.accepted().body(GenerateDocumentResponse.builder()
                         .status("PENDING_REVIEW")
                         .message("Document flagged for human review before release")
@@ -610,8 +630,12 @@ public class GenerateController {
                     req.getClientId(), user.getUid(), chatBlockReason);
         }
 
-        // Check org's reviewRequired setting to decide whether ESCALATE blocks delivery
+        // Check org settings to decide whether ESCALATE blocks delivery.
+        // Report-only mode (Pathfinder feedback gathering): escalations deliver
+        // and are LOGGED for reviewer feedback; BLOCK still always enforces.
         boolean reviewRequired = orgService.isReviewRequired(user.getOrgId());
+        boolean reportOnly     = orgService.isAclxReportOnly(user.getOrgId());
+        boolean withholdOnEscalate = reviewRequired && !reportOnly;
 
         if ("ESCALATE".equals(decision)) {
             // §4: Pass authorization deny reason + full aclxResult into review queue
@@ -629,15 +653,15 @@ public class GenerateController {
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getSensitivity() : null,
                     aclxResult.getAclx() != null ? aclxResult.getAclx().getCategory()    : null,
                     chatAuthDenyReason,
-                    reviewRequired,
+                    withholdOnEscalate,
                     aclxResult);
         }
 
-        // Build reply — BLOCK always withholds, ESCALATE withholds only when reviewRequired
+        // Build reply — BLOCK always withholds, ESCALATE withholds only when enforcing
         String reply;
         if ("BLOCK".equals(decision)) {
             reply = softBlockMessage(aclxResult, chatIsQuarantine);
-        } else if ("ESCALATE".equals(decision) && reviewRequired) {
+        } else if ("ESCALATE".equals(decision) && withholdOnEscalate) {
             reply = "This response has been flagged for a quick compliance review and will be available once approved. "
                   + "This is a routine safeguard, not necessarily a problem with your request.";
         } else {

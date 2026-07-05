@@ -220,6 +220,27 @@ public class OrgService {
         return true; // safe default
     }
 
+    /**
+     * ACLX report-only mode (Pathfinder feedback gathering): ESCALATE decisions
+     * deliver the content and are logged for reviewer feedback instead of being
+     * withheld. BLOCK decisions are NOT affected — hard blocks (statutory
+     * authorization gaps, security violations, fail-safes) always enforce.
+     * Defaults to false (full enforcement) and fails closed on read errors.
+     */
+    public boolean isAclxReportOnly(String orgId) {
+        try {
+            Map<String, Object> org = getOrg(orgId);
+            Object settings = org.get("settings");
+            if (settings instanceof Map<?,?> m) {
+                Object val = m.get("aclxReportOnly");
+                if (val instanceof Boolean b) return b;
+            }
+        } catch (Exception e) {
+            log.warn("isAclxReportOnly: failed to read org {}, defaulting false: {}", orgId, e.getMessage());
+        }
+        return false; // fail closed — enforce
+    }
+
     /** Whether the org wants client preferred/display names enforced in generated output. */
     public boolean isPreferClientDisplayName(String orgId) {
         try {
