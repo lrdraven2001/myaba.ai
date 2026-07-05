@@ -189,13 +189,26 @@ public class GenerateController {
         usageService.recordRequest(user.getOrgId(), "document");
 
         // Layer 3+4: ACLX output governance
-        List<ai.myaba.model.dto.AclxRequest.Source> docGroundingSources =
+        List<ai.myaba.model.dto.AclxRequest.Source> docGroundingSources = new ArrayList<>(
                 policyRagService.buildGroundingSources(
                         req.getAdditionalContext() != null
                                 ? req.getAdditionalContext() : req.getDocumentType(),
                         user.getOrgId(),
                         req.getClientId(),
-                        policyService);
+                        policyService));
+        // The generation inputs (client context + the clinician's additional
+        // context) are legitimate grounding — without them, user-supplied
+        // details read as unsupported claims in the groundedness check.
+        if (req.getAdditionalContext() != null && !req.getAdditionalContext().isBlank()) {
+            docGroundingSources.add(ai.myaba.model.dto.AclxRequest.Source.builder()
+                    .id("request-context/" + req.getDocumentType())
+                    .label("Generation request context (clinician-provided)")
+                    .distribution("INTERNAL")
+                    .owner(user.getOrgId())
+                    .text(req.getAdditionalContext())
+                    .metadata(Map.of("sensitivity", "HIGH", "subject_id", req.getClientId()))
+                    .build());
+        }
         AclxResponse aclxResult = aclxService.evaluate(rawOutput, user, req.getClientId(), docGroundingSources);
         String decision = aclxResult.getDecision().getDecision();
 
@@ -562,6 +575,12 @@ public class GenerateController {
                     .metadata(Map.of("sensitivity", "HIGH", "subject_id", req.getClientId()))
                     .build());
         }
+        // The clinician's own conversation input is legitimate grounding too.
+        // Without it, facts the user themselves supplied (e.g. pasted draft
+        // goals or observations) read as "unsupported claims" and the reply
+        // escalates as possible hallucination.
+        chatGroundingSources.add(buildConversationSource(
+                req.getChatId(), req.getHistory(), req.getMessage(), req.getClientId(), user.getOrgId()));
         AclxResponse aclxResult = aclxService.evaluate(
                 rawReply, user, req.getClientId(),
                 allClientIds.size() > 1 ? allClientIds : null, chatGroundingSources);
@@ -887,6 +906,40 @@ public class GenerateController {
      * added here so the assistant can work with the documents, while the persisted
      * chat message stays clean (the UI shows only the file names).
      */
+    /**
+     * Package the conversation (history + current message) as an ACLX grounding
+     * source. What the clinician typed is a legitimate basis for the reply —
+     * the groundedness check must see it or user-supplied clinical facts count
+     * as hallucinations. Keeps the most recent ~16k chars.
+     */
+    private ai.myaba.model.dto.AclxRequest.Source buildConversationSource(
+            String chatId, List<ChatRequest.ChatMessage> history, String currentMessage,
+            String clientId, String orgId) {
+        StringBuilder convo = new StringBuilder();
+        if (history != null) {
+            for (ChatRequest.ChatMessage m : history) {
+                if (m != null && m.getContent() != null && !m.getContent().isBlank()) {
+                    convo.append(m.getRole()).append(": ").append(m.getContent()).append('\n');
+                }
+            }
+        }
+        convo.append("user: ").append(currentMessage == null ? "" : currentMessage);
+        String text = convo.length() > 16_000
+                ? convo.substring(convo.length() - 16_000)
+                : convo.toString();
+        Map<String, Object> meta = (clientId != null && !clientId.isBlank())
+                ? Map.of("sensitivity", "HIGH", "subject_id", clientId)
+                : Map.of("sensitivity", "HIGH");
+        return ai.myaba.model.dto.AclxRequest.Source.builder()
+                .id("conversation/" + (chatId != null && !chatId.isBlank() ? chatId : "current"))
+                .label("Conversation context (clinician-provided)")
+                .distribution("INTERNAL")
+                .owner(orgId)
+                .text(text)
+                .metadata(meta)
+                .build();
+    }
+
     private String withContextDocs(String message, List<ChatRequest.ContextDoc> docs) {
         if (docs == null || docs.isEmpty()) return message;
         StringBuilder sb = new StringBuilder(message == null ? "" : message);
