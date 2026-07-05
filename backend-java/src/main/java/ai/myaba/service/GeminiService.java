@@ -45,7 +45,7 @@ public class GeminiService implements LlmProvider {
     private final String geminiLocation;
     /** Tier 1 — fast/cheap model (chat + lightweight docs), e.g. {@code gemini-3.1-flash-lite}. */
     private final String geminiModelFast;
-    /** Tier 2 — higher-reasoning model for long clinical documents, e.g. {@code gemini-2.5-pro}. */
+    /** Tier 2 — higher-reasoning model for clinical documents and client-attached chat, e.g. {@code gemini-3.1-pro-preview}. */
     private final String geminiModelReasoning;
 
     private final int maxTokens;
@@ -61,7 +61,7 @@ public class GeminiService implements LlmProvider {
             @Value("${gemini.location:global}")        String geminiLocation,
             // Fast tier defaults to gemini.model-fast, then legacy gemini.model, then Flash-Lite.
             @Value("${gemini.model-fast:${gemini.model:gemini-3.1-flash-lite}}") String geminiModelFast,
-            @Value("${gemini.model-reasoning:gemini-2.5-pro}")                   String geminiModelReasoning,
+            @Value("${gemini.model-reasoning:gemini-3.1-pro-preview}")           String geminiModelReasoning,
             @Value("${gemini.max-tokens:4000}")               int maxTokens,
             @Value("${gemini.max-tokens-reasoning:32768}")    int reasoningMaxTokens) {
         this.mapper               = mapper;
@@ -106,10 +106,31 @@ public class GeminiService implements LlmProvider {
                 "thinkingConfig", Map.of("thinkingBudget", 0));
     }
 
-    /** Reasoning tier (Pro): thinking ON (default) and a large budget for long documents. */
+    /** Reasoning tier (Pro): high thinking effort and a large budget for long documents. */
     private Map<String, Object> reasoningGenerationConfig() {
-        return Map.of("maxOutputTokens", reasoningMaxTokens);
+        Map<String, Object> cfg = new java.util.HashMap<>();
+        cfg.put("maxOutputTokens", reasoningMaxTokens);
+        cfg.put("temperature", 1);
+        cfg.put("topP", 0.95);
+        // thinkingLevel is the Gemini 3.x knob; 2.x models only accept thinkingBudget,
+        // so omit it if the reasoning model is ever pinned back to a 2.x release.
+        if (geminiModelReasoning.startsWith("gemini-3")) {
+            cfg.put("thinkingConfig", Map.of("thinkingLevel", "HIGH"));
+        }
+        return cfg;
     }
+
+    /**
+     * Vertex safety filters disabled: clinical ABA content (self-injurious behavior,
+     * aggression, elopement) reliably trips the dangerous-content classifier as false
+     * positives. Output governance is ACLX's job — every response still passes through
+     * the gateway before delivery.
+     */
+    private static final List<Map<String, String>> SAFETY_SETTINGS = List.of(
+            Map.of("category", "HARM_CATEGORY_HATE_SPEECH",       "threshold", "OFF"),
+            Map.of("category", "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold", "OFF"),
+            Map.of("category", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold", "OFF"),
+            Map.of("category", "HARM_CATEGORY_HARASSMENT",        "threshold", "OFF"));
 
     @SuppressWarnings("unchecked")
     private String callGemini(String model, Map<String, Object> generationConfig,
@@ -140,7 +161,8 @@ public class GeminiService implements LlmProvider {
             Map<String, Object> body = Map.of(
                     "systemInstruction", Map.of("parts", List.of(Map.of("text", system))),
                     "contents", contents,
-                    "generationConfig", generationConfig
+                    "generationConfig", generationConfig,
+                    "safetySettings", SAFETY_SETTINGS
             );
 
             HttpURLConnection conn = http.openConnection(endpoint, "Bearer " + token);

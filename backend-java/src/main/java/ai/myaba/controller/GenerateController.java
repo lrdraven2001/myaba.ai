@@ -561,9 +561,12 @@ public class GenerateController {
         // Build policy-augmented system prompt (includes base clinical identity + client context)
         String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
 
+        // Client-attached chats route to the reasoning tier: these produce clinical
+        // content about a specific client and warrant document-grade quality.
+        boolean clientAttached = req.getClientId() != null && !req.getClientId().isBlank();
         String rawReply;
         try {
-            rawReply = aiService.chat(systemPrompt, messages);
+            rawReply = aiService.chat(systemPrompt, messages, clientAttached);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));

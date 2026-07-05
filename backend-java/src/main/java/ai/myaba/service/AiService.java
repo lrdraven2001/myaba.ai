@@ -154,28 +154,27 @@ public class AiService {
                 additionalContext != null ? additionalContext : "None provided",
                 typePrompt);
 
-        // Tiered routing: signable, multi-section clinical documents that demand cross-section
-        // consistency go to the higher-reasoning model; everything else uses the fast/cheap tier.
-        boolean reasoning = REASONING_DOC_TYPES.contains(documentType);
+        // All document building goes to the reasoning tier — clinicians sign these, and
+        // quality feedback showed the fast tier isn't good enough even for short notes.
         return provider().complete(BCBA_SYSTEM_PROMPT, List.of(
                 Map.of("role", "user", "content", userContent)
-        ), reasoning);
+        ), true);
+    }
+
+    public String chat(String systemPrompt, List<Map<String, String>> messages) {
+        return chat(systemPrompt, messages, false);
     }
 
     /**
-     * Document types routed to the reasoning tier (Tier 2). These synthesize structured
-     * assessment data into long, interdependent documents a BCBA signs. All other types —
-     * session notes, parent-training notes, supervision logs, custom templates, and chat —
-     * use the fast tier (Tier 1).
+     * Chat with tier selection: {@code reasoning=true} routes to the higher-reasoning
+     * model (used when a client is attached — clinical conversations about a specific
+     * client warrant document-grade quality). Plain/general chat stays on the fast tier.
      */
-    private static final java.util.Set<String> REASONING_DOC_TYPES = java.util.Set.of(
-            "behavior_intervention_plan", "functional_behavior_assessment",
-            "treatment_plan", "progress_report", "discharge_summary");
-
-    public String chat(String systemPrompt, List<Map<String, String>> messages) {
+    public String chat(String systemPrompt, List<Map<String, String>> messages, boolean reasoning) {
         return provider().complete(
                 systemPrompt != null ? systemPrompt : BCBA_SYSTEM_PROMPT,
-                messages
+                messages,
+                reasoning
         );
     }
 }

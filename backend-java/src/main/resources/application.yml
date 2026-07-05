@@ -31,10 +31,11 @@ gemini:
   location: ${GEMINI_LOCATION:global}
   model:    ${GEMINI_MODEL:gemini-2.5-flash}        # legacy single-model fallback
   max-tokens: ${GEMINI_MAX_TOKENS:4000}
-  # Tiered models: fast (chat + light docs) vs reasoning (signable clinical documents).
+  # Tiered models: fast (general/non-client chat) vs reasoning (all document
+  # building + client-attached chat).
   model-fast:      ${GEMINI_MODEL_FAST:gemini-3.1-flash-lite}
-  model-reasoning: ${GEMINI_MODEL_REASONING:gemini-2.5-pro}
-  max-tokens-reasoning: ${GEMINI_MAX_TOKENS_REASONING:32768}
+  model-reasoning: ${GEMINI_MODEL_REASONING:gemini-3.1-pro-preview}
+  max-tokens-reasoning: ${GEMINI_MAX_TOKENS_REASONING:65535}
 
 # ── ACLX Gateway ──────────────────────────────────────────────────────────
 aclx:

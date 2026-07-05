@@ -50,7 +50,9 @@ spec:
             - name: GEMINI_MODEL_FAST
               value: "gemini-3.1-flash-lite"
             - name: GEMINI_MODEL_REASONING
-              value: "gemini-2.5-pro"
+              value: "gemini-3.1-pro-preview"
+            - name: GEMINI_MAX_TOKENS_REASONING
+              value: "65535"
 
             # ── Firebase Admin: project only; credentials come from the
             #    runtime service account via ADC (no key file in prod) ────────
