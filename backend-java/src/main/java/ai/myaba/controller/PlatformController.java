@@ -40,6 +40,7 @@ public class PlatformController {
     private final PlatformAdminGuard platformAdminGuard;
     private final OrgService orgService;
     private final AuditService auditService;
+    private final ai.myaba.service.DocumentRootMigrationService documentRootMigrationService;
 
     // ── Guard ─────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,31 @@ public class PlatformController {
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ── Legacy doc-root migration ─────────────────────────────────────────────
+    // Copies the legacy orgs/{orgId}/clients/{clientId}/documents tree into
+    // organizations/... (same sub-path, IDs preserved). The copy also runs
+    // automatically at startup; this endpoint re-runs it on demand and, with
+    // deleteSource=true, removes the legacy tree after the copy is verified.
+
+    @PostMapping("/migrate-doc-root")
+    public ResponseEntity<?> migrateDocRoot(
+            @RequestParam(defaultValue = "false") boolean deleteSource,
+            @AuthenticationPrincipal AppUser user) {
+        if (!isSuperAdmin(user)) return forbidden();
+        try {
+            Map<String, Object> result = documentRootMigrationService.migrate(deleteSource);
+            auditService.log("PLATFORM_DOC_ROOT_MIGRATION", null, user.getUid(), null, null, null,
+                    deleteSource ? "COPY_AND_DELETE" : "COPY", result.toString());
+            log.info("Super admin {} ran doc-root migration (deleteSource={}): {}",
+                    user.getUid(), deleteSource, result);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Doc-root migration failed: {}", e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Migration failed: " + e.getMessage()));
         }
     }
 

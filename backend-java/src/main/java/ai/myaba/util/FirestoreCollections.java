@@ -21,17 +21,14 @@ public final class FirestoreCollections {
     public static final String POLICIES      = "policies";
 
     /**
-     * Root for client-generated documents: {@code orgs/{orgId}/clients/{clientId}/documents}.
+     * Root for client-generated documents:
+     * {@code organizations/{orgId}/clients/{clientId}/documents}.
      *
-     * <p><b>Intentionally NOT {@link #ORGANIZATIONS}.</b> Client documents live under
-     * a separate top-level {@code "orgs"} tree, while client records / members / config
-     * live under {@code "organizations"}. This split is historical but consistent: both
-     * the write path ({@code DocumentPersistenceService}) and the read paths
-     * ({@code ClientController#getClientDocuments}, {@code #getClientDocument},
-     * {@code #exportClient}) use this root. Production data already lives here, so do
-     * not "consolidate" by pointing it at {@link #ORGANIZATIONS} without a data migration —
-     * that would orphan every existing document. Use this constant so the divergence is
-     * explicit and greppable rather than a bare {@code "orgs"} literal.
+     * <p>Historically this was a separate top-level {@code "orgs"} tree. It was
+     * consolidated into {@link #ORGANIZATIONS} (2026-07); the idempotent copy in
+     * {@code DocumentRootMigrationService} runs at startup to carry any legacy
+     * documents forward, and the legacy tree is removed via
+     * {@code POST /api/platform/migrate-doc-root?deleteSource=true}.
      */
-    public static final String DOCUMENTS_ROOT = "orgs";
+    public static final String DOCUMENTS_ROOT = ORGANIZATIONS;
 }
