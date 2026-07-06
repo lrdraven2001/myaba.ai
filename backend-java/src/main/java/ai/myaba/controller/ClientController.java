@@ -265,12 +265,13 @@ public class ClientController {
             }
 
             // Chats scoped to this client, each with its full message history.
+            // Uses the client-record fetch (all authors) — the export is already
+            // gated by canEditClient above and audited (CLIENT_EXPORTED).
             List<Map<String, Object>> chatExport = new java.util.ArrayList<>();
-            for (Map<String, Object> chat : chatService.getChats(user)) {
-                if (!clientId.equals(chat.get("clientId"))) continue;
+            for (Map<String, Object> chat : chatService.getChatsForClient(user.getOrgId(), clientId)) {
                 Map<String, Object> c = new java.util.LinkedHashMap<>(chat);
                 try {
-                    c.put("messages", chatService.getMessages(user, String.valueOf(chat.get("id"))));
+                    c.put("messages", chatService.getMessagesForChat(user.getOrgId(), String.valueOf(chat.get("id"))));
                 } catch (Exception e) {
                     c.put("messages", List.of());
                 }

@@ -161,8 +161,15 @@ public class ChatService {
     // ── Chat queries ──────────────────────────────────────────────────────
 
     /**
-     * Returns all chats the user has access to (they are in memberIds).
-     * ORG_ADMIN sees all chats in the org.
+     * Returns the chats the user participates in (they are in memberIds).
+     *
+     * <p>This is each user's PERSONAL chat surface — the Chat list, search, and
+     * single-chat reads. It is intentionally member-scoped for EVERY role,
+     * including admins: a Clinical Director or Practice Administrator does not
+     * see colleagues' clinical chats here. Cross-clinician oversight happens
+     * through the Review workflow, not by browsing others' chat histories.
+     * For a client-record export (all chats about a client) use
+     * {@link #getChatsForClient}.
      */
     public List<Map<String, Object>> getChats(AppUser user) throws Exception {
         if (devMode) {
@@ -179,17 +186,47 @@ public class ChatService {
         }
 
         Firestore db = FirestoreClient.getFirestore();
-        Query query;
-        if (user.isAdmin()) {
-            query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
-                    .collection("chats").orderBy("updatedAt", Query.Direction.DESCENDING);
-        } else {
-            query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
-                    .collection("chats")
-                    .whereArrayContains("memberIds", user.getUid())
-                    .orderBy("updatedAt", Query.Direction.DESCENDING);
-        }
+        Query query = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats")
+                .whereArrayContains("memberIds", user.getUid())
+                .orderBy("updatedAt", Query.Direction.DESCENDING);
         return toList(query.get().get().getDocuments());
+    }
+
+    /**
+     * Returns ALL chats in the org for a given client, regardless of author —
+     * the client-record view, used by the authorization-gated client export.
+     * Caller MUST enforce access (e.g. {@code canEditClient}); this method does
+     * not member-scope, because a client's archive spans the whole care team.
+     */
+    public List<Map<String, Object>> getChatsForClient(String orgId, String clientId) throws Exception {
+        if (orgId == null || orgId.isBlank() || clientId == null || clientId.isBlank()) return List.of();
+        if (devMode) {
+            return devChats.values().stream()
+                    .filter(c -> clientId.equals(c.get("clientId")))
+                    .collect(Collectors.toList());
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection("chats").whereEqualTo("clientId", clientId)
+                .get().get().getDocuments();
+        return toList(docs);
+    }
+
+    /**
+     * Raw message read by chat ID with NO per-user authorization — for callers
+     * that have already authorized access at a higher level (client export).
+     */
+    public List<Map<String, Object>> getMessagesForChat(String orgId, String chatId) throws Exception {
+        if (devMode) {
+            return new ArrayList<>(devMessages.getOrDefault(chatId, List.of()));
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        List<QueryDocumentSnapshot> docs = db
+                .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection("chats").document(chatId)
+                .collection("messages").orderBy("createdAt").get().get().getDocuments();
+        return toList(docs);
     }
 
     /**
@@ -448,7 +485,9 @@ public class ChatService {
     }
 
     private boolean canAccessChat(AppUser user, Map<String, Object> chat) {
-        if (user.isAdmin()) return true;
+        // Member-scoped for ALL roles — admins do not read colleagues' chats from
+        // the chat surface (oversight is via Review). Client-record export uses the
+        // separate, controller-authorized getChatsForClient/getMessagesForChat.
         @SuppressWarnings("unchecked")
         List<String> memberIds = (List<String>) chat.getOrDefault("memberIds", List.of());
         return memberIds.contains(user.getUid());
