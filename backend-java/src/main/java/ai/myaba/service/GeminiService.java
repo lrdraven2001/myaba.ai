@@ -48,6 +48,8 @@ public class GeminiService implements LlmProvider {
     private final String geminiModelFast;
     /** Tier 2 — higher-reasoning model for clinical documents and client-attached chat, e.g. {@code gemini-3.1-pro-preview}. */
     private final String geminiModelReasoning;
+    /** Search-grounded research model — must return groundingChunks (source citations). */
+    private final String geminiModelResearch;
 
     private final int maxTokens;
     /** Larger output budget for the reasoning tier (long, interdependent documents). */
@@ -63,6 +65,9 @@ public class GeminiService implements LlmProvider {
             // Fast tier defaults to gemini.model-fast, then legacy gemini.model, then Flash-Lite.
             @Value("${gemini.model-fast:${gemini.model:gemini-3.1-flash-lite}}") String geminiModelFast,
             @Value("${gemini.model-reasoning:gemini-3.1-pro-preview}")           String geminiModelReasoning,
+            // Search-grounded research: 2.5-flash reliably returns groundingChunks
+            // (source citations); 3.1-flash-lite runs the search but omits them.
+            @Value("${gemini.model-research:gemini-2.5-flash}")                  String geminiModelResearch,
             @Value("${gemini.max-tokens:4000}")               int maxTokens,
             @Value("${gemini.max-tokens-reasoning:32768}")    int reasoningMaxTokens) {
         this.mapper               = mapper;
@@ -71,6 +76,7 @@ public class GeminiService implements LlmProvider {
         this.geminiLocation       = geminiLocation;
         this.geminiModelFast      = geminiModelFast;
         this.geminiModelReasoning = geminiModelReasoning;
+        this.geminiModelResearch  = geminiModelResearch;
         this.maxTokens            = maxTokens;
         this.reasoningMaxTokens   = reasoningMaxTokens;
     }
@@ -173,29 +179,30 @@ public class GeminiService implements LlmProvider {
     }
 
     /**
-     * Chat with a single declared tool (Gemini function calling). When the model
-     * emits a matching functionCall, {@code executor} runs it and the result is
-     * fed back as a functionResponse turn; loops until the model produces text
-     * (max {@code MAX_TOOL_ROUNDS} tool invocations as a runaway guard).
+     * Chat with declared tools (Gemini function calling). When the model emits
+     * functionCall(s), {@code executor} runs each (dispatched by tool name) and
+     * the results are fed back as functionResponse parts; loops until the model
+     * produces text (max {@link #MAX_TOOL_ROUNDS} rounds as a runaway guard).
      *
      * <p>The model's tool-call turn is echoed back verbatim — Gemini 3.x requires
      * thought signatures from that turn to be returned with the function response.
      */
-    public String completeWithTool(String system, List<Map<String, String>> messages, boolean reasoning,
-                                   Map<String, Object> functionDeclaration,
-                                   java.util.function.Function<Map<String, Object>, Map<String, Object>> executor) {
+    public String completeWithTools(String system, List<Map<String, String>> messages, boolean reasoning,
+                                    List<Map<String, Object>> functionDeclarations,
+                                    java.util.function.BiFunction<String, Map<String, Object>, Map<String, Object>> executor) {
         String model = reasoning ? geminiModelReasoning : geminiModelFast;
         Map<String, Object> config = reasoning ? reasoningGenerationConfig() : fastGenerationConfig();
-        List<Map<String, Object>> tools = List.of(Map.of("functionDeclarations", List.of(functionDeclaration)));
-        String fname = (String) functionDeclaration.get("name");
+        List<Map<String, Object>> tools = List.of(Map.of("functionDeclarations", functionDeclarations));
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (Map<String, Object> d : functionDeclarations) names.add((String) d.get("name"));
 
         List<Map<String, Object>> contents = new ArrayList<>(toContents(messages));
         for (int round = 0; round <= MAX_TOOL_ROUNDS; round++) {
             Map<?, ?> candidate = callGeminiCandidate(model, config, system, contents, tools);
             @SuppressWarnings("unchecked")
             Map<String, Object> content = (Map<String, Object>) candidate.get("content");
-            Map<?, ?> functionCall = findFunctionCall(content, fname);
-            if (functionCall == null) {
+            List<Map<?, ?>> calls = findFunctionCalls(content, names);
+            if (calls.isEmpty()) {
                 String text = extractText(content);
                 if (text == null || text.isBlank()) {
                     throw new RuntimeException("Gemini returned no text (finishReason="
@@ -204,35 +211,74 @@ public class GeminiService implements LlmProvider {
                 return text;
             }
             if (round == MAX_TOOL_ROUNDS) break;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> args = functionCall.get("args") instanceof Map<?, ?> m
-                    ? (Map<String, Object>) m : Map.of();
-            Map<String, Object> result;
-            try {
-                result = executor.apply(args);
-            } catch (Exception e) {
-                log.warn("Tool {} execution failed: {}", fname, e.getMessage());
-                result = Map.of("error", "Lookup failed: " + e.getMessage());
+            contents.add(content); // model turn with functionCall(s) (+ thought signatures)
+            List<Map<String, Object>> responseParts = new ArrayList<>();
+            for (Map<?, ?> call : calls) {
+                String fname = (String) call.get("name");
+                @SuppressWarnings("unchecked")
+                Map<String, Object> args = call.get("args") instanceof Map<?, ?> m
+                        ? (Map<String, Object>) m : Map.of();
+                Map<String, Object> result;
+                try {
+                    result = executor.apply(fname, args);
+                } catch (Exception e) {
+                    log.warn("Tool {} execution failed: {}", fname, e.getMessage());
+                    result = Map.of("error", "Lookup failed: " + e.getMessage());
+                }
+                responseParts.add(Map.of("functionResponse",
+                        Map.of("name", fname, "response", result)));
             }
-            contents.add(content); // model turn with functionCall (+ thought signatures)
-            contents.add(Map.of("role", "user", "parts", List.of(Map.of(
-                    "functionResponse", Map.of("name", fname, "response", result)))));
+            contents.add(Map.of("role", "user", "parts", responseParts));
         }
         throw new RuntimeException("Gemini exceeded " + MAX_TOOL_ROUNDS + " tool rounds without answering");
     }
 
     private static final int MAX_TOOL_ROUNDS = 3;
 
-    /** First part carrying a functionCall for {@code name}, else null. */
-    private Map<?, ?> findFunctionCall(Map<?, ?> content, String name) {
-        if (content == null || !(content.get("parts") instanceof List<?> parts)) return null;
+    /** All parts carrying a functionCall whose name is declared. */
+    private List<Map<?, ?>> findFunctionCalls(Map<?, ?> content, java.util.Set<String> names) {
+        List<Map<?, ?>> out = new ArrayList<>();
+        if (content == null || !(content.get("parts") instanceof List<?> parts)) return out;
         for (Object p : parts) {
             if (p instanceof Map<?, ?> part && part.get("functionCall") instanceof Map<?, ?> fc
-                    && name.equals(fc.get("name"))) {
-                return fc;
+                    && names.contains(fc.get("name"))) {
+                out.add(fc);
             }
         }
-        return null;
+        return out;
+    }
+
+    /**
+     * Single search-grounded question (Gemini googleSearch tool) — used for the
+     * PHI-free research lookup. The request contains ONLY the provided question;
+     * callers must guard it. Returns {@code {summary, sources: [{title,url}]}}.
+     */
+    public Map<String, Object> searchGrounded(String system, String question) {
+        Map<String, Object> config = Map.of("maxOutputTokens", 8192,
+                "thinkingConfig", Map.of("thinkingBudget", 0));
+        Map<?, ?> candidate = callGeminiCandidate(geminiModelResearch, config, system,
+                List.of(Map.of("role", "user", "parts", List.of(Map.of("text", question)))),
+                List.of(Map.of("googleSearch", Map.of())));
+        String text = extractText((Map<?, ?>) candidate.get("content"));
+        if (text == null || text.isBlank()) {
+            throw new RuntimeException("Search-grounded call returned no text (finishReason="
+                    + candidate.get("finishReason") + ")");
+        }
+        List<Map<String, String>> sources = new ArrayList<>();
+        if (candidate.get("groundingMetadata") instanceof Map<?, ?> gm
+                && gm.get("groundingChunks") instanceof List<?> chunks) {
+            for (Object c : chunks) {
+                if (c instanceof Map<?, ?> cm && cm.get("web") instanceof Map<?, ?> w) {
+                    sources.add(Map.of(
+                            "title", w.get("title") != null ? String.valueOf(w.get("title")) : "",
+                            "url",   w.get("uri")   != null ? String.valueOf(w.get("uri"))   : ""));
+                }
+            }
+        }
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("summary", text);
+        out.put("sources", sources);
+        return out;
     }
 
     private List<Map<String, Object>> toContents(List<Map<String, String>> messages) {

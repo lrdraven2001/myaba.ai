@@ -18,6 +18,7 @@ import ai.myaba.service.ProjectService;
 import ai.myaba.service.ReviewQueueService;
 import ai.myaba.service.SubjectAuthorizationService;
 import ai.myaba.service.UsageService;
+import ai.myaba.service.WebResearchService;
 import ai.myaba.service.guard.InputGuard;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +62,7 @@ public class GenerateController {
     private final UsageService usageService;
     private final DocumentPersistenceService documentPersistenceService;
     private final PlaceLookupService placeLookupService;
+    private final WebResearchService webResearchService;
 
     // ── lookup_place chat tool ────────────────────────────────────────────────
     // PHI-free directory lookup (Google Places). Only the guarded entity name +
@@ -104,14 +106,61 @@ public class GenerateController {
         return result;
     }
 
-    /** Route chat through the model, offering lookup_place when configured. */
+    // ── research_web chat tool ────────────────────────────────────────────────
+    // PHI-free web research (search-grounded Gemini call carrying ONLY the
+    // guarded question — never the conversation).
+
+    private static final Map<String, Object> RESEARCH_WEB_DECLARATION = Map.of(
+            "name", "research_web",
+            "description", "Search the public web for current factual information: payer/insurance "
+                    + "policies, state Medicaid or funding requirements, school-district procedures, "
+                    + "regulations, professional standards updates. Use when the user needs current "
+                    + "external information that may have changed since your training. NOT for "
+                    + "contact details (use lookup_place) or anything about a specific client.",
+            "parameters", Map.of(
+                    "type", "OBJECT",
+                    "properties", Map.of("question", Map.of(
+                            "type", "STRING",
+                            "description", "A self-contained, generic research question. Never "
+                                    + "include any client, patient, or personal information.")),
+                    "required", List.of("question")));
+
+    /** Guarded executor for research_web: input-guard the question, then search-grounded call. */
+    private Map<String, Object> executeResearchWeb(AppUser user, Map<String, Object> args) {
+        String question = String.valueOf(args.getOrDefault("question", "")).trim();
+        if (question.isBlank() || question.length() > 400) {
+            return Map.of("error", "Invalid research question.");
+        }
+        Optional<InputGuard.Violation> violation =
+                inputGuardService.check(user, question, List.of());
+        if (violation.isPresent()) {
+            log.warn("research_web blocked by input guard: user={} code={}",
+                    user.getUid(), violation.get().code());
+            auditService.log("RESEARCH_LOOKUP_BLOCKED", user.getOrgId(), user.getUid(),
+                    null, null, null, "BLOCK", violation.get().code());
+            return Map.of("error", "Research rejected: the question may not contain client information.");
+        }
+        Map<String, Object> result = webResearchService.research(question);
+        auditService.log("RESEARCH_LOOKUP", user.getOrgId(), user.getUid(), null, null, null,
+                result.containsKey("error") ? "MISS" : "OK", question);
+        return result;
+    }
+
+    /** Route chat through the model, offering whichever lookup tools are configured. */
     private String runChat(AppUser user, String systemPrompt,
                            List<Map<String, String>> messages, boolean reasoning) {
-        if (placeLookupService.isEnabled()) {
-            return aiService.chatWithTool(systemPrompt, messages, reasoning,
-                    LOOKUP_PLACE_DECLARATION, args -> executeLookupPlace(user, args));
+        List<Map<String, Object>> tools = new ArrayList<>();
+        if (placeLookupService.isEnabled()) tools.add(LOOKUP_PLACE_DECLARATION);
+        if (webResearchService.isEnabled()) tools.add(RESEARCH_WEB_DECLARATION);
+        if (tools.isEmpty()) {
+            return aiService.chat(systemPrompt, messages, reasoning);
         }
-        return aiService.chat(systemPrompt, messages, reasoning);
+        return aiService.chatWithTools(systemPrompt, messages, reasoning, tools,
+                (name, args) -> switch (name) {
+                    case "lookup_place" -> executeLookupPlace(user, args);
+                    case "research_web" -> executeResearchWeb(user, args);
+                    default -> Map.of("error", "Unknown tool: " + name);
+                });
     }
 
     // ── POST /api/generate-document ──────────────────────────────────────────
@@ -1105,6 +1154,17 @@ public class GenerateController {
                     authoritative place to confirm it (the district or organization's official \
                     website). NEVER invent a street address or phone number — if you do not know, \
                     say so. Do not refuse the question outright; give the user a useful next step.
+                    """);
+        }
+        if (webResearchService.isEnabled()) {
+            sb.append("""
+                    CURRENT EXTERNAL INFORMATION: Use the research_web tool for questions about \
+                    current policies, regulations, funding requirements, or procedures of external \
+                    bodies (payers, Medicaid, school districts, licensing boards) — never answer \
+                    such questions from memory alone. Pass ONLY a generic, self-contained research \
+                    question; never any client or personal information. Present findings with their \
+                    source citations and note the information is from a live web search, current as \
+                    of the retrieval date.
                     """);
         }
         return sb.toString();

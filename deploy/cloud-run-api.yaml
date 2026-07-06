@@ -64,6 +64,13 @@ spec:
                   name: places-api-key
                   key: latest
 
+            # ── Web research (research_web chat tool) ────────────────────────
+            # Search-grounded Gemini call carrying only the guarded question —
+            # payer policies, Medicaid rules, district procedures. No key
+            # needed; billed per grounded query on Vertex.
+            - name: RESEARCH_LOOKUP_ENABLED
+              value: "true"
+
             # ── Firebase Admin: project only; credentials come from the
             #    runtime service account via ADC (no key file in prod) ────────
             - name: FIREBASE_PROJECT_ID

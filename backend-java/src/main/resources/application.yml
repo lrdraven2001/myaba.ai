@@ -44,6 +44,13 @@ gemini:
 places:
   api-key: ${PLACES_API_KEY:}
 
+# ── Web research (research_web chat tool) ─────────────────────────────────
+# PHI-free search-grounded lookups (payer policies, Medicaid rules, district
+# procedures) via a separate Gemini googleSearch call carrying only the
+# guarded question. No API key needed (billed per grounded query on Vertex).
+lookup:
+  research-enabled: ${RESEARCH_LOOKUP_ENABLED:false}
+
 # ── ACLX Gateway ──────────────────────────────────────────────────────────
 aclx:
   gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8080}

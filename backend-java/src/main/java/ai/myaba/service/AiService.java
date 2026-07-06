@@ -179,15 +179,16 @@ public class AiService {
     }
 
     /**
-     * Chat with a single declared tool (function calling). The executor receives the
-     * model's tool arguments and returns the tool result to feed back. Callers own
-     * guarding the arguments (PHI must never reach an external service).
+     * Chat with declared tools (function calling). The executor is dispatched by
+     * tool name with the model's arguments and returns the tool result to feed
+     * back. Callers own guarding the arguments (PHI must never reach an external
+     * service).
      */
-    public String chatWithTool(String systemPrompt, List<Map<String, String>> messages, boolean reasoning,
-                               Map<String, Object> functionDeclaration,
-                               java.util.function.Function<Map<String, Object>, Map<String, Object>> executor) {
-        return geminiService.completeWithTool(
+    public String chatWithTools(String systemPrompt, List<Map<String, String>> messages, boolean reasoning,
+                                List<Map<String, Object>> functionDeclarations,
+                                java.util.function.BiFunction<String, Map<String, Object>, Map<String, Object>> executor) {
+        return geminiService.completeWithTools(
                 systemPrompt != null ? systemPrompt : BCBA_SYSTEM_PROMPT,
-                messages, reasoning, functionDeclaration, executor);
+                messages, reasoning, functionDeclarations, executor);
     }
 }

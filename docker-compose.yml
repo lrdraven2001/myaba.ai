@@ -73,6 +73,8 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
       # Directory lookup (lookup_place chat tool) — off when blank
       - PLACES_API_KEY=${PLACES_API_KEY:-}
+      # Web research (research_web chat tool) — search-grounded, PHI-free
+      - RESEARCH_LOOKUP_ENABLED=${RESEARCH_LOOKUP_ENABLED:-false}
       - VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID:-myapaai}
       - VERTEX_LOCATION=${VERTEX_LOCATION:-us-east5}
       - VERTEX_MODEL=${VERTEX_MODEL:-claude-sonnet-4@20250514}
