@@ -38,6 +38,8 @@ export default function OrganizationTab({
 
   const [editing, setEditing]   = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [cityDraft, setCityDraft]   = useState('');
+  const [stateDraft, setStateDraft] = useState('');
   const [copied, setCopied]     = useState(false);
   const [signing, setSigning]   = useState<null | 'baa' | 'contract'>(null);
 
@@ -46,6 +48,8 @@ export default function OrganizationTab({
     api.getOrg(orgId).then((o) => {
       setOrg(o);
       setNameDraft(o.name ?? '');
+      setCityDraft(o.city ?? '');
+      setStateDraft(o.state ?? '');
       setAclxEnabled(o.settings?.aclxEnabled ?? true);
       setReviewRequired(o.settings?.reviewRequired ?? true);
     }).catch(() => {});
@@ -55,10 +59,12 @@ export default function OrganizationTab({
   }, [orgId]);
 
   const saveName = async () => {
-    const name = nameDraft.trim();
+    const name  = nameDraft.trim();
+    const city  = cityDraft.trim();
+    const state = stateDraft.trim();
     if (!name || !org) { setEditing(false); return; }
-    await api.updateOrgName(orgId, name).catch(() => {});
-    setOrg({ ...org, name });
+    await api.updateOrgName(orgId, name, city, state).catch(() => {});
+    setOrg({ ...org, name, city, state });
     // Keep the sidebar org-name in sync without a refresh.
     window.dispatchEvent(new CustomEvent('org:updated', { detail: { name } }));
     setEditing(false);
@@ -95,7 +101,7 @@ export default function OrganizationTab({
           icon={faBuilding}
           title="Organization Details"
           action={isAdmin && !editing
-            ? <SecondaryButton icon={faKey} onClick={() => { setNameDraft(org?.name ?? ''); setEditing(true); }}>Edit Details</SecondaryButton>
+            ? <SecondaryButton icon={faKey} onClick={() => { setNameDraft(org?.name ?? ''); setCityDraft(org?.city ?? ''); setStateDraft(org?.state ?? ''); setEditing(true); }}>Edit Details</SecondaryButton>
             : editing
               ? <div className="flex gap-2">
                   <SecondaryButton onClick={() => setEditing(false)}>Cancel</SecondaryButton>
@@ -125,6 +131,34 @@ export default function OrganizationTab({
             <div>
               <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Plan</div>
               <Badge tone="blue">{planLabel}</Badge>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Location (City, State)</div>
+              {editing
+                ? <div className="flex gap-2">
+                    <input
+                      value={cityDraft}
+                      onChange={(e) => setCityDraft(e.target.value)}
+                      placeholder="City"
+                      aria-label="City"
+                      className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                    <input
+                      value={stateDraft}
+                      onChange={(e) => setStateDraft(e.target.value)}
+                      placeholder="State"
+                      aria-label="State"
+                      className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    />
+                  </div>
+                : <div className="text-sm font-semibold text-gray-900">
+                    {org?.city || org?.state ? [org?.city, org?.state].filter(Boolean).join(', ') : '—'}
+                  </div>}
+              {editing && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Helps the AI interpret local references (schools, districts, payers) correctly.
+                </p>
+              )}
             </div>
           </div>
         </SettingsCard>

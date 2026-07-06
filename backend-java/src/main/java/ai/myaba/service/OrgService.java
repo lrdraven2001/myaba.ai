@@ -428,19 +428,52 @@ public class OrgService {
         }
     }
 
-    // ── Org name ──────────────────────────────────────────────────────────────
+    // ── Org name / profile ────────────────────────────────────────────────────
 
     public void updateOrgName(String orgId, String name) throws Exception {
+        updateOrgProfile(orgId, name, null, null);
+    }
+
+    /**
+     * Update org profile fields. {@code name} is required; {@code city}/{@code state}
+     * are optional — pass null to leave unchanged, empty string to clear.
+     */
+    public void updateOrgProfile(String orgId, String name, String city, String state) throws Exception {
         if (devMode) {
             Map<String, Object> org = devOrgs.get(orgId);
             if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
             org.put("name", name);
+            if (city  != null) org.put("city",  city.trim());
+            if (state != null) org.put("state", state.trim());
             org.put("updatedAt", TimestampUtil.now());
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
-          .update(Map.of("name", name, "updatedAt", TimestampUtil.now())).get();
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("name", name);
+        if (city  != null) updates.put("city",  city.trim());
+        if (state != null) updates.put("state", state.trim());
+        updates.put("updatedAt", TimestampUtil.now());
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).update(updates).get();
+    }
+
+    /**
+     * The agency's home locality as "City, State" — used to ground AI responses
+     * in the right geography (school districts, payers, community resources).
+     * Returns null when the org has no location on file.
+     */
+    public String getOrgLocality(String orgId) {
+        try {
+            Map<String, Object> org = getOrg(orgId);
+            String city  = org.get("city")  != null ? String.valueOf(org.get("city")).trim()  : "";
+            String state = org.get("state") != null ? String.valueOf(org.get("state")).trim() : "";
+            if (city.isEmpty() && state.isEmpty()) return null;
+            if (city.isEmpty())  return state;
+            if (state.isEmpty()) return city;
+            return city + ", " + state;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ── Org settings ──────────────────────────────────────────────────────────

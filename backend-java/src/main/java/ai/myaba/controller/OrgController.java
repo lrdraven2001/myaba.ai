@@ -162,8 +162,10 @@ public class OrgController {
 
     /**
      * PUT /api/orgs/{orgId}/name
-     * Body: { name: string }
-     * ORG_ADMIN or ORG_SUPER_ADMIN only.
+     * Body: { name: string, city?: string, state?: string }
+     * ORG_ADMIN or ORG_SUPER_ADMIN only. City/state are the agency's home
+     * locality, used to ground AI responses geographically; omit to leave
+     * unchanged, send empty string to clear.
      */
     @PutMapping("/api/orgs/{orgId}/name")
     public ResponseEntity<?> updateOrgName(
@@ -179,7 +181,7 @@ public class OrgController {
             return ResponseEntity.badRequest().body(Map.of("error", "name is required"));
         }
         try {
-            orgService.updateOrgName(orgId, name.trim());
+            orgService.updateOrgProfile(orgId, name.trim(), body.get("city"), body.get("state"));
             return ResponseEntity.ok(Map.of("name", name.trim()));
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));

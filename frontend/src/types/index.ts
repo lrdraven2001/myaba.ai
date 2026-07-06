@@ -205,6 +205,9 @@ export type OrgPlan = 'solo' | 'team' | 'enterprise';
 export interface Org {
   id: string;
   name: string;
+  /** Agency home locality — grounds AI responses geographically. */
+  city?: string;
+  state?: string;
   plan: OrgPlan;
   adminUid: string;
   createdAt: string;

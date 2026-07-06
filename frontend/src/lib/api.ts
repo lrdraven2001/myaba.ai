@@ -517,11 +517,13 @@ export const api = {
       body: JSON.stringify(config),
     }),
 
-  /** Update the org's display name (ORG_ADMIN only). */
-  updateOrgName: (orgId: string, name: string) =>
+  /** Update the org's display name and optional home locality (ORG_ADMIN only). */
+  updateOrgName: (orgId: string, name: string, city?: string, state?: string) =>
     request<{ name: string }>(`/orgs/${orgId}/name`, {
       method: 'PUT',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(
+        city !== undefined || state !== undefined ? { name, city, state } : { name },
+      ),
     }),
 
   /** Get the org's insurance company list (all members). */

@@ -1013,7 +1013,36 @@ public class GenerateController {
 
                 Keep responses professional, concise, and relevant to an ABA practice. \
                 Do not use emoji characters.\
-                """ + buildTemplatesContext(orgId) + DOCUMENT_GENERATION_GUIDANCE + ABA_LANGUAGE_GUIDANCE;
+                """ + buildAgencyLocalityContext(orgId) + buildTemplatesContext(orgId)
+                    + DOCUMENT_GENERATION_GUIDANCE + ABA_LANGUAGE_GUIDANCE;
+    }
+
+    /**
+     * Agency locality block for system prompts. Grounds ambiguous local references
+     * (schools, districts, payers, community resources) in the agency's home
+     * geography, and sets the rules for external contact information: the model
+     * has no live directory access, so it must give best-known info clearly marked
+     * as unverified rather than refusing — and never fabricate specifics.
+     */
+    private String buildAgencyLocalityContext(String orgId) {
+        String locality = orgService.getOrgLocality(orgId);
+        StringBuilder sb = new StringBuilder();
+        if (locality != null) {
+            sb.append("\nAGENCY LOCATION: This practice is based in ").append(locality)
+              .append(". When the user mentions a school, school district, payer, agency, or ")
+              .append("community resource without specifying where it is, assume it is in or near ")
+              .append(locality).append(" unless the conversation indicates otherwise.\n");
+        }
+        sb.append("""
+                EXTERNAL CONTACT INFORMATION: You do not have live access to phone directories \
+                or address databases. When asked for the address or phone number of an external \
+                entity (school, clinic, payer, agency): share what you know from training data, \
+                clearly labeled as possibly outdated and needing verification; suggest the \
+                authoritative place to confirm it (the district or organization's official \
+                website). NEVER invent a street address or phone number — if you do not know, \
+                say so. Do not refuse the question outright; give the user a useful next step.
+                """);
+        return sb.toString();
     }
 
     /**
@@ -1054,6 +1083,7 @@ public class GenerateController {
                 Do not use emoji characters in any response. This is a professional clinical platform \
                 and emoji are inappropriate in clinical documentation and communication.
                 """);
+        sb.append(buildAgencyLocalityContext(user.getOrgId()));
         sb.append(buildTemplatesContext(user.getOrgId()));
         sb.append(DOCUMENT_GENERATION_GUIDANCE);
         sb.append(ABA_LANGUAGE_GUIDANCE);
