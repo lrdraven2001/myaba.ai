@@ -39,6 +39,32 @@ public class ChatController {
         return ResponseEntity.ok(chatService.getChats(user));
     }
 
+    // ── Reviewer/oversight: all org chats ─────────────────────────────────
+    // The Review screen's Chat Review tab. Admin-gated (Clinical Director /
+    // Practice Administrator) — this is org-wide oversight, NOT the personal
+    // member-scoped list. Companion message read is /review-messages below.
+
+    @GetMapping("/all")
+    public ResponseEntity<?> listAllOrgChats(
+            @AuthenticationPrincipal AppUser user) throws Exception {
+        if (!user.isAdmin()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Reviewer access required"));
+        }
+        return ResponseEntity.ok(chatService.getAllOrgChats(user.getOrgId()));
+    }
+
+    @GetMapping("/{chatId}/review-messages")
+    public ResponseEntity<?> getReviewMessages(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String chatId) throws Exception {
+        if (!user.isAdmin()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Reviewer access required"));
+        }
+        return ResponseEntity.ok(chatService.getMessagesForChat(user.getOrgId(), chatId));
+    }
+
     // ── Get single chat ───────────────────────────────────────────────────
 
     /**

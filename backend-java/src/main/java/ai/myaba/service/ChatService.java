@@ -194,6 +194,28 @@ public class ChatService {
     }
 
     /**
+     * Returns ALL chats in the org, regardless of author — the reviewer/oversight
+     * view (Review screen's Chat Review tab). Caller MUST gate to oversight roles;
+     * this method does not member-scope. Distinct from {@link #getChats}, which is
+     * each user's personal, member-scoped chat list.
+     */
+    public List<Map<String, Object>> getAllOrgChats(String orgId) throws Exception {
+        if (orgId == null || orgId.isBlank()) return List.of();
+        if (devMode) {
+            return devChats.values().stream()
+                    .filter(c -> orgId.equals(c.get("orgId")))
+                    .sorted(Comparator.comparing(
+                            c -> (String) c.getOrDefault("updatedAt", ""), Comparator.reverseOrder()))
+                    .collect(Collectors.toList());
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection("chats").orderBy("updatedAt", Query.Direction.DESCENDING)
+                .get().get().getDocuments();
+        return toList(docs);
+    }
+
+    /**
      * Returns ALL chats in the org for a given client, regardless of author —
      * the client-record view, used by the authorization-gated client export.
      * Caller MUST enforce access (e.g. {@code canEditClient}); this method does

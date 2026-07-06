@@ -150,11 +150,17 @@ export const api = {
   /** List all chats accessible to the current user, most-recent-first. */
   getChats: () => request<Chat[]>('/chats'),
 
+  /** Reviewer/oversight: ALL org chats (Chat Review tab). Admin-gated server-side. */
+  getAllOrgChats: () => request<Chat[]>('/chats/all'),
+
   /** Get chat metadata. */
   getChat: (chatId: string) => request<Chat>(`/chats/${chatId}`),
 
   /** Get message history for a chat (oldest-first). */
   getChatMessages: (chatId: string) => request<ChatMessage[]>(`/chats/${chatId}/messages`),
+
+  /** Reviewer/oversight: messages for any org chat (Chat Review tab). Admin-gated. */
+  getChatReviewMessages: (chatId: string) => request<ChatMessage[]>(`/chats/${chatId}/review-messages`),
 
   /** Create a new chat. Returns { chatId }. */
   createChat: (data: {

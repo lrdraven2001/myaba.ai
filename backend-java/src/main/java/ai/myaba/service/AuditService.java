@@ -57,16 +57,25 @@ public class AuditService {
             out.add(m);
         }
 
-        // Legacy top-level collection (pre-migration rows) — same filters as the
-        // original queries, so no new index requirements.
-        com.google.cloud.firestore.Query legacy = db.collection("auditLog").whereEqualTo("orgId", orgId);
-        if (userId  != null) legacy = legacy.whereEqualTo("userId", userId);
-        if (sinceMs != null) legacy = legacy.whereGreaterThan("timestampMs", sinceMs);
-        if (limit > 0)       legacy = legacy.limit(cap);
-        for (var d : legacy.get().get().getDocuments()) {
-            Map<String, Object> m = new HashMap<>(d.getData());
-            m.put("id", d.getId());
-            out.add(m);
+        // Legacy top-level collection (pre-migration rows). This query is
+        // equality(orgId) + range(timestampMs), which needs a composite index.
+        // Wrapped in its own try/catch so a missing index (or any legacy-query
+        // failure) degrades to "subcollection only" instead of emptying the whole
+        // read — otherwise Insights and the Audit Log go blank in production while
+        // the current per-org data is perfectly readable.
+        try {
+            com.google.cloud.firestore.Query legacy = db.collection("auditLog").whereEqualTo("orgId", orgId);
+            if (userId  != null) legacy = legacy.whereEqualTo("userId", userId);
+            if (sinceMs != null) legacy = legacy.whereGreaterThan("timestampMs", sinceMs);
+            if (limit > 0)       legacy = legacy.limit(cap);
+            for (var d : legacy.get().get().getDocuments()) {
+                Map<String, Object> m = new HashMap<>(d.getData());
+                m.put("id", d.getId());
+                out.add(m);
+            }
+        } catch (Exception e) {
+            log.warn("Legacy auditLog query failed (continuing with per-org subcollection only) "
+                    + "for org={}: {}", orgId, e.getMessage());
         }
 
         out.sort((a, b) -> Long.compare(

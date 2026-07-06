@@ -177,10 +177,11 @@ export default function ReviewQueueView() {
   const currentRole = currentUser?.role  ?? '';
   const currentUid  = (currentUser as any)?.uid ?? currentUser?.id ?? '';
 
+  // Chat Review is org-wide oversight — restricted to admin roles, matching the
+  // admin-gated /chats/all endpoint. (Non-admins only ever saw their own chats
+  // here anyway; those remain in the main Chat window.)
   const canViewChats = currentRole === 'ORG_SUPER_ADMIN'
-                    || currentRole === 'CLINICAL_DIRECTOR'
-                    || currentRole === 'ORG_ADMIN'
-                    || currentRole === 'SUPERVISING_BCBA';
+                    || currentRole === 'CLINICAL_DIRECTOR';
 
   const load = () => {
     setLoading(true);
@@ -1240,15 +1241,15 @@ function ChatReviewTab({
   const [loading, setLoading]   = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  // Load real chats for review. getChats() returns org-wide chats for admins/
-  // Clinical Directors and the caller's own chats otherwise (scoped server-side).
-  // Member + client lookups resolve display names that aren't denormalized on chats.
+  // Load ALL org chats for review (oversight surface — admin-gated endpoint,
+  // distinct from the personal member-scoped /chats list). Member + client
+  // lookups resolve display names that aren't denormalized on chats.
   useEffect(() => {
     if (!orgId) return;
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      api.getChats(),
+      api.getAllOrgChats(),
       api.getOrgMembers(orgId).catch(() => []),
       api.getClients().catch(() => []),
     ]).then(([chats, members, clients]) => {
@@ -1286,7 +1287,7 @@ function ChatReviewTab({
     setSelectedSession({ ...session });
     if (session.messages.length > 0) return;
     setLoadingMessages(true);
-    api.getChatMessages(session.id)
+    api.getChatReviewMessages(session.id)
       .then((msgs) => {
         const mapped: StubChatMessage[] = msgs.map((mm) => ({
           id: mm.id,
