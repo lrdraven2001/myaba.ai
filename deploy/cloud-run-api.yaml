@@ -61,11 +61,11 @@ spec:
             #   2. gcloud secrets create places-api-key --data-file=- <<< "KEY"
             #      (grant the myaba-api SA secretAccessor on it)
             #   3. Uncomment:
-            # - name: PLACES_API_KEY
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: places-api-key
-            #       key: latest
+             - name: PLACES_API_KEY
+               valueFrom:
+                 secretKeyRef:
+                   name: places-api-key
+                   key: latest
 
             # ── Firebase Admin: project only; credentials come from the
             #    runtime service account via ADC (no key file in prod) ────────
