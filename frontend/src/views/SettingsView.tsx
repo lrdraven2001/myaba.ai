@@ -3,27 +3,19 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBuilding, faShieldAlt, faCreditCard, faSpinner,
   faSlidersH, faToggleOn, faToggleOff, faMinus, faCheck, faLock,
-  faMobileAlt, faPlus, faTimes, faPen, faFileContract, faPlug,
+  faMobileAlt, faPlus, faTimes, faPen, faPlug,
   faSearch, faLink, faUnlink, faCheckCircle, faExclamationCircle,
-  faUpload, faExclamationTriangle, faTag, faDownload, faArrowRight,
+  faUpload, faExclamationTriangle, faTag,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
-import { OrgPolicyTab } from './ReviewQueueView';
 import OrganizationTab from './settings/OrganizationTab';
 import RolesPermissionsTab from './settings/RolesPermissionsTab';
 import ContentRulesTab from './settings/ContentRulesTab';
 import SecurityIdentityTab from './settings/SecurityIdentityTab';
 import BillingUsageTab from './settings/BillingUsageTab';
 import { SectionHeading } from '../components/settings/primitives';
-import { BAA_TEXT } from '../lib/baaText';
-import type { EhrClientRecord, EhrConnectionStatus, OfficePuzzleImportResult, Org, OrgAclxPolicy, UsageSummary } from '../types';
-
-const SENSITIVITY_COLORS: Record<string, { bg: string; text: string }> = {
-  HIGH:   { bg: '#fee2e2', text: '#991b1b' },
-  MEDIUM: { bg: '#fef9c3', text: '#854d0e' },
-  LOW:    { bg: '#f0fdf4', text: '#166534' },
-};
+import type { EhrClientRecord, EhrConnectionStatus, OfficePuzzleImportResult } from '../types';
 
 type Tab = 'org' | 'roles' | 'content_rules' | 'security' | 'integrations' | 'billing';
 
@@ -40,7 +32,7 @@ export default function SettingsView() {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('org');
 
-  const isAdmin   = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const isAdmin   = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
   const orgId     = currentUser?.orgId ?? '';
 
   return (

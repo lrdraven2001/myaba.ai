@@ -47,7 +47,7 @@ function toInitials(name: string | undefined | null) {
 
 export default function TeamView() {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_ADMIN' || currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
   const orgId   = currentUser?.orgId ?? '';
 
   const [members, setMembers]             = useState<TeamMember[]>([]);
