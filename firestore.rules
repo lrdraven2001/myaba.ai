@@ -34,11 +34,6 @@ service cloud.firestore {
               request.auth.token.role == 'ORG_SUPER_ADMIN');
     }
 
-    // Is the caller a platform super-admin?
-    function isSuperAdmin() {
-      return isAuthenticated() && request.auth.token.role == 'ORG_SUPER_ADMIN';
-    }
-
     // ── organizations/{orgId} ─────────────────────────────────────────────────
 
     match /organizations/{orgId} {
