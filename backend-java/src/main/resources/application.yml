@@ -37,6 +37,13 @@ gemini:
   model-reasoning: ${GEMINI_MODEL_REASONING:gemini-3.1-pro-preview}
   max-tokens-reasoning: ${GEMINI_MAX_TOKENS_REASONING:65535}
 
+# ── Directory lookup (Google Places) ──────────────────────────────────────
+# PHI-free lookup_place chat tool: current address/phone/website of external
+# entities (schools, clinics, payers). Only the guarded entity name + org
+# locality ever leave the platform. Feature is OFF while the key is blank.
+places:
+  api-key: ${PLACES_API_KEY:}
+
 # ── ACLX Gateway ──────────────────────────────────────────────────────────
 aclx:
   gateway-url: ${ACLX_GATEWAY_URL:http://localhost:8080}

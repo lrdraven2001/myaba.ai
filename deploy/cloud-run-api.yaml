@@ -54,6 +54,19 @@ spec:
             - name: GEMINI_MAX_TOKENS_REASONING
               value: "65535"
 
+            # ── Directory lookup (lookup_place chat tool) ────────────────────
+            # PHI-free Places lookup for external entities. To enable:
+            #   1. Enable "Places API (New)" on the project, create an API key
+            #      restricted to that API.
+            #   2. gcloud secrets create places-api-key --data-file=- <<< "KEY"
+            #      (grant the myaba-api SA secretAccessor on it)
+            #   3. Uncomment:
+            # - name: PLACES_API_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: places-api-key
+            #       key: latest
+
             # ── Firebase Admin: project only; credentials come from the
             #    runtime service account via ADC (no key file in prod) ────────
             - name: FIREBASE_PROJECT_ID

@@ -11,6 +11,7 @@ import ai.myaba.service.ClientService;
 import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.InputGuardService;
 import ai.myaba.service.OrgService;
+import ai.myaba.service.PlaceLookupService;
 import ai.myaba.service.PolicyRagService;
 import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
@@ -59,6 +60,59 @@ public class GenerateController {
     private final ProjectService projectService;
     private final UsageService usageService;
     private final DocumentPersistenceService documentPersistenceService;
+    private final PlaceLookupService placeLookupService;
+
+    // ── lookup_place chat tool ────────────────────────────────────────────────
+    // PHI-free directory lookup (Google Places). Only the guarded entity name +
+    // org locality ever leave the platform; the conversation stays in Vertex.
+
+    private static final Map<String, Object> LOOKUP_PLACE_DECLARATION = Map.of(
+            "name", "lookup_place",
+            "description", "Look up the current address, phone number, and website of a public "
+                    + "place or organization (school, clinic, payer, agency, business). Use this "
+                    + "whenever the user asks for contact details or the location of an external "
+                    + "entity instead of answering from memory.",
+            "parameters", Map.of(
+                    "type", "OBJECT",
+                    "properties", Map.of("entityName", Map.of(
+                            "type", "STRING",
+                            "description", "Name of the place or organization ONLY (e.g. a school "
+                                    + "or clinic name). Never include any client, patient, or "
+                                    + "personal information.")),
+                    "required", List.of("entityName")));
+
+    /** Guarded executor for lookup_place: input-guard the entity name, then Places. */
+    private Map<String, Object> executeLookupPlace(AppUser user, Map<String, Object> args) {
+        String entityName = String.valueOf(args.getOrDefault("entityName", "")).trim();
+        if (entityName.isBlank() || entityName.length() > 120) {
+            return Map.of("error", "Invalid entity name.");
+        }
+        // Same guard pipeline as user input — rejects client identifiers, MRNs, etc.
+        Optional<InputGuard.Violation> violation =
+                inputGuardService.check(user, entityName, List.of());
+        if (violation.isPresent()) {
+            log.warn("lookup_place blocked by input guard: user={} code={}",
+                    user.getUid(), violation.get().code());
+            auditService.log("DIRECTORY_LOOKUP_BLOCKED", user.getOrgId(), user.getUid(),
+                    null, null, null, "BLOCK", violation.get().code());
+            return Map.of("error", "Lookup rejected: the query may not contain client information.");
+        }
+        Map<String, Object> result = placeLookupService.lookup(
+                user.getOrgId(), entityName, orgService.getOrgLocality(user.getOrgId()));
+        auditService.log("DIRECTORY_LOOKUP", user.getOrgId(), user.getUid(), null, null, null,
+                result.containsKey("error") ? "MISS" : "OK", entityName);
+        return result;
+    }
+
+    /** Route chat through the model, offering lookup_place when configured. */
+    private String runChat(AppUser user, String systemPrompt,
+                           List<Map<String, String>> messages, boolean reasoning) {
+        if (placeLookupService.isEnabled()) {
+            return aiService.chatWithTool(systemPrompt, messages, reasoning,
+                    LOOKUP_PLACE_DECLARATION, args -> executeLookupPlace(user, args));
+        }
+        return aiService.chat(systemPrompt, messages, reasoning);
+    }
 
     // ── POST /api/generate-document ──────────────────────────────────────────
 
@@ -396,7 +450,7 @@ public class GenerateController {
 
             String generalRaw;
             try {
-                generalRaw = aiService.chat(buildGeneralChatSystemPrompt(user.getOrgId()), generalMessages);
+                generalRaw = runChat(user, buildGeneralChatSystemPrompt(user.getOrgId()), generalMessages, false);
             } catch (Exception e) {
                 log.error("AI general chat failed: {}", e.getMessage());
                 return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
@@ -566,7 +620,7 @@ public class GenerateController {
         boolean clientAttached = req.getClientId() != null && !req.getClientId().isBlank();
         String rawReply;
         try {
-            rawReply = aiService.chat(systemPrompt, messages, clientAttached);
+            rawReply = runChat(user, systemPrompt, messages, clientAttached);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
@@ -1033,15 +1087,26 @@ public class GenerateController {
               .append("community resource without specifying where it is, assume it is in or near ")
               .append(locality).append(" unless the conversation indicates otherwise.\n");
         }
-        sb.append("""
-                EXTERNAL CONTACT INFORMATION: You do not have live access to phone directories \
-                or address databases. When asked for the address or phone number of an external \
-                entity (school, clinic, payer, agency): share what you know from training data, \
-                clearly labeled as possibly outdated and needing verification; suggest the \
-                authoritative place to confirm it (the district or organization's official \
-                website). NEVER invent a street address or phone number — if you do not know, \
-                say so. Do not refuse the question outright; give the user a useful next step.
-                """);
+        if (placeLookupService.isEnabled()) {
+            sb.append("""
+                    EXTERNAL CONTACT INFORMATION: Use the lookup_place tool to get the current \
+                    address, phone number, and website of any external entity (school, clinic, \
+                    payer, agency) — never answer contact-detail questions from memory. Pass ONLY \
+                    the entity's name to the tool; never any client or personal information. \
+                    Present the result with its source and retrieval date. If the lookup returns \
+                    an error or no match, say so and suggest the organization's official website.
+                    """);
+        } else {
+            sb.append("""
+                    EXTERNAL CONTACT INFORMATION: You do not have live access to phone directories \
+                    or address databases. When asked for the address or phone number of an external \
+                    entity (school, clinic, payer, agency): share what you know from training data, \
+                    clearly labeled as possibly outdated and needing verification; suggest the \
+                    authoritative place to confirm it (the district or organization's official \
+                    website). NEVER invent a street address or phone number — if you do not know, \
+                    say so. Do not refuse the question outright; give the user a useful next step.
+                    """);
+        }
         return sb.toString();
     }
 
