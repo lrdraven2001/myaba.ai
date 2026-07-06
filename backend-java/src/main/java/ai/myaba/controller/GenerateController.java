@@ -146,9 +146,15 @@ public class GenerateController {
         return result;
     }
 
-    /** Route chat through the model, offering whichever lookup tools are configured. */
-    private String runChat(AppUser user, String systemPrompt,
-                           List<Map<String, String>> messages, boolean reasoning) {
+    /**
+     * Route chat through the model, offering whichever lookup tools are configured.
+     * Successful tool results are appended to {@code toolSourcesOut} as ACLX
+     * grounding sources — otherwise the facts a tool returned (a looked-up address,
+     * a cited web summary) read as unsupported claims and the reply escalates as a
+     * possible hallucination.
+     */
+    private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
+                           boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut) {
         List<Map<String, Object>> tools = new ArrayList<>();
         if (placeLookupService.isEnabled()) tools.add(LOOKUP_PLACE_DECLARATION);
         if (webResearchService.isEnabled()) tools.add(RESEARCH_WEB_DECLARATION);
@@ -156,11 +162,41 @@ public class GenerateController {
             return aiService.chat(systemPrompt, messages, reasoning);
         }
         return aiService.chatWithTools(systemPrompt, messages, reasoning, tools,
-                (name, args) -> switch (name) {
-                    case "lookup_place" -> executeLookupPlace(user, args);
-                    case "research_web" -> executeResearchWeb(user, args);
-                    default -> Map.of("error", "Unknown tool: " + name);
+                (name, args) -> {
+                    Map<String, Object> result = switch (name) {
+                        case "lookup_place" -> executeLookupPlace(user, args);
+                        case "research_web" -> executeResearchWeb(user, args);
+                        default -> Map.of("error", "Unknown tool: " + name);
+                    };
+                    if (!result.containsKey("error")) {
+                        toolSourcesOut.add(toolResultToSource(name, result, user.getOrgId()));
+                    }
+                    return result;
                 });
+    }
+
+    /**
+     * Turn a lookup tool's result into an ACLX grounding source, so the facts it
+     * returned verify as supported rather than hallucinated. Public external data,
+     * so distribution PUBLIC / sensitivity LOW.
+     */
+    private ai.myaba.model.dto.AclxRequest.Source toolResultToSource(
+            String toolName, Map<String, Object> result, String orgId) {
+        StringBuilder text = new StringBuilder();
+        result.forEach((k, v) -> {
+            if (v != null && !"cached".equals(k)) text.append(k).append(": ").append(v).append('\n');
+        });
+        String label = "lookup_place".equals(toolName)
+                ? "Directory lookup (" + result.getOrDefault("name", "place") + ")"
+                : "Web research";
+        return ai.myaba.model.dto.AclxRequest.Source.builder()
+                .id("tool/" + toolName + "/" + Integer.toHexString(text.toString().hashCode()))
+                .label(label)
+                .distribution("PUBLIC")
+                .owner(orgId)
+                .text(text.toString())
+                .metadata(Map.of("sensitivity", "LOW", "source", "web"))
+                .build();
     }
 
     // ── POST /api/generate-document ──────────────────────────────────────────
@@ -497,16 +533,18 @@ public class GenerateController {
             }
             generalMessages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), req.getContextDocs())));
 
+            List<ai.myaba.model.dto.AclxRequest.Source> generalToolSources = new ArrayList<>();
             String generalRaw;
             try {
-                generalRaw = runChat(user, buildGeneralChatSystemPrompt(user.getOrgId()), generalMessages, false);
+                generalRaw = runChat(user, buildGeneralChatSystemPrompt(user.getOrgId()),
+                        generalMessages, false, generalToolSources);
             } catch (Exception e) {
                 log.error("AI general chat failed: {}", e.getMessage());
                 return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
             }
             usageService.recordRequest(user.getOrgId(), "chat");
 
-            AclxResponse generalAclx = aclxService.evaluate(generalRaw, user, null);
+            AclxResponse generalAclx = aclxService.evaluate(generalRaw, user, null, null, generalToolSources);
             String generalDecision = generalAclx.getDecision().getDecision();
             String generalPolicyVer = generalAclx.getDecision().getPolicyVersion();
             if ("unavailable".equals(generalPolicyVer) || generalPolicyVer == null) {
@@ -667,9 +705,10 @@ public class GenerateController {
         // Client-attached chats route to the reasoning tier: these produce clinical
         // content about a specific client and warrant document-grade quality.
         boolean clientAttached = req.getClientId() != null && !req.getClientId().isBlank();
+        List<ai.myaba.model.dto.AclxRequest.Source> toolSources = new ArrayList<>();
         String rawReply;
         try {
-            rawReply = runChat(user, systemPrompt, messages, clientAttached);
+            rawReply = runChat(user, systemPrompt, messages, clientAttached, toolSources);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
@@ -710,6 +749,9 @@ public class GenerateController {
         // escalates as possible hallucination.
         chatGroundingSources.add(buildConversationSource(
                 req.getChatId(), req.getHistory(), req.getMessage(), req.getClientId(), user.getOrgId()));
+        // Lookup-tool results (looked-up addresses, cited research) ground the reply
+        // so their facts don't read as unsupported hallucinations.
+        chatGroundingSources.addAll(toolSources);
         AclxResponse aclxResult = aclxService.evaluate(
                 rawReply, user, req.getClientId(),
                 allClientIds.size() > 1 ? allClientIds : null, chatGroundingSources);
@@ -1132,9 +1174,11 @@ public class GenerateController {
         StringBuilder sb = new StringBuilder();
         if (locality != null) {
             sb.append("\nAGENCY LOCATION: This practice is based in ").append(locality)
-              .append(". When the user mentions a school, school district, payer, agency, or ")
-              .append("community resource without specifying where it is, assume it is in or near ")
-              .append(locality).append(" unless the conversation indicates otherwise.\n");
+              .append(". When the user mentions a school, district, payer, agency, or community ")
+              .append("resource without saying where it is, use ").append(locality)
+              .append(" to disambiguate which one they mean (e.g. when looking it up). Do NOT ")
+              .append("state that an entity is in or near ").append(locality)
+              .append(" in your answer unless a tool result or source confirms its location.\n");
         }
         if (placeLookupService.isEnabled()) {
             sb.append("""
@@ -1142,8 +1186,10 @@ public class GenerateController {
                     address, phone number, and website of any external entity (school, clinic, \
                     payer, agency) — never answer contact-detail questions from memory. Pass ONLY \
                     the entity's name to the tool; never any client or personal information. \
-                    Present the result with its source and retrieval date. If the lookup returns \
-                    an error or no match, say so and suggest the organization's official website.
+                    Report ONLY the details the tool returns — do not add city, region, distance, \
+                    or "near <place>" descriptors the tool did not provide. You may note the \
+                    source and retrieval date. If the lookup returns an error or no match, say so \
+                    and suggest the organization's official website.
                     """);
         } else {
             sb.append("""
