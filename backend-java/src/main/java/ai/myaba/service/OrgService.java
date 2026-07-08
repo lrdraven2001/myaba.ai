@@ -259,8 +259,18 @@ public class OrgService {
      * wording and format only — it must never override clinical accuracy or
      * compliance. See docs/design/communication-style-learning.md (Phase 1).
      */
-    @SuppressWarnings("unchecked")
     public String buildStyleProfilePrompt(String orgId) {
+        return buildStyleProfilePrompt(orgId, "chat");
+    }
+
+    /**
+     * Surface-aware style block. {@code surface} is "chat" or "document". Formal
+     * clinical documents ignore a "Warm" tone preference (per product decision):
+     * signable documentation stays professional and ABA-first regardless of the
+     * org's conversational tone.
+     */
+    @SuppressWarnings("unchecked")
+    public String buildStyleProfilePrompt(String orgId, String surface) {
         Map<String, Object> p;
         try {
             Object settings = getOrg(orgId).get("settings");
@@ -269,8 +279,11 @@ public class OrgService {
         } catch (Exception e) {
             return "";
         }
+        boolean isDocument = "document".equalsIgnoreCase(surface);
         StringBuilder sb = new StringBuilder();
         String tone   = str(p.get("tone"));
+        // Documents ignore a warm/casual tone — they remain formal and ABA-first.
+        if (isDocument && tone.equalsIgnoreCase("Warm")) tone = "";
         String length = str(p.get("length"));
         boolean bullets = Boolean.TRUE.equals(p.get("bullets"));
         boolean headings = Boolean.TRUE.equals(p.get("headings"));

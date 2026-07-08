@@ -98,6 +98,28 @@ public class AiService {
             """
     );
 
+    /**
+     * ABA-first documentation standard for generated clinical documents. Applied to
+     * every document regardless of org style preferences (which are subordinate).
+     */
+    private static final String ABA_DOCUMENT_STANDARD = """
+            DOCUMENTATION STANDARD (ABA-first — applies to all generated documents):
+            - Follow Applied Behavior Analysis clinical conventions and BACB professional \
+            and ethical standards.
+            - Use precise behavior-analytic terminology: operational definitions, hypothesized \
+            function, antecedents/consequences, and measurable dimensions (frequency, duration, \
+            latency, intensity).
+            - Use person-first, non-stigmatizing language (e.g. "a learner who engages in \
+            self-injurious behavior", not "a self-injurious learner").
+            - Write behavioral observations in past tense and in operationally defined, \
+            measurable terms; keep interpretation grounded in the data provided.
+            - Organize with clear section headings; be objective, professional, and free of \
+            colloquialisms.
+            - This ABA clinical standard is the baseline and is never overridden by tone or \
+            style preferences — documents remain formal and clinically rigorous even if \
+            conversational chat is not.
+            """;
+
     private final GeminiService geminiService;
 
     public AiService(GeminiService geminiService) {
@@ -161,9 +183,15 @@ public class AiService {
                 additionalContext != null ? additionalContext : "None provided",
                 typePrompt);
 
-        String systemPrompt = (styleGuidance != null && !styleGuidance.isBlank())
-                ? BCBA_SYSTEM_PROMPT + "\n" + styleGuidance
-                : BCBA_SYSTEM_PROMPT;
+        // ABA-first: clinical documents follow Applied Behavior Analysis / BACB
+        // standards as the baseline. This takes precedence over org communication-
+        // style prefs — style may refine wording/length but never override ABA rigor.
+        String systemPrompt = BCBA_SYSTEM_PROMPT + "\n" + ABA_DOCUMENT_STANDARD;
+        if (styleGuidance != null && !styleGuidance.isBlank()) {
+            systemPrompt += "\n" + styleGuidance
+                    + "\n(The ABA clinical documentation standards above take precedence over "
+                    + "these style preferences wherever they conflict.)";
+        }
 
         // All document building goes to the reasoning tier — clinicians sign these, and
         // quality feedback showed the fast tier isn't good enough even for short notes.

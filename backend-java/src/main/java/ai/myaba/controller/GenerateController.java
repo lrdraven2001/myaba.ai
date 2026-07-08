@@ -324,7 +324,7 @@ public class GenerateController {
         try {
             rawOutput = aiService.generateDocument(
                     req.getDocumentType(), context, req.getAdditionalContext(), customTemplate,
-                    orgService.buildStyleProfilePrompt(user.getOrgId()));
+                    orgService.buildStyleProfilePrompt(user.getOrgId(), "document"));
         } catch (Exception e) {
             log.error("AI document generation failed: {}", e.getMessage());
             return ResponseEntity.internalServerError()
