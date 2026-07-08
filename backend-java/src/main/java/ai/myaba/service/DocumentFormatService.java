@@ -244,6 +244,8 @@ public class DocumentFormatService {
     /** Minimum pixel dimensions for an embedded image to count as a candidate figure. */
     private static final int FIGURE_MIN_W = 350;
     private static final int FIGURE_MIN_H = 250;
+    /** Hard cap on figure pages described in one (synchronous) extraction — bounds latency. */
+    private static final int FIGURE_MAX_PAGES = 6;
 
     /**
      * Describe charts/graphs/figures embedded in an otherwise text-based PDF. Text
@@ -255,11 +257,27 @@ public class DocumentFormatService {
      */
     private String describePdfFigures(org.apache.pdfbox.pdmodel.PDDocument doc, String filename) {
         try {
+            int total = doc.getNumberOfPages();
             List<Integer> figurePages = new ArrayList<>();
-            for (int p = 0; p < doc.getNumberOfPages() && figurePages.size() < OCR_MAX_PAGES; p++) {
+            for (int p = 0; p < total; p++) {
                 if (pageHasLargeImage(doc.getPage(p))) figurePages.add(p);
             }
             if (figurePages.isEmpty()) return ""; // common case — no expensive calls
+
+            // When MOST pages carry a large image, this is a form/letterhead/scanned-
+            // hybrid template, not a few data figures — the text layer already carries
+            // the content. Describing every page would fire many vision calls and time
+            // the upload out (HTTP 502). Skip the figure pass entirely in that case.
+            if (figurePages.size() > Math.max(FIGURE_MAX_PAGES, total / 2)) {
+                log.info("Skipping figure pass for {}: {}/{} pages have large images "
+                        + "(looks like a template/scanned-hybrid; text layer used).",
+                        filename, figurePages.size(), total);
+                return "";
+            }
+            // Otherwise describe at most FIGURE_MAX_PAGES to bound latency.
+            if (figurePages.size() > FIGURE_MAX_PAGES) {
+                figurePages = figurePages.subList(0, FIGURE_MAX_PAGES);
+            }
 
             org.apache.pdfbox.rendering.PDFRenderer renderer =
                     new org.apache.pdfbox.rendering.PDFRenderer(doc);
