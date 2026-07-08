@@ -139,22 +139,52 @@ public class GeminiService implements LlmProvider {
             Map.of("category", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold", "OFF"),
             Map.of("category", "HARM_CATEGORY_HARASSMENT",        "threshold", "OFF"));
 
+    private static final String TRANSCRIBE_SYSTEM =
+            "You transcribe scanned documents. Output only the transcription — no commentary.";
+
     /**
-     * Transcribe scanned document pages (PNG images) to plain text. Used as the OCR
-     * fallback for PDFs with no extractable text layer. Runs on the fast tier with
-     * thinking off — transcription is mechanical, and the images carry the cost.
+     * Vision system prompt for figures, charts, graphs, and screenshots: transcribe
+     * readable text AND describe any visual data so a downstream text-only model can
+     * reason over it. Critical for ABA clinical graphs (behavior frequency over time).
+     */
+    private static final String DESCRIBE_SYSTEM =
+            "You analyze images: screenshots, charts, graphs, figures, or photos of documents. "
+            + "Transcribe ALL readable text verbatim. For every chart, graph, or figure, add a "
+            + "bracketed description: [Figure: chart type; x-axis label and range; y-axis label and "
+            + "range; each data series; overall trend; and the key data points or values you can "
+            + "read, as precisely as possible]. For tables, output one line per row with cells "
+            + "separated by \" | \". Be exact with numbers. Do not speculate beyond what is visible. "
+            + "Output plain text only.";
+
+    /**
+     * Transcribe scanned document pages (PNG images) to plain text. OCR fallback for
+     * PDFs with no extractable text layer. Fast tier, thinking off.
      */
     public String transcribeImages(String instruction, List<byte[]> pngPages) {
+        return visionCall(TRANSCRIBE_SYSTEM, instruction, pngPages, "image/png");
+    }
+
+    /**
+     * Transcribe + describe images — screenshots, uploaded graph/chart images, and
+     * embedded PDF figures. Captures visual data (graph trends, values) that plain
+     * text extraction drops. Fast tier, thinking off.
+     */
+    public String describeImages(String instruction, List<byte[]> images, String mimeType) {
+        return visionCall(DESCRIBE_SYSTEM, instruction, images,
+                mimeType != null && !mimeType.isBlank() ? mimeType : "image/png");
+    }
+
+    private String visionCall(String system, String instruction, List<byte[]> images, String mimeType) {
         List<Map<String, Object>> parts = new ArrayList<>();
         parts.add(Map.of("text", instruction));
-        for (byte[] png : pngPages) {
+        for (byte[] img : images) {
             parts.add(Map.of("inlineData", Map.of(
-                    "mimeType", "image/png",
-                    "data", java.util.Base64.getEncoder().encodeToString(png))));
+                    "mimeType", mimeType,
+                    "data", java.util.Base64.getEncoder().encodeToString(img))));
         }
         return callGemini(geminiModelFast,
                 Map.of("maxOutputTokens", 32768, "thinkingConfig", Map.of("thinkingBudget", 0)),
-                "You transcribe scanned documents. Output only the transcription — no commentary.",
+                system,
                 List.of(Map.of("role", "user", "parts", parts)));
     }
 

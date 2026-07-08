@@ -100,9 +100,12 @@ public class DocumentFormatController {
         String lower = name.toLowerCase();
         if (!(lower.endsWith(".docx") || lower.endsWith(".pdf") || lower.endsWith(".txt")
                 || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text")
-                || lower.endsWith(".xlsx") || lower.endsWith(".xls"))) {
+                || lower.endsWith(".xlsx") || lower.endsWith(".xls")
+                || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".bmp"))) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Unsupported file type. Upload a Word (.docx), PDF, Excel (.xlsx/.xls), or text file."));
+                    .body(Map.of("error", "Unsupported file type. Upload a Word (.docx), PDF, Excel (.xlsx/.xls), "
+                            + "image (PNG/JPG/screenshot), or text file."));
         }
         if (file.getSize() > 20L * 1024 * 1024) {
             return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));

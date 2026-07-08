@@ -1292,7 +1292,7 @@ function AddKnowledgeDocModal({
                 </button>
               </div>
             </div>
-            <input ref={fileRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.gif" className="hidden" onChange={handleFile} />
             {fileError && <p className="text-xs text-red-500 mb-1.5">{fileError}</p>}
             <textarea
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"

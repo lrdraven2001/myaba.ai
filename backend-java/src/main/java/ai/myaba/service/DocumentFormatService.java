@@ -13,6 +13,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -29,6 +30,7 @@ import java.util.List;
  * rendered to images and transcribed by Gemini vision (Vertex, inside the BAA).
  */
 @Service
+@Slf4j
 public class DocumentFormatService {
 
     /** Scanned-PDF OCR: page render resolution and caps. */
@@ -173,6 +175,11 @@ public class DocumentFormatService {
         if (lower.endsWith(".docx")) {
             return extractDocxText(bytes);
         }
+        // Image uploads (screenshots, graph/chart images) → vision transcribe+describe.
+        String imgMime = imageMimeType(lower);
+        if (imgMime != null) {
+            return describeImageFile(filename, bytes, imgMime);
+        }
         if (lower.endsWith(".pdf")) {
             try (org.apache.pdfbox.pdmodel.PDDocument doc =
                          org.apache.pdfbox.pdmodel.PDDocument.load(bytes)) {
@@ -188,7 +195,11 @@ public class DocumentFormatService {
                     String ocr = ocrPdf(doc, filename);
                     if (ocr != null && !ocr.isBlank()) return ocr;
                 }
-                return text;
+                // Text PDF: the text layer misses embedded charts/graphs (they are
+                // images). Render pages that contain figures and describe them, so a
+                // clinical data graph isn't silently dropped from the context.
+                String figures = describePdfFigures(doc, filename);
+                return figures.isBlank() ? text : text + "\n\n" + figures;
             }
         }
         if (lower.endsWith(".xlsx")) {
@@ -203,6 +214,81 @@ public class DocumentFormatService {
         }
         // .txt, .md, .csv, .text, or unknown — read as UTF-8 text.
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    // ── Image / figure vision support ────────────────────────────────────────
+
+    /** Gemini-supported image mime for a filename, or null if not an image. */
+    private String imageMimeType(String lowerName) {
+        if (lowerName.endsWith(".png"))                                  return "image/png";
+        if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg"))   return "image/jpeg";
+        if (lowerName.endsWith(".webp"))                                 return "image/webp";
+        if (lowerName.endsWith(".gif"))                                  return "image/gif";
+        if (lowerName.endsWith(".bmp"))                                  return "image/bmp";
+        return null;
+    }
+
+    /**
+     * Describe an uploaded image (screenshot, graph, chart, or photo of a document)
+     * via Gemini vision — transcribes text and describes any figures/graphs so the
+     * content becomes usable text context.
+     */
+    private String describeImageFile(String filename, byte[] bytes, String mimeType) {
+        String instruction = ("This is an uploaded image named \"%s\" (e.g. a screenshot, "
+                + "chart/graph, or photo of a document). Transcribe its text and describe any "
+                + "figures or graphs as instructed.").formatted(filename);
+        String out = geminiService.describeImages(instruction, List.of(bytes), mimeType);
+        return out == null ? "" : out.trim();
+    }
+
+    /**
+     * Describe charts/graphs/figures embedded in an otherwise text-based PDF. Text
+     * extraction (PDFTextStripper) cannot see images, so a clinical data graph would
+     * be lost. Pages containing raster images are rendered and vision-described;
+     * capped at {@link #OCR_MAX_PAGES} figure pages. Returns "" when no figures found.
+     */
+    private String describePdfFigures(org.apache.pdfbox.pdmodel.PDDocument doc, String filename) {
+        try {
+            org.apache.pdfbox.rendering.PDFRenderer renderer =
+                    new org.apache.pdfbox.rendering.PDFRenderer(doc);
+            StringBuilder out = new StringBuilder();
+            int described = 0;
+            int total = doc.getNumberOfPages();
+            for (int p = 0; p < total && described < OCR_MAX_PAGES; p++) {
+                if (!pageHasImages(doc.getPage(p))) continue;
+                java.awt.image.BufferedImage img = renderer.renderImageWithDPI(p, OCR_DPI);
+                ByteArrayOutputStream png = new ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(img, "png", png);
+                String instruction = ("Page %d of \"%s\" contains one or more figures. Describe "
+                        + "ONLY the charts, graphs, or figures on this page (ignore body text, which "
+                        + "is already captured elsewhere).").formatted(p + 1, filename);
+                String desc = geminiService.describeImages(
+                        instruction, List.of(png.toByteArray()), "image/png");
+                if (desc != null && !desc.isBlank()) {
+                    if (out.length() == 0) out.append("FIGURES:\n");
+                    out.append("[Page ").append(p + 1).append("] ").append(desc.trim()).append("\n\n");
+                    described++;
+                }
+            }
+            return out.toString().trim();
+        } catch (Exception e) {
+            log.warn("PDF figure description failed for {}: {}", filename, e.getMessage());
+            return "";
+        }
+    }
+
+    /** True when a PDF page references any XObject image (a candidate figure/graph). */
+    private boolean pageHasImages(org.apache.pdfbox.pdmodel.PDPage page) {
+        try {
+            var res = page.getResources();
+            if (res == null) return false;
+            for (var name : res.getXObjectNames()) {
+                if (res.isImageXObject(name)) return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**

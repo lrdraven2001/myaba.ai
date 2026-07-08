@@ -1005,7 +1005,7 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
             {uploading
               ? (uploadProgress ? `Adding ${uploadProgress}…` : 'Reading…')
               : `Upload document${editing ? '' : 's'} (Word / PDF / Excel / text)`}
-            <input type="file" multiple={!editing} accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv" className="hidden" disabled={uploading} onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length > 0) { if (editing) uploadFile(fs[0]); else uploadFiles(fs); } e.target.value = ''; }} />
+            <input type="file" multiple={!editing} accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif" className="hidden" disabled={uploading} onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length > 0) { if (editing) uploadFile(fs[0]); else uploadFiles(fs); } e.target.value = ''; }} />
           </label>
 
           <Field label="Content">

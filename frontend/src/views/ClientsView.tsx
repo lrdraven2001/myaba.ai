@@ -1026,7 +1026,7 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
             <FontAwesomeIcon icon={uploading ? faSpinner : faUpload} className={`text-xs ${uploading ? 'animate-spin' : ''}`} />
             {uploading ? (uploadProgress ? `Uploading ${uploadProgress}…` : 'Uploading…') : 'Upload'}
           </button>
-          <input ref={uploadRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
+          <input ref={uploadRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.gif" className="hidden" onChange={handleUpload} />
           <button
             onClick={() => setShowGenerate(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
