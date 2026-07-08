@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
@@ -196,6 +196,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const [messagesByChat, setMessagesByChat]     = useState<Record<string, ChatMessage[]>>({});
   const [previews, setPreviews]                 = useState<Record<string, string>>({});
   const [input, setInput]                       = useState('');
+  const [reacted, setReacted]                   = useState<Record<string, string>>({});
   const [loading, setLoading]                   = useState(false);
   const [loadingChats, setLoadingChats]         = useState(true);
   const [loadingMessages, setLoadingMessages]   = useState(false);
@@ -409,8 +410,19 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
   // ── Send message ──────────────────────────────────────────────────────────
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  // Record a PHI-free communication-style signal (Phase 2 learning). Best-effort.
+  const recordStyle = (signal: string) => {
+    api.recordStyleSignal(signal, activeChat?.clientId ? 'chat' : 'chat').catch(() => {});
+  };
+
+  // "Adjust" a response: record the style signal, then ask the model to redo it.
+  const adjustResponse = (signal: string, instruction: string) => {
+    recordStyle(signal);
+    sendMessage(instruction);
+  };
+
+  const sendMessage = async (overrideText?: string) => {
+    const text = (typeof overrideText === 'string' ? overrideText : input).trim();
     if (!text || loading || !activeChatId) return;
 
     const primaryClientId = activeChat?.clientId || undefined;
@@ -861,6 +873,37 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                             <FontAwesomeIcon icon={faBookmark} style={{ fontSize: 10 }} />
                             Save as Template
                           </button>
+
+                          {/* Style feedback (Phase 2 learning) — PHI-free signals */}
+                          <span className="mx-1 text-gray-200">|</span>
+                          <button
+                            onClick={() => { recordStyle('thumbs_up'); setReacted((r) => ({ ...r, [msg.id]: 'up' })); }}
+                            disabled={!!reacted[msg.id]}
+                            className={`flex items-center gap-1 text-xs transition-colors ${reacted[msg.id] === 'up' ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                            title="Helpful"
+                          >
+                            <FontAwesomeIcon icon={faThumbsUp} style={{ fontSize: 11 }} />
+                          </button>
+                          <button
+                            onClick={() => { recordStyle('thumbs_down'); setReacted((r) => ({ ...r, [msg.id]: 'down' })); }}
+                            disabled={!!reacted[msg.id]}
+                            className={`flex items-center gap-1 text-xs transition-colors ${reacted[msg.id] === 'down' ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+                            title="Not helpful"
+                          >
+                            <FontAwesomeIcon icon={faThumbsDown} style={{ fontSize: 11 }} />
+                          </button>
+                          <button
+                            onClick={() => adjustResponse('shorter', 'Please redo your last response, but make it shorter and more concise.')}
+                            className="text-xs text-gray-400 hover:text-teal-600 transition-colors" title="Regenerate shorter"
+                          >Shorter</button>
+                          <button
+                            onClick={() => adjustResponse('simpler', 'Please redo your last response in plainer language, avoiding jargon.')}
+                            className="text-xs text-gray-400 hover:text-teal-600 transition-colors" title="Regenerate simpler"
+                          >Simpler</button>
+                          <button
+                            onClick={() => adjustResponse('more_detail', 'Please redo your last response with more detail and thoroughness.')}
+                            className="text-xs text-gray-400 hover:text-teal-600 transition-colors" title="Regenerate with more detail"
+                          >More detail</button>
                         </div>
                       )}
                     </div>

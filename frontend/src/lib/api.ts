@@ -162,6 +162,22 @@ export const api = {
   /** Reviewer/oversight: messages for any org chat (Chat Review tab). Admin-gated. */
   getChatReviewMessages: (chatId: string) => request<ChatMessage[]>(`/chats/${chatId}/review-messages`),
 
+  // ── Communication-style learning (Phase 2) ─────────────────────────────────
+  /** Record a PHI-free style signal (regeneration adjustment or thumbs). */
+  recordStyleSignal: (signal: string, surface = 'chat', note?: string) =>
+    request<{ recorded: boolean }>('/style-signals', {
+      method: 'POST',
+      body: JSON.stringify(note ? { signal, surface, note } : { signal, surface }),
+    }),
+  /** Distilled style suggestions for the org (admin). */
+  getStyleCandidates: (orgId: string) =>
+    request<Array<{ key: string; label: string; description: string; field: string; value: string }>>(
+      `/orgs/${orgId}/style-candidates`),
+  applyStyleCandidate: (orgId: string, key: string) =>
+    request(`/orgs/${orgId}/style-candidates/apply`, { method: 'POST', body: JSON.stringify({ key }) }),
+  dismissStyleCandidate: (orgId: string, key: string) =>
+    request(`/orgs/${orgId}/style-candidates/dismiss`, { method: 'POST', body: JSON.stringify({ key }) }),
+
   /** Create a new chat. Returns { chatId }. */
   createChat: (data: {
     title: string;

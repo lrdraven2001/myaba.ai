@@ -206,15 +206,35 @@ function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: bo
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
   const [dirty, setDirty]   = useState(false);
+  const [candidates, setCandidates] = useState<Array<{ key: string; label: string; description: string }>>([]);
 
-  useEffect(() => {
-    if (!orgId) return;
+  const loadProfile = () => {
     api.getOrg(orgId).then((o) => {
       const sp = o.settings?.styleProfile ?? {};
       setP(sp);
       setTerms(sp.terminology ?? []);
     }).catch(() => {});
-  }, [orgId]);
+  };
+  const loadCandidates = () => {
+    if (!isAdmin) return;
+    api.getStyleCandidates(orgId).then(setCandidates).catch(() => setCandidates([]));
+  };
+
+  useEffect(() => {
+    if (!orgId) return;
+    loadProfile();
+    loadCandidates();
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const applyCandidate = async (key: string) => {
+    setCandidates((c) => c.filter((x) => x.key !== key));
+    await api.applyStyleCandidate(orgId, key).catch(() => {});
+    loadProfile(); // reflect the newly-applied field
+  };
+  const dismissCandidate = async (key: string) => {
+    setCandidates((c) => c.filter((x) => x.key !== key));
+    await api.dismissStyleCandidate(orgId, key).catch(() => {});
+  };
 
   const set = <K extends keyof StyleProfile>(k: K, v: StyleProfile[K]) => {
     setP((prev) => ({ ...prev, [k]: v })); setDirty(true); setSaved(false);
@@ -231,6 +251,7 @@ function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: bo
   const save = async () => {
     setSaving(true);
     const profile: StyleProfile = {
+      ...p, // preserve backend-managed fields not in this form (e.g. dismissedCandidates)
       tone: p.tone || undefined,
       length: p.length || undefined,
       bullets: !!p.bullets,
@@ -253,6 +274,32 @@ function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: bo
       subtitle="Shape the tone and format of AI responses and documents. Stylistic only — never overrides clinical accuracy or compliance."
     >
       <div className="px-5 sm:px-6 py-5 space-y-5">
+        {/* Suggestions distilled from team usage (Phase 2) — confirm to apply */}
+        {isAdmin && candidates.length > 0 && (
+          <div className="rounded-xl border px-4 py-3" style={{ background: '#f0f9ff', borderColor: '#bae6fd' }}>
+            <div className="text-sm font-semibold" style={{ color: '#075985' }}>
+              Suggested from your team's usage
+            </div>
+            <p className="text-xs mt-0.5" style={{ color: '#0369a1' }}>
+              Learned from how your team adjusts AI responses. Apply to make it a standing preference.
+            </p>
+            <div className="mt-3 space-y-2">
+              {candidates.map((cand) => (
+                <div key={cand.key} className="flex items-center justify-between gap-3 bg-white rounded-lg border border-sky-100 px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">{cand.label}</div>
+                    <div className="text-xs text-gray-500">{cand.description}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <PrimaryButton onClick={() => applyCandidate(cand.key)}>Apply</PrimaryButton>
+                    <SecondaryButton onClick={() => dismissCandidate(cand.key)}>Dismiss</SecondaryButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="block">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Preferred tone</span>

@@ -298,6 +298,25 @@ public class OrgService {
 
     private static String str(Object o) { return o == null ? "" : o.toString().trim(); }
 
+    /** Mutable copy of the org's styleProfile map ({@code settings.styleProfile}), or empty. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getStyleProfileMap(String orgId) {
+        try {
+            Object settings = getOrg(orgId).get("settings");
+            if (settings instanceof Map<?, ?> s && s.get("styleProfile") instanceof Map<?, ?> sp) {
+                return new HashMap<>((Map<String, Object>) sp);
+            }
+        } catch (Exception e) {
+            log.warn("getStyleProfileMap failed for org {}: {}", orgId, e.getMessage());
+        }
+        return new HashMap<>();
+    }
+
+    /** Persist the styleProfile map (merges under {@code settings.styleProfile}). */
+    public void updateStyleProfile(String orgId, Map<String, Object> profile) throws Exception {
+        updateOrgSettings(orgId, Map.of("styleProfile", profile));
+    }
+
     // ── Create org ────────────────────────────────────────────────────────────
 
     /**
