@@ -1010,7 +1010,7 @@ public class OrgService {
      * Claim an invite token: apply the role + orgId claims to the user.
      * Marks the token as used (single-use).
      */
-    public void claimInviteToken(String token, String claimingUid) throws Exception {
+    public void claimInviteToken(String token, String claimingUid, String currentOrgId) throws Exception {
         Map<String, Object> data = loadToken(token);
         validateToken(data);
         if (data.get("usedBy") != null)
@@ -1018,6 +1018,16 @@ public class OrgService {
 
         String orgId = (String) data.get("orgId");
         String role  = (String) data.get("role");
+
+        // A user belongs to exactly one organization. If they already belong to a
+        // DIFFERENT org, claiming this invite would silently rewrite their org/role
+        // claims and eject them from their current org. Reject it — switching orgs is
+        // not a self-service invite-link action. (Same-org re-claim is allowed.)
+        if (currentOrgId != null && !currentOrgId.isBlank() && !currentOrgId.equals(orgId)) {
+            throw new IllegalStateException(
+                    "You already belong to another organization. An administrator there must "
+                    + "remove you before you can join a different organization.");
+        }
 
         if (!devMode) {
             String purpose = defaultPurpose(role);

@@ -639,7 +639,7 @@ public class OrgController {
             @AuthenticationPrincipal AppUser user) {
 
         try {
-            orgService.claimInviteToken(token, user.getUid());
+            orgService.claimInviteToken(token, user.getUid(), user.getOrgId());
             return ResponseEntity.ok(Map.of(
                     "message", "Invite claimed successfully — refresh your auth token to load your new role"
             ));
@@ -647,7 +647,9 @@ public class OrgController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", "Invite link not found or expired"));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.GONE)
+            // Conflict: invite already used/expired, or the user already belongs to
+            // another org. The message distinguishes the cases for the UI.
+            return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to claim invite token for user {}: {}", user.getUid(), e.getMessage());
