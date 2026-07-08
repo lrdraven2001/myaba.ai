@@ -187,28 +187,31 @@ public class ClientController {
                         .body(Map.of("error", "Not authorized to add documents for this client"));
             }
             String filename = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
-            String text;
-            try {
-                text = documentFormatService.extractText(filename, file.getBytes());
-            } catch (IllegalArgumentException e) {
-                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            if (file.getSize() > 20L * 1024 * 1024) {
+                return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));
             }
-            if (text == null || text.isBlank()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "No readable text found in \"" + filename + "\"."));
+            byte[] bytes;
+            try {
+                bytes = file.getBytes();
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Could not read the uploaded file."));
             }
             String docTitle = (title != null && !title.isBlank())
                     ? title.trim()
                     : filename.replaceAll("\\.[A-Za-z0-9]+$", "");
-            String docId = documentPersistenceService.persistUploaded(
-                    user.getOrgId(), clientId, user.getUid(), docTitle, filename, text);
+            // Async: create a PROCESSING placeholder now (appears immediately in the
+            // Documents tab), extract text in the background. Large/scanned uploads
+            // no longer time the request out — the doc flips to READY when done.
+            String docId = documentPersistenceService.createUploadPlaceholder(
+                    user.getOrgId(), clientId, user.getUid(), docTitle, filename);
             if (docId == null) {
                 return ResponseEntity.internalServerError().body(Map.of("error", "Failed to save document"));
             }
+            documentPersistenceService.finalizeUpload(user.getOrgId(), clientId, docId, filename, bytes);
             auditService.log("CLIENT_DOCUMENT_UPLOADED", user.getOrgId(), user.getUid(),
                     clientId, docId, null, null, null);
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(Map.of("docId", docId, "title", docTitle, "characters", text.length()));
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(Map.of("docId", docId, "title", docTitle, "status", "PROCESSING"));
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
         } catch (Exception e) {

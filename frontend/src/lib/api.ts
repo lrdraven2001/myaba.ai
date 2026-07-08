@@ -827,8 +827,10 @@ export const api = {
    * Upload a document directly to a client's record (Word/PDF/Excel/text).
    * Text is extracted server-side and stored with the client's documents.
    */
+  /** Upload a client document. Extraction runs async server-side; the doc appears
+   *  in the Documents tab as "Processing" and flips to ready when extraction finishes. */
   uploadClientDocument: async (clientId: string, file: File, title?: string):
-      Promise<{ docId: string; title: string; characters: number }> => {
+      Promise<{ docId: string; title: string; status?: string }> => {
     const headers = await getAuthHeaders();
     const h: Record<string, string> = {};
     if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];

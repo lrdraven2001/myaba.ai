@@ -48,6 +48,12 @@ public class DocumentPersistenceService {
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
 
+    private final DocumentFormatService documentFormatService;
+
+    public DocumentPersistenceService(DocumentFormatService documentFormatService) {
+        this.documentFormatService = documentFormatService;
+    }
+
     /**
      * Persist a generated document synchronously and return its Firestore document ID.
      * Used by the document generation endpoint so the ID can be included in the response.
@@ -185,6 +191,80 @@ public class DocumentPersistenceService {
             log.error("Failed to persist uploaded document: org={} client={} error={}",
                     orgId, clientId, e.getMessage());
             return null;
+        }
+    }
+
+    // ── Async uploaded-document extraction ─────────────────────────────────────
+
+    /**
+     * Create a placeholder uploaded-document record with {@code extractionStatus:
+     * PROCESSING} and empty content, returning its ID immediately. The heavy text
+     * extraction then runs in the background ({@link #finalizeUpload}) and fills in
+     * the content — so a large/scanned upload never times the request out. The doc
+     * appears in the Documents tab right away with a "Processing" state.
+     *
+     * @return Firestore document ID, or null on error
+     */
+    public String createUploadPlaceholder(String orgId, String clientId, String authorUid,
+                                          String title, String sourceFilename) {
+        if (devMode) return "dev-doc-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        try {
+            Map<String, Object> doc = buildDocumentRecord(
+                    orgId, clientId, authorUid, "uploaded_document", "", null);
+            doc.put("title", title);
+            doc.put("sourceFilename", sourceFilename);
+            doc.put("source", "upload");
+            doc.put("extractionStatus", "PROCESSING");
+
+            Firestore db = FirestoreClient.getFirestore();
+            DocumentReference ref = db
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS)
+                    .add(doc).get();
+            return ref.getId();
+        } catch (Exception e) {
+            log.error("createUploadPlaceholder failed org={} client={}: {}", orgId, clientId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Background extraction for an uploaded client document: run text extraction
+     * and fill in the placeholder created by {@link #createUploadPlaceholder}.
+     * Called cross-bean so the {@code @Async} proxy applies.
+     */
+    @Async
+    public void finalizeUpload(String orgId, String clientId, String docId,
+                               String filename, byte[] bytes) {
+        if (devMode) return;
+        Map<String, Object> update = new HashMap<>();
+        try {
+            String text = documentFormatService.extractText(filename, bytes);
+            if (text == null || text.isBlank()) {
+                update.put("extractionStatus", "FAILED");
+                update.put("extractionError", "No readable text found in \"" + filename + "\".");
+            } else {
+                update.put("content", text);
+                update.put("characters", text.length());
+                update.put("extractionStatus", "READY");
+            }
+        } catch (IllegalArgumentException e) {
+            update.put("extractionStatus", "FAILED");
+            update.put("extractionError", e.getMessage());
+        } catch (Exception e) {
+            log.error("finalizeUpload extraction failed doc={} file={}: {}", docId, filename, e.getMessage());
+            update.put("extractionStatus", "FAILED");
+            update.put("extractionError", "Could not read the file.");
+        }
+        try {
+            FirestoreClient.getFirestore()
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS).document(docId)
+                    .set(update, com.google.cloud.firestore.SetOptions.merge()).get();
+        } catch (Exception e) {
+            log.error("finalizeUpload update failed doc={}: {}", docId, e.getMessage());
         }
     }
 

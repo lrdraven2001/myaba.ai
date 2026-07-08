@@ -975,6 +975,18 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
   };
   useEffect(() => { loadDocs(); }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // While any uploaded doc is still extracting (async, server-side), quietly
+  // re-poll so its "Processing" badge flips to ready without the user refreshing.
+  useEffect(() => {
+    if (!docs.some((d) => d.extractionStatus === 'PROCESSING')) return;
+    const t = setInterval(() => {
+      api.getClientDocuments(clientId)
+        .then((r) => setDocs(r.documents as Array<Record<string, string>>))
+        .catch(() => {});
+    }, 2500);
+    return () => clearInterval(t);
+  }, [docs, clientId]);
+
   // Direct file upload — text is extracted server-side (scanned PDFs are OCR'd)
   // and stored with the client. Multiple files upload sequentially, max 10 at a time.
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1062,6 +1074,15 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
                   <div className="flex items-center gap-2 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{d.title ?? d.documentType ?? 'AI Document'}</p>
                     <CreatedByPill createdBy={d.createdBy ?? d.addedBy ?? d.authorUid ?? d.userId} members={members} />
+                    {d.extractionStatus === 'PROCESSING' && (
+                      <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                        <FontAwesomeIcon icon={faSpinner} className="animate-spin" style={{ fontSize: 9 }} /> Processing
+                      </span>
+                    )}
+                    {d.extractionStatus === 'FAILED' && (
+                      <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: '#FEE2E2', color: '#991B1B' }}
+                        title={d.extractionError ?? 'Could not read this file.'}>Couldn’t read</span>
+                    )}
                   </div>
                   {d.createdAt && (
                     <p className="text-xs text-gray-400 mt-0.5">
