@@ -845,19 +845,37 @@ export const api = {
     return res.json();
   },
 
-  /** Upload a chat attachment (Word/PDF/Excel/text) and get its extracted text for context. */
+  /**
+   * Upload a document (Word/PDF/Excel/text/image) and get its extracted text.
+   * Extraction runs asynchronously server-side (scanned OCR, figure/chart vision,
+   * large files can take a while) so the upload never times the gateway out; this
+   * submits the job and polls until it's ready. Same return shape as before, so
+   * callers are unchanged.
+   */
   extractAttachment: async (file: File): Promise<{ name: string; text: string; chars: number }> => {
     const headers = await getAuthHeaders();
     const h: Record<string, string> = {};
     if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${API_BASE}/documents/attachment/extract`, { method: 'POST', headers: h, body: form });
+    const res = await fetch(`${API_BASE}/documents/attachment/extract-async`, { method: 'POST', headers: h, body: form });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(body.error || `Failed to read file (HTTP ${res.status})`);
     }
-    return res.json();
+    const { jobId } = await res.json() as { jobId: string };
+
+    // Poll the job. Extraction of large/scanned documents can take a while;
+    // each poll is a cheap request, so the upload itself never times out.
+    const deadlineMs = Date.now() + 4 * 60 * 1000; // 4 minutes
+    while (Date.now() < deadlineMs) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const job = await request<{ status: string; name: string; text?: string; chars?: number; error?: string }>(
+        `/documents/extraction/${jobId}`);
+      if (job.status === 'READY') return { name: job.name, text: job.text ?? '', chars: job.chars ?? 0 };
+      if (job.status === 'FAILED') throw new Error(job.error || 'Could not read the file.');
+    }
+    throw new Error('Reading this file is taking longer than expected. Please try again.');
   },
 
   // ── Compliance dashboard ──────────────────────────────────────────────────

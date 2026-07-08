@@ -2,8 +2,10 @@ package ai.myaba.controller;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.service.DocumentFormatService;
+import ai.myaba.service.ExtractionJobService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +25,7 @@ import java.util.Map;
 public class DocumentFormatController {
 
     private final DocumentFormatService documentFormatService;
+    private final ExtractionJobService extractionJobService;
 
     /** Render { title, content } to a downloadable .docx. */
     @PostMapping("/export/docx")
@@ -119,5 +122,57 @@ public class DocumentFormatController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Could not read the file: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Asynchronous variant of {@link #extractAttachment}: create a PROCESSING job,
+     * kick off extraction in the background, and return the {@code jobId} immediately.
+     * Heavy documents (scanned OCR, many figures, large files) no longer time the
+     * upload out at the gateway. Poll {@link #extractionStatus} until READY/FAILED.
+     */
+    @PostMapping("/attachment/extract-async")
+    public ResponseEntity<?> extractAttachmentAsync(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AppUser user) {
+        String name = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+        if (!isSupportedAttachment(name.toLowerCase())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Unsupported file type. Upload a Word (.docx), PDF, Excel (.xlsx/.xls), "
+                            + "image (PNG/JPG/screenshot), or text file."));
+        }
+        if (file.getSize() > 20L * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));
+        }
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Could not read the uploaded file."));
+        }
+        String jobId = extractionJobService.createJob(user.getOrgId(), name);
+        // Cross-bean call → the @Async proxy applies; returns immediately.
+        extractionJobService.runExtraction(user.getOrgId(), jobId, name, bytes);
+        return ResponseEntity.accepted()
+                .body(Map.of("jobId", jobId, "status", "PROCESSING", "name", name));
+    }
+
+    /** Poll an extraction job: { status: PROCESSING|READY|FAILED, name, text?, chars?, error? }. */
+    @GetMapping("/extraction/{jobId}")
+    public ResponseEntity<?> extractionStatus(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal AppUser user) {
+        Map<String, Object> job = extractionJobService.get(user.getOrgId(), jobId);
+        if (job == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Extraction job not found"));
+        }
+        return ResponseEntity.ok(job);
+    }
+
+    private boolean isSupportedAttachment(String lower) {
+        return lower.endsWith(".docx") || lower.endsWith(".pdf") || lower.endsWith(".txt")
+                || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text")
+                || lower.endsWith(".xlsx") || lower.endsWith(".xls")
+                || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".bmp");
     }
 }

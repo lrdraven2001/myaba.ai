@@ -30,6 +30,12 @@ spec:
         # request after idle. Raise minScale to 1 once traffic justifies it.
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "4"
+        # CPU always allocated (not throttled to request scope). REQUIRED for the
+        # async document-extraction worker (ExtractionJobService): the background
+        # OCR/vision extraction runs AFTER the HTTP response returns, so without
+        # this the worker is throttled and jobs never leave PROCESSING. Still
+        # scales to zero when idle with no in-flight work.
+        run.googleapis.com/cpu-throttling: "false"
     spec:
       serviceAccountName: myaba-api@myapaai.iam.gserviceaccount.com
       containers:
