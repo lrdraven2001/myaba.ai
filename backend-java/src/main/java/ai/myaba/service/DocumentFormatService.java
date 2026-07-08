@@ -241,33 +241,48 @@ public class DocumentFormatService {
         return out == null ? "" : out.trim();
     }
 
+    /** Minimum pixel dimensions for an embedded image to count as a candidate figure. */
+    private static final int FIGURE_MIN_W = 350;
+    private static final int FIGURE_MIN_H = 250;
+
     /**
      * Describe charts/graphs/figures embedded in an otherwise text-based PDF. Text
      * extraction (PDFTextStripper) cannot see images, so a clinical data graph would
-     * be lost. Pages containing raster images are rendered and vision-described;
-     * capped at {@link #OCR_MAX_PAGES} figure pages. Returns "" when no figures found.
+     * be lost. Only pages containing a LARGE embedded image (a plausible chart, not a
+     * header logo/icon) are described, and they are batched into grouped vision calls
+     * — so ordinary documents make zero vision calls and stay fast. Capped at
+     * {@link #OCR_MAX_PAGES} pages. Returns "" when no figures are found.
      */
     private String describePdfFigures(org.apache.pdfbox.pdmodel.PDDocument doc, String filename) {
         try {
+            List<Integer> figurePages = new ArrayList<>();
+            for (int p = 0; p < doc.getNumberOfPages() && figurePages.size() < OCR_MAX_PAGES; p++) {
+                if (pageHasLargeImage(doc.getPage(p))) figurePages.add(p);
+            }
+            if (figurePages.isEmpty()) return ""; // common case — no expensive calls
+
             org.apache.pdfbox.rendering.PDFRenderer renderer =
                     new org.apache.pdfbox.rendering.PDFRenderer(doc);
             StringBuilder out = new StringBuilder();
-            int described = 0;
-            int total = doc.getNumberOfPages();
-            for (int p = 0; p < total && described < OCR_MAX_PAGES; p++) {
-                if (!pageHasImages(doc.getPage(p))) continue;
-                java.awt.image.BufferedImage img = renderer.renderImageWithDPI(p, OCR_DPI);
-                ByteArrayOutputStream png = new ByteArrayOutputStream();
-                javax.imageio.ImageIO.write(img, "png", png);
-                String instruction = ("Page %d of \"%s\" contains one or more figures. Describe "
-                        + "ONLY the charts, graphs, or figures on this page (ignore body text, which "
-                        + "is already captured elsewhere).").formatted(p + 1, filename);
-                String desc = geminiService.describeImages(
-                        instruction, List.of(png.toByteArray()), "image/png");
+            for (int i = 0; i < figurePages.size(); i += OCR_PAGES_PER_CALL) {
+                List<Integer> batch = figurePages.subList(i, Math.min(i + OCR_PAGES_PER_CALL, figurePages.size()));
+                List<byte[]> pngs = new ArrayList<>();
+                for (int p : batch) {
+                    java.awt.image.BufferedImage img = renderer.renderImageWithDPI(p, OCR_DPI);
+                    ByteArrayOutputStream png = new ByteArrayOutputStream();
+                    javax.imageio.ImageIO.write(img, "png", png);
+                    pngs.add(png.toByteArray());
+                }
+                String pageList = batch.stream().map(p -> String.valueOf(p + 1))
+                        .collect(java.util.stream.Collectors.joining(", "));
+                String instruction = ("These are pages %s of \"%s\" that contain figures. For EACH "
+                        + "page, describe ONLY its charts, graphs, or figures (ignore body text, which "
+                        + "is captured elsewhere). Prefix each page's description with its page number, "
+                        + "e.g. \"[Page 3]\".").formatted(pageList, filename);
+                String desc = geminiService.describeImages(instruction, pngs, "image/png");
                 if (desc != null && !desc.isBlank()) {
                     if (out.length() == 0) out.append("FIGURES:\n");
-                    out.append("[Page ").append(p + 1).append("] ").append(desc.trim()).append("\n\n");
-                    described++;
+                    out.append(desc.trim()).append("\n\n");
                 }
             }
             return out.toString().trim();
@@ -277,13 +292,23 @@ public class DocumentFormatService {
         }
     }
 
-    /** True when a PDF page references any XObject image (a candidate figure/graph). */
-    private boolean pageHasImages(org.apache.pdfbox.pdmodel.PDPage page) {
+    /**
+     * True when a page has a LARGE embedded image — a plausible chart/figure rather
+     * than a decorative logo, icon, or header/footer graphic. Filtering by size is
+     * what keeps ordinary documents (letterhead on every page) from triggering an
+     * expensive vision call per page.
+     */
+    private boolean pageHasLargeImage(org.apache.pdfbox.pdmodel.PDPage page) {
         try {
             var res = page.getResources();
             if (res == null) return false;
             for (var name : res.getXObjectNames()) {
-                if (res.isImageXObject(name)) return true;
+                if (!res.isImageXObject(name)) continue;
+                var xobj = res.getXObject(name);
+                if (xobj instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject img
+                        && img.getWidth() >= FIGURE_MIN_W && img.getHeight() >= FIGURE_MIN_H) {
+                    return true;
+                }
             }
             return false;
         } catch (Exception e) {
