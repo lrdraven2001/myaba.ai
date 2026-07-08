@@ -19,7 +19,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Converts generated document text to/from Office formats using Apache POI.
@@ -244,40 +246,47 @@ public class DocumentFormatService {
     /** Minimum pixel dimensions for an embedded image to count as a candidate figure. */
     private static final int FIGURE_MIN_W = 350;
     private static final int FIGURE_MIN_H = 250;
-    /** Hard cap on figure pages described in one (synchronous) extraction — bounds latency. */
-    private static final int FIGURE_MAX_PAGES = 6;
+    /** Cap on figure pages described per document. Generous because extraction is async. */
+    private static final int FIGURE_MAX_PAGES = 24;
 
     /**
      * Describe charts/graphs/figures embedded in an otherwise text-based PDF. Text
      * extraction (PDFTextStripper) cannot see images, so a clinical data graph would
-     * be lost. Only pages containing a LARGE embedded image (a plausible chart, not a
-     * header logo/icon) are described, and they are batched into grouped vision calls
-     * — so ordinary documents make zero vision calls and stay fast. Capped at
-     * {@link #OCR_MAX_PAGES} pages. Returns "" when no figures are found.
+     * be lost.
+     *
+     * <p>A page is a figure page when it carries a LARGE image (a plausible chart,
+     * not a small logo) that is NOT a recurring template element. A letterhead or
+     * form banner is the SAME image repeated across pages, so it's identified and
+     * ignored; distinct per-page images (graphs) are described. Runs in the async
+     * extraction worker, so many figure pages are fine (batched, capped at
+     * {@link #FIGURE_MAX_PAGES}). Returns "" when no figures are found.
      */
     private String describePdfFigures(org.apache.pdfbox.pdmodel.PDDocument doc, String filename) {
         try {
             int total = doc.getNumberOfPages();
-            List<Integer> figurePages = new ArrayList<>();
+
+            // First pass: map each large image's identity → the pages it appears on,
+            // so we can recognize recurring template images (letterhead/banner).
+            Map<Integer, java.util.Set<Integer>> imageToPages = new HashMap<>();
+            List<java.util.Set<Integer>> pageImageIds = new ArrayList<>();
             for (int p = 0; p < total; p++) {
-                if (pageHasLargeImage(doc.getPage(p))) figurePages.add(p);
+                java.util.Set<Integer> ids = largeImageIds(doc.getPage(p));
+                pageImageIds.add(ids);
+                for (Integer id : ids) imageToPages.computeIfAbsent(id, k -> new java.util.HashSet<>()).add(p);
+            }
+            // An image on more than half the pages is a template element, not a figure.
+            int templateThreshold = Math.max(3, total / 2);
+            java.util.Set<Integer> templateIds = new java.util.HashSet<>();
+            imageToPages.forEach((id, pages) -> { if (pages.size() >= templateThreshold) templateIds.add(id); });
+
+            // Figure pages: those with at least one large image that is NOT a template.
+            List<Integer> figurePages = new ArrayList<>();
+            for (int p = 0; p < total && figurePages.size() < FIGURE_MAX_PAGES; p++) {
+                for (Integer id : pageImageIds.get(p)) {
+                    if (!templateIds.contains(id)) { figurePages.add(p); break; }
+                }
             }
             if (figurePages.isEmpty()) return ""; // common case — no expensive calls
-
-            // When MOST pages carry a large image, this is a form/letterhead/scanned-
-            // hybrid template, not a few data figures — the text layer already carries
-            // the content. Describing every page would fire many vision calls and time
-            // the upload out (HTTP 502). Skip the figure pass entirely in that case.
-            if (figurePages.size() > Math.max(FIGURE_MAX_PAGES, total / 2)) {
-                log.info("Skipping figure pass for {}: {}/{} pages have large images "
-                        + "(looks like a template/scanned-hybrid; text layer used).",
-                        filename, figurePages.size(), total);
-                return "";
-            }
-            // Otherwise describe at most FIGURE_MAX_PAGES to bound latency.
-            if (figurePages.size() > FIGURE_MAX_PAGES) {
-                figurePages = figurePages.subList(0, FIGURE_MAX_PAGES);
-            }
 
             org.apache.pdfbox.rendering.PDFRenderer renderer =
                     new org.apache.pdfbox.rendering.PDFRenderer(doc);
@@ -311,27 +320,30 @@ public class DocumentFormatService {
     }
 
     /**
-     * True when a page has a LARGE embedded image — a plausible chart/figure rather
-     * than a decorative logo, icon, or header/footer graphic. Filtering by size is
-     * what keeps ordinary documents (letterhead on every page) from triggering an
-     * expensive vision call per page.
+     * Identities of the LARGE embedded images on a page (small logos/icons are
+     * filtered out by size). Identity is the shared image stream's object identity,
+     * so the SAME image reused across pages (letterhead/banner) maps to one id —
+     * which lets {@link #describePdfFigures} recognize and ignore template elements.
      */
-    private boolean pageHasLargeImage(org.apache.pdfbox.pdmodel.PDPage page) {
+    private java.util.Set<Integer> largeImageIds(org.apache.pdfbox.pdmodel.PDPage page) {
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
         try {
             var res = page.getResources();
-            if (res == null) return false;
+            if (res == null) return ids;
             for (var name : res.getXObjectNames()) {
                 if (!res.isImageXObject(name)) continue;
                 var xobj = res.getXObject(name);
                 if (xobj instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject img
                         && img.getWidth() >= FIGURE_MIN_W && img.getHeight() >= FIGURE_MIN_H) {
-                    return true;
+                    // COSStream identity: shared (indirect) image streams are cached by
+                    // PDFBox, so a reused banner yields the same identity across pages.
+                    ids.add(System.identityHashCode(img.getCOSObject()));
                 }
             }
-            return false;
         } catch (Exception e) {
-            return false;
+            log.debug("largeImageIds failed on a page of a PDF: {}", e.getMessage());
         }
+        return ids;
     }
 
     /**
