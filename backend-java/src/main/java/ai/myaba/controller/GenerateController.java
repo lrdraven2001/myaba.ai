@@ -153,6 +153,17 @@ public class GenerateController {
      * a cited web summary) read as unsupported claims and the reply escalates as a
      * possible hallucination.
      */
+    /** True when the chat is attached to a project (drives reasoning-tier routing). */
+    private boolean chatHasProject(AppUser user, String chatId) {
+        if (chatId == null || chatId.isBlank()) return false;
+        try {
+            Object pid = chatService.getChat(user, chatId).get("projectId");
+            return pid != null && !String.valueOf(pid).isBlank();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
                            boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut) {
         List<Map<String, Object>> tools = new ArrayList<>();
@@ -702,13 +713,17 @@ public class GenerateController {
         // Build policy-augmented system prompt (includes base clinical identity + client context)
         String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
 
-        // Client-attached chats route to the reasoning tier: these produce clinical
-        // content about a specific client and warrant document-grade quality.
-        boolean clientAttached = req.getClientId() != null && !req.getClientId().isBlank();
+        // Reasoning-tier routing: client-attached chats produce clinical content
+        // about a specific client, and project-attached chats synthesize project
+        // knowledge (e.g. comprehensive meeting notes) — both warrant the
+        // higher-reasoning model. Plain, unattached chat stays on the fast tier.
+        boolean clientAttached  = req.getClientId() != null && !req.getClientId().isBlank();
+        boolean projectAttached = chatHasProject(user, req.getChatId());
+        boolean reasoning = clientAttached || projectAttached;
         List<ai.myaba.model.dto.AclxRequest.Source> toolSources = new ArrayList<>();
         String rawReply;
         try {
-            rawReply = runChat(user, systemPrompt, messages, clientAttached, toolSources);
+            rawReply = runChat(user, systemPrompt, messages, reasoning, toolSources);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
