@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faRightLeft, faUser, faPlus, faTrash, faShieldHalved,
-  faMagnifyingGlass, faCircleInfo,
+  faMagnifyingGlass, faCircleInfo, faComments,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
+import type { StyleProfile } from '../../types';
 import {
   SettingsCard, Badge, Toggle, SettingRow, PrimaryButton, SecondaryButton, SectionHeading,
 } from '../../components/settings/primitives';
@@ -102,6 +103,9 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
         </div>
       </SettingsCard>
 
+      {/* Communication Style */}
+      <CommunicationStyleCard orgId={orgId} isAdmin={isAdmin} />
+
       {/* Organization Rules */}
       <div>
         <h3 className="text-base font-bold text-gray-900">Organization Rules</h3>
@@ -187,6 +191,148 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
         <AddRuleModal orgId={orgId} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); loadPolicy(); }} />
       )}
     </div>
+  );
+}
+
+// ── Communication Style card ───────────────────────────────────────────────
+const TONE_OPTIONS   = ['', 'Concise', 'Detailed', 'Warm', 'Clinical / formal', 'Plain-language'];
+const LENGTH_OPTIONS = ['', 'Brief', 'Standard', 'Thorough'];
+const selCls = 'text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-600';
+
+function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
+  const [p, setP] = useState<StyleProfile>({});
+  const [terms, setTerms] = useState<string[]>([]);
+  const [newTerm, setNewTerm] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved]   = useState(false);
+  const [dirty, setDirty]   = useState(false);
+
+  useEffect(() => {
+    if (!orgId) return;
+    api.getOrg(orgId).then((o) => {
+      const sp = o.settings?.styleProfile ?? {};
+      setP(sp);
+      setTerms(sp.terminology ?? []);
+    }).catch(() => {});
+  }, [orgId]);
+
+  const set = <K extends keyof StyleProfile>(k: K, v: StyleProfile[K]) => {
+    setP((prev) => ({ ...prev, [k]: v })); setDirty(true); setSaved(false);
+  };
+  const addTerm = () => {
+    const t = newTerm.trim();
+    if (!t) return;
+    setTerms((prev) => [...prev, t]); setNewTerm(''); setDirty(true); setSaved(false);
+  };
+  const removeTerm = (i: number) => {
+    setTerms((prev) => prev.filter((_, idx) => idx !== i)); setDirty(true); setSaved(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const profile: StyleProfile = {
+      tone: p.tone || undefined,
+      length: p.length || undefined,
+      bullets: !!p.bullets,
+      headings: !!p.headings,
+      tablesForData: !!p.tablesForData,
+      terminology: terms,
+      freeform: p.freeform?.trim() || undefined,
+    };
+    try {
+      await api.updateOrgSettings(orgId, { styleProfile: profile });
+      setSaved(true); setDirty(false);
+    } catch { /* keep dirty so the user can retry */ }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <SettingsCard
+      icon={faComments}
+      title="Communication Style"
+      subtitle="Shape the tone and format of AI responses and documents. Stylistic only — never overrides clinical accuracy or compliance."
+    >
+      <div className="px-5 sm:px-6 py-5 space-y-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Preferred tone</span>
+            <select className={`${selCls} w-full mt-1`} value={p.tone ?? ''} disabled={!isAdmin}
+              onChange={(e) => set('tone', e.target.value)}>
+              {TONE_OPTIONS.map((t) => <option key={t} value={t}>{t || 'No preference'}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Default length</span>
+            <select className={`${selCls} w-full mt-1`} value={p.length ?? ''} disabled={!isAdmin}
+              onChange={(e) => set('length', e.target.value)}>
+              {LENGTH_OPTIONS.map((t) => <option key={t} value={t}>{t || 'No preference'}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-5">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Toggle checked={!!p.bullets} onChange={(v) => set('bullets', v)} disabled={!isAdmin} label="Prefer bullet points" />
+            Prefer bullet points
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Toggle checked={!!p.headings} onChange={(v) => set('headings', v)} disabled={!isAdmin} label="Use section headings" />
+            Use section headings
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Toggle checked={!!p.tablesForData} onChange={(v) => set('tablesForData', v)} disabled={!isAdmin} label="Tables for data" />
+            Tables for data
+          </label>
+        </div>
+
+        <div>
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Terminology preferences</span>
+          <div className="mt-2 space-y-2">
+            {terms.map((t, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">{t}</span>
+                {isAdmin && (
+                  <button onClick={() => removeTerm(i)} aria-label="Remove term" className="text-gray-400 hover:text-red-600 w-8 h-8 rounded-lg hover:bg-red-50">
+                    <FontAwesomeIcon icon={faTrash} className="text-sm" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <input
+                  value={newTerm}
+                  onChange={(e) => setNewTerm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm(); } }}
+                  placeholder="e.g. Use 'learner' rather than 'patient'"
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+                <SecondaryButton icon={faPlus} onClick={addTerm}>Add</SecondaryButton>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Additional guidance</span>
+          <textarea
+            value={p.freeform ?? ''}
+            onChange={(e) => set('freeform', e.target.value)}
+            disabled={!isAdmin}
+            rows={3}
+            placeholder="Any other instructions on how you want the AI to communicate (e.g. avoid jargon; lead with the recommendation)."
+            className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600 resize-none"
+          />
+        </div>
+
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            <PrimaryButton onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save style'}</PrimaryButton>
+            {saved && <span className="text-sm text-green-600">Saved</span>}
+          </div>
+        )}
+      </div>
+    </SettingsCard>
   );
 }
 

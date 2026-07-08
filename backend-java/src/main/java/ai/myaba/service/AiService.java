@@ -117,16 +117,23 @@ public class AiService {
     // ── Public API ─────────────────────────────────────────────────────────────
 
     public String generateDocument(String documentType, String clientContext, String additionalContext) {
-        return generateDocument(documentType, clientContext, additionalContext, null);
+        return generateDocument(documentType, clientContext, additionalContext, null, null);
+    }
+
+    public String generateDocument(String documentType, String clientContext,
+                                   String additionalContext, String customTemplate) {
+        return generateDocument(documentType, clientContext, additionalContext, customTemplate, null);
     }
 
     /**
      * Generate a clinical document. When {@code customTemplate} is non-blank, the agency's
      * customized Generation Template (from the Agency Library) is used in place of the
-     * built-in default prompt for this document type.
+     * built-in default prompt for this document type. {@code styleGuidance} is the org's
+     * communication-style block (may be null/blank) appended to the system prompt.
      */
     public String generateDocument(String documentType, String clientContext,
-                                   String additionalContext, String customTemplate) {
+                                   String additionalContext, String customTemplate,
+                                   String styleGuidance) {
         String typePrompt;
         if (customTemplate != null && !customTemplate.isBlank()) {
             typePrompt = """
@@ -154,9 +161,13 @@ public class AiService {
                 additionalContext != null ? additionalContext : "None provided",
                 typePrompt);
 
+        String systemPrompt = (styleGuidance != null && !styleGuidance.isBlank())
+                ? BCBA_SYSTEM_PROMPT + "\n" + styleGuidance
+                : BCBA_SYSTEM_PROMPT;
+
         // All document building goes to the reasoning tier — clinicians sign these, and
         // quality feedback showed the fast tier isn't good enough even for short notes.
-        return provider().complete(BCBA_SYSTEM_PROMPT, List.of(
+        return provider().complete(systemPrompt, List.of(
                 Map.of("role", "user", "content", userContent)
         ), true);
     }

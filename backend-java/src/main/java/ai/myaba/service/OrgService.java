@@ -253,6 +253,51 @@ public class OrgService {
         return false; // default off — opt-in
     }
 
+    /**
+     * Build the org's COMMUNICATION STYLE prompt block from its explicit style
+     * profile ({@code settings.styleProfile}), or "" when none is set. Style shapes
+     * wording and format only — it must never override clinical accuracy or
+     * compliance. See docs/design/communication-style-learning.md (Phase 1).
+     */
+    @SuppressWarnings("unchecked")
+    public String buildStyleProfilePrompt(String orgId) {
+        Map<String, Object> p;
+        try {
+            Object settings = getOrg(orgId).get("settings");
+            if (!(settings instanceof Map<?, ?> s) || !(s.get("styleProfile") instanceof Map<?, ?> sp)) return "";
+            p = (Map<String, Object>) sp;
+        } catch (Exception e) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        String tone   = str(p.get("tone"));
+        String length = str(p.get("length"));
+        boolean bullets = Boolean.TRUE.equals(p.get("bullets"));
+        boolean headings = Boolean.TRUE.equals(p.get("headings"));
+        boolean tablesForData = Boolean.TRUE.equals(p.get("tablesForData"));
+        String freeform = str(p.get("freeform"));
+        List<String> terminology = p.get("terminology") instanceof List<?> l
+                ? l.stream().map(String::valueOf).filter(x -> !x.isBlank()).toList() : List.of();
+
+        if (tone.isBlank() && length.isBlank() && !bullets && !headings && !tablesForData
+                && freeform.isBlank() && terminology.isEmpty()) {
+            return "";
+        }
+        sb.append("\nCOMMUNICATION STYLE (organization preferences — apply to the wording and ")
+          .append("format of your response. These are stylistic only: never sacrifice clinical ")
+          .append("accuracy, completeness, or compliance to satisfy them):\n");
+        if (!tone.isBlank())   sb.append("- Preferred tone: ").append(tone).append("\n");
+        if (!length.isBlank()) sb.append("- Default length: ").append(length).append("\n");
+        if (bullets)  sb.append("- Prefer bullet points for lists and multi-part content.\n");
+        if (headings) sb.append("- Use clear section headings to organize longer responses.\n");
+        if (tablesForData) sb.append("- Present tabular/quantitative data as tables.\n");
+        for (String t : terminology) sb.append("- Terminology: ").append(t).append("\n");
+        if (!freeform.isBlank()) sb.append("- ").append(freeform.trim()).append("\n");
+        return sb.toString();
+    }
+
+    private static String str(Object o) { return o == null ? "" : o.toString().trim(); }
+
     // ── Create org ────────────────────────────────────────────────────────────
 
     /**

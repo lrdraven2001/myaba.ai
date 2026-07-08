@@ -323,7 +323,8 @@ public class GenerateController {
         String rawOutput;
         try {
             rawOutput = aiService.generateDocument(
-                    req.getDocumentType(), context, req.getAdditionalContext(), customTemplate);
+                    req.getDocumentType(), context, req.getAdditionalContext(), customTemplate,
+                    orgService.buildStyleProfilePrompt(user.getOrgId()));
         } catch (Exception e) {
             log.error("AI document generation failed: {}", e.getMessage());
             return ResponseEntity.internalServerError()
@@ -1173,7 +1174,8 @@ public class GenerateController {
 
                 Keep responses professional, concise, and relevant to an ABA practice. \
                 Do not use emoji characters.\
-                """ + buildAgencyLocalityContext(orgId) + buildTemplatesContext(orgId)
+                """ + buildAgencyLocalityContext(orgId) + orgService.buildStyleProfilePrompt(orgId)
+                    + buildTemplatesContext(orgId)
                     + DOCUMENT_GENERATION_GUIDANCE + ABA_LANGUAGE_GUIDANCE;
     }
 
@@ -1270,6 +1272,7 @@ public class GenerateController {
                 and emoji are inappropriate in clinical documentation and communication.
                 """);
         sb.append(buildAgencyLocalityContext(user.getOrgId()));
+        sb.append(orgService.buildStyleProfilePrompt(user.getOrgId()));
         sb.append(buildTemplatesContext(user.getOrgId()));
         sb.append(DOCUMENT_GENERATION_GUIDANCE);
         sb.append(ABA_LANGUAGE_GUIDANCE);

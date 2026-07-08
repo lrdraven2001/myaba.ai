@@ -246,6 +246,23 @@ export interface OrgSettings {
    * Hard BLOCKs always enforce regardless.
    */
   aclxReportOnly?: boolean;
+  /**
+   * Explicit communication-style profile (Phase 1). Shapes wording/format of AI
+   * output — never clinical substance or compliance. See
+   * docs/design/communication-style-learning.md.
+   */
+  styleProfile?: StyleProfile;
+}
+
+/** Org communication-style preferences injected into AI prompts. */
+export interface StyleProfile {
+  tone?: string;          // e.g. 'Concise', 'Detailed', 'Warm', 'Clinical / formal'
+  length?: string;        // 'Brief' | 'Standard' | 'Thorough'
+  bullets?: boolean;
+  headings?: boolean;
+  tablesForData?: boolean;
+  terminology?: string[]; // e.g. ["Use 'learner' rather than 'patient'"]
+  freeform?: string;      // any additional written guidance
 }
 
 /** Acceptance status for a signed agreement (BAA, Service Contract). */
