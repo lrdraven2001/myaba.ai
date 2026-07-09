@@ -240,7 +240,7 @@ public class DocumentPersistenceService {
         if (devMode) return;
         Map<String, Object> update = new HashMap<>();
         try {
-            String text = documentFormatService.extractText(filename, bytes);
+            String text = documentFormatService.extractText(filename, bytes, true);
             if (text == null || text.isBlank()) {
                 update.put("extractionStatus", "FAILED");
                 update.put("extractionError", "No readable text found in \"" + filename + "\".");

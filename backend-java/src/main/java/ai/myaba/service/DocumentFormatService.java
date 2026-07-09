@@ -171,13 +171,24 @@ public class DocumentFormatService {
      * <p>No DLP de-identification is applied — clinical staff need the actual client
      * data they upload to operate on it. PHI governance happens at output time via
      * ACLX, scoped to the authenticated user's role/purpose.
+     *
+     * <p>This 2-arg overload does FAST, text-only extraction (no multi-page vision).
+     * Use it on the synchronous request path so an upload can never time out. Heavy
+     * vision passes (scanned-PDF OCR, chart/figure description) run only via
+     * {@link #extractText(String, byte[], boolean)} with {@code includeVision=true},
+     * which is called from the async extraction workers.
      */
     public String extractText(String filename, byte[] bytes) throws Exception {
+        return extractText(filename, bytes, false);
+    }
+
+    public String extractText(String filename, byte[] bytes, boolean includeVision) throws Exception {
         String lower = filename == null ? "" : filename.toLowerCase();
         if (lower.endsWith(".docx")) {
             return extractDocxText(bytes);
         }
-        // Image uploads (screenshots, graph/chart images) → vision transcribe+describe.
+        // Image uploads (screenshots, graph/chart images) → single vision call (fast,
+        // safe on the sync path too).
         String imgMime = imageMimeType(lower);
         if (imgMime != null) {
             return describeImageFile(filename, bytes, imgMime);
@@ -192,6 +203,10 @@ public class DocumentFormatService {
                 String text  = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
                 int    pages = doc.getNumberOfPages();
                 int    dense = text == null ? 0 : text.replaceAll("\\s", "").length();
+                // Multi-page vision (OCR + figure description) is heavy and only runs
+                // on the async path — never inline, or a big document times the request
+                // out at the gateway (HTTP 502).
+                if (!includeVision) return text;
                 // Scanned PDF (no meaningful text layer) → render pages and OCR them.
                 if (pages > 0 && dense / pages < MIN_TEXT_CHARS_PER_PAGE) {
                     String ocr = ocrPdf(doc, filename);

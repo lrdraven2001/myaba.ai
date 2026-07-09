@@ -80,7 +80,7 @@ public class ExtractionJobService {
     public void runExtraction(String orgId, String jobId, String filename, byte[] bytes) {
         Map<String, Object> update = new HashMap<>();
         try {
-            String text = documentFormatService.extractText(filename, bytes);
+            String text = documentFormatService.extractText(filename, bytes, true);
             if (text == null || text.isBlank()) {
                 update.put("status", "FAILED");
                 update.put("error", "No readable text found in \"" + filename + "\".");
