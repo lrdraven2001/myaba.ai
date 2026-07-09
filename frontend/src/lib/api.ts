@@ -29,6 +29,14 @@ import type {
 } from '../types';
 
 const API_BASE = '/api';
+// Long-running AI calls (chat, document generation) can take >60s, which exceeds
+// the Firebase Hosting proxy timeout (→ HTTP 502 even though Cloud Run finishes).
+// Point those at Cloud Run DIRECTLY (300s limit) via VITE_DIRECT_API_URL. Unset in
+// local dev → falls back to the same /api proxy, so dev is unaffected. The service
+// is public and CORS allows the app origins, so direct calls authenticate normally.
+const LONG_API_BASE = import.meta.env.VITE_DIRECT_API_URL
+  ? `${import.meta.env.VITE_DIRECT_API_URL}/api`
+  : API_BASE;
 const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === 'true';
 
 // ── Auth headers ──────────────────────────────────────────────────────────────
@@ -68,9 +76,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, base: string = API_BASE): Promise<T> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${base}${path}`, {
     ...options,
     headers: { ...headers, ...(options.headers as Record<string, string>) },
   });
@@ -291,7 +299,7 @@ export const api = {
         history: history.map((m) => ({ role: m.role, content: m.content })),
         contextDocs: contextDocs && contextDocs.length > 0 ? contextDocs : undefined,
       }),
-    }),
+    }, LONG_API_BASE),
 
   // ── Clients ───────────────────────────────────────────────────────────────
 
@@ -798,7 +806,7 @@ export const api = {
     }>('/generate-document', {
       method: 'POST',
       body: JSON.stringify({ clientId, documentType, additionalContext }),
-    }),
+    }, LONG_API_BASE),
 
   /** Download generated text as a Word (.docx) file. */
   exportDocx: (title: string, content: string) => downloadDoc('docx', title, content),
