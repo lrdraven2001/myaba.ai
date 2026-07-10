@@ -27,6 +27,7 @@ import java.util.Map;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final ai.myaba.service.GcsStorageService gcsStorageService;
 
     // ── List ──────────────────────────────────────────────────────────────
 
@@ -156,6 +157,105 @@ public class ProjectController {
             @PathVariable String docId) throws Exception {
         projectService.removeKnowledgeDoc(user, projectId, docId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * POST /api/projects/{projectId}/knowledge/upload  (multipart: file, title?)
+     * Upload a PDF/DOC(X)/Excel/image/text file as project knowledge — parity with
+     * client document upload. The original is stored in GCS and the extracted text
+     * in Firestore (async). Edit-gated; requires the project to be PHI-flagged.
+     */
+    @PostMapping("/{projectId}/knowledge/upload")
+    public ResponseEntity<?> uploadKnowledge(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(value = "title", required = false) String title) {
+        String filename = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
+        if (!isSupportedUpload(filename.toLowerCase())) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Unsupported file type. Upload a Word (.docx), PDF, Excel (.xlsx/.xls), image, or text file."));
+        }
+        if (file.getSize() > 20L * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File exceeds the 20 MB limit."));
+        }
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Could not read the uploaded file."));
+        }
+        String docTitle = (title != null && !title.isBlank())
+                ? title.trim() : filename.replaceAll("\\.[A-Za-z0-9]+$", "");
+        try {
+            String docId = projectService.createKnowledgePlaceholder(user, projectId, docTitle, filename);
+            projectService.finalizeKnowledgeUpload(
+                    user.getOrgId(), projectId, docId, filename, file.getContentType(), bytes);
+            return ResponseEntity.status(org.springframework.http.HttpStatus.ACCEPTED)
+                    .body(Map.of("docId", docId, "title", docTitle, "status", "PROCESSING"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Not authorized to add documents to this project"));
+        } catch (IllegalStateException e) {
+            if ("PHI_NOT_ENABLED".equals(e.getMessage())) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).body(Map.of(
+                        "error", "This project isn't marked as containing PHI. Enable PHI on the project "
+                                + "before saving clinical documents to it.",
+                        "code",  "PHI_NOT_ENABLED"));
+            }
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (java.util.NoSuchElementException e) {
+            return ResponseEntity.status(404).body(Map.of("error", "Project not found"));
+        } catch (Exception e) {
+            log.error("uploadKnowledge failed project={}: {}", projectId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload document"));
+        }
+    }
+
+    /**
+     * GET /api/projects/{projectId}/knowledge/{docId}/original
+     * Short-lived signed URL to download the original uploaded file from GCS.
+     * Read-gated. 404 if no original stored; 503 if GCS/signing isn't configured.
+     */
+    @GetMapping("/{projectId}/knowledge/{docId}/original")
+    public ResponseEntity<?> getKnowledgeOriginal(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId,
+            @PathVariable String docId) throws Exception {
+        Map<String, Object> doc = projectService.getKnowledgeDoc(user, projectId, docId);
+        if (doc == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "Document not found"));
+        }
+        Object gcsObject = doc.get("gcsObject");
+        if (!(gcsObject instanceof String path) || path.isBlank()) {
+            return ResponseEntity.status(404).body(Map.of("error", "No original file is stored for this document"));
+        }
+        String filename = String.valueOf(doc.getOrDefault("sourceFilename", doc.getOrDefault("title", "document")));
+        String url = gcsStorageService.signedDownloadUrl(user.getOrgId(), path, filename);
+        if (url == null) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Document download is not available yet. Storage is not fully configured."));
+        }
+        return ResponseEntity.ok(Map.of("url", url));
+    }
+
+    /**
+     * GET /api/projects/{projectId}/members
+     * Lists the project's members (owner + explicit members) with roles.
+     */
+    @GetMapping("/{projectId}/members")
+    public ResponseEntity<List<Map<String, Object>>> listMembers(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId) throws Exception {
+        return ResponseEntity.ok(projectService.getProjectMembers(user, projectId));
+    }
+
+    private boolean isSupportedUpload(String lower) {
+        return lower.endsWith(".docx") || lower.endsWith(".pdf") || lower.endsWith(".txt")
+                || lower.endsWith(".md") || lower.endsWith(".csv") || lower.endsWith(".text")
+                || lower.endsWith(".xlsx") || lower.endsWith(".xls")
+                || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".bmp");
     }
 
     // ── Delete ────────────────────────────────────────────────────────────

@@ -264,6 +264,20 @@ export const api = {
   getUsageHistory: (months = 12) =>
     request<{ history: UsageHistoryEntry[] }>(`/usage/history?months=${months}`),
 
+  // ── Billing (Stripe) ────────────────────────────────────────────────────────
+
+  /** Billing snapshot: plan, subscription status, period end, recent invoices. */
+  getBillingSummary: () =>
+    request<BillingSummary>('/billing/summary'),
+
+  /** Start a hosted Checkout Session for a plan; returns the URL to redirect to. */
+  startCheckout: (plan: string) =>
+    request<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) }),
+
+  /** Open the Stripe Billing Portal (manage plan / payment method / invoices). */
+  openBillingPortal: () =>
+    request<{ url: string }>('/billing/portal', { method: 'POST' }),
+
   /**
    * Set (or clear) a custom monthly request cap for an enterprise org.
    * Admin only. Pass null to remove the cap (revert to unlimited).
@@ -410,6 +424,37 @@ export const api = {
   /** Remove a knowledge document from a project. */
   deleteProjectKnowledge: (projectId: string, docId: string) =>
     request<void>(`/projects/${projectId}/knowledge/${docId}`, { method: 'DELETE' }),
+
+  /** Upload a file (PDF/DOC(X)/Excel/image/text) as project knowledge. Original is
+   *  stored in GCS; extraction runs async server-side. Requires the project to be
+   *  PHI-flagged (throws with the server's message otherwise). */
+  uploadProjectKnowledgeFile: async (projectId: string, file: File, title?: string):
+      Promise<{ docId: string; title: string; status?: string }> => {
+    const headers = await getAuthHeaders();
+    const h: Record<string, string> = {};
+    if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
+    const form = new FormData();
+    form.append('file', file);
+    if (title) form.append('title', title);
+    const res = await fetch(`${API_BASE}/projects/${projectId}/knowledge/upload`, {
+      method: 'POST', headers: h, body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Failed to upload document (HTTP ${res.status})`);
+    }
+    return res.json();
+  },
+
+  /** Signed URL to download a project knowledge doc's original file, then opens it. */
+  openProjectKnowledgeOriginal: async (projectId: string, docId: string): Promise<void> => {
+    const { url } = await request<{ url: string }>(`/projects/${projectId}/knowledge/${docId}/original`);
+    if (url) window.open(url, '_blank', 'noopener');
+  },
+
+  /** List a project's members (owner + explicit members) with roles. */
+  getProjectMembers: (projectId: string) =>
+    request<{ id: string; role: string; name?: string; email?: string }[]>(`/projects/${projectId}/members`),
 
   /** Share a project with a user (role: 'editor' | 'viewer'). */
   shareProject: (projectId: string, userId: string, role: 'editor' | 'viewer') =>
@@ -724,7 +769,8 @@ export const api = {
   // ── Documents ─────────────────────────────────────────────────────────────
 
   getClientDocuments: (clientId: string) =>
-    request<{ documents: { id: string; documentType?: string; createdAt?: string }[] }>(
+    request<{ documents: { id: string; documentType?: string; title?: string; createdAt?: string;
+                           gcsObject?: string; sourceFilename?: string }[] }>(
       `/clients/${clientId}/documents`,
     ),
 
@@ -853,6 +899,16 @@ export const api = {
       throw new Error(body.error || `Failed to upload document (HTTP ${res.status})`);
     }
     return res.json();
+  },
+
+  /** Delete a stored client document (Firestore record + GCS original). Backs the chat "Undo". */
+  deleteClientDocument: (clientId: string, docId: string) =>
+    request<{ success: boolean }>(`/clients/${clientId}/documents/${docId}`, { method: 'DELETE' }),
+
+  /** Signed URL to download a client document's original file, then opens it. */
+  openClientDocumentOriginal: async (clientId: string, docId: string): Promise<void> => {
+    const { url } = await request<{ url: string }>(`/clients/${clientId}/documents/${docId}/original`);
+    if (url) window.open(url, '_blank', 'noopener');
   },
 
   /**

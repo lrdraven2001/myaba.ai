@@ -59,6 +59,9 @@ public class SecurityConfig {
                 // CORS preflight must be reachable without authentication.
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/actuator/health", "/api/health").permitAll()
+                // Stripe webhook: unauthenticated (no Firebase token) but signature-verified
+                // inside the controller against STRIPE_WEBHOOK_SECRET.
+                .requestMatchers(HttpMethod.POST, "/api/billing/webhook").permitAll()
                 // Invite preview is public — unauthenticated users need to read org/role
                 // before they create an account. Claim requires authentication.
                 .requestMatchers(org.springframework.http.HttpMethod.GET,  "/api/invite/*").permitAll()

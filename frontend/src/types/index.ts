@@ -365,6 +365,8 @@ export interface ProjectKnowledgeDoc {
   textContent: string;
   createdAt: string;
   createdBy: string;
+  gcsObject?: string;      // present when an original file is stored in GCS (uploaded docs)
+  sourceFilename?: string; // original filename for uploaded docs
 }
 
 // ── AI Generation ─────────────────────────────────────────────────────────────
@@ -636,6 +638,38 @@ export interface UsageSummary {
    * True for enterprise plans only.
    */
   canSetCustomLimit: boolean;
+  /** Stripe subscription status, if the org has ever subscribed (active, past_due, canceled, …). */
+  subscriptionStatus?: string;
+  /** True when a billed subscription has lapsed and the org is forced to the free tier. */
+  planLapsed?: boolean;
+}
+
+/** One recent Stripe invoice, for the Billing tab. */
+export interface BillingInvoice {
+  id: string;
+  number?: string;
+  status?: string;         // paid | open | void | uncollectible | draft
+  amountDue: number;       // in the currency's minor unit (cents)
+  amountPaid: number;
+  currency: string;
+  created: number;         // epoch seconds
+  hostedInvoiceUrl?: string;
+  pdf?: string;
+}
+
+/** Billing snapshot returned by GET /api/billing/summary. */
+export interface BillingSummary {
+  /** False when Stripe isn't configured on the backend yet (fail-graceful). */
+  stripeConfigured: boolean;
+  plan?: string;
+  subscriptionStatus?: string;
+  currentPeriodEnd?: number;   // epoch seconds
+  hasSubscription: boolean;
+  entitled: boolean;
+  /** Which plan tiers have a purchasable Stripe price configured. */
+  hasPriceForUpgrade?: Record<string, boolean>;
+  invoices: BillingInvoice[];
+  error?: string;
 }
 
 /** One month of usage, for the agency-usage trend report. */

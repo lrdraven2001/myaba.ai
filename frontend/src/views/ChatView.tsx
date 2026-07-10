@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
@@ -197,6 +197,11 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const [previews, setPreviews]                 = useState<Record<string, string>>({});
   const [input, setInput]                       = useState('');
   const [reacted, setReacted]                   = useState<Record<string, string>>({});
+  const [copiedId, setCopiedId]                 = useState<string | null>(null);
+  // Save-to-library state (keyed by attached-file id) for the post-upload prompt.
+  const [savedUploads, setSavedUploads]         = useState<Record<string, { docId: string; kind: 'client' | 'project'; targetId: string; label: string }>>({});
+  const [savingUpload, setSavingUpload]         = useState<Record<string, boolean>>({});
+  const [saveUploadErr, setSaveUploadErr]       = useState<Record<string, string>>({});
   const [loading, setLoading]                   = useState(false);
   const [loadingChats, setLoadingChats]         = useState(true);
   const [loadingMessages, setLoadingMessages]   = useState(false);
@@ -369,6 +374,68 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const removeAttached = useCallback((id: string) => {
     setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
+
+  // ── Copy a response to the clipboard ────────────────────────────────────────
+  // Copies the rendered text (document tags stripped, matching what's shown).
+  // Falls back to a hidden textarea when the async Clipboard API is unavailable
+  // (older browsers / non-secure contexts). Swaps the icon to a check for ~2s.
+  const copyMessage = useCallback(async (id: string, text: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 2000);
+    } catch {
+      /* Clipboard blocked (e.g. permissions) — fail silently, no feedback. */
+    }
+  }, []);
+
+  // ── Save an in-chat upload to the attached client's / project's library ─────
+  // The original File is stored in GCS + text extracted server-side, so the doc
+  // is reused automatically in this and future chats scoped to that client/project.
+  const saveUploadToLibrary = useCallback(async (
+    f: AttachedFile,
+    target: { kind: 'client' | 'project'; id: string; label: string },
+  ) => {
+    if (!f.file) return;
+    setSavingUpload((s) => ({ ...s, [f.id]: true }));
+    setSaveUploadErr((e) => { const n = { ...e }; delete n[f.id]; return n; });
+    try {
+      const res = target.kind === 'client'
+        ? await api.uploadClientDocument(target.id, f.file, f.name)
+        : await api.uploadProjectKnowledgeFile(target.id, f.file, f.name);
+      setSavedUploads((prev) => ({
+        ...prev,
+        [f.id]: { docId: res.docId, kind: target.kind, targetId: target.id, label: target.label },
+      }));
+    } catch (e) {
+      setSaveUploadErr((prev) => ({ ...prev, [f.id]: e instanceof Error ? e.message : 'Could not save.' }));
+    } finally {
+      setSavingUpload((s) => { const n = { ...s }; delete n[f.id]; return n; });
+    }
+  }, []);
+
+  const undoSaveUpload = useCallback(async (fileId: string) => {
+    const saved = savedUploads[fileId];
+    if (!saved) return;
+    setSavedUploads((prev) => { const n = { ...prev }; delete n[fileId]; return n; }); // optimistic
+    try {
+      if (saved.kind === 'client') await api.deleteClientDocument(saved.targetId, saved.docId);
+      else                         await api.deleteProjectKnowledge(saved.targetId, saved.docId);
+    } catch {
+      /* Best-effort undo — the doc may already be extracting; leave the UI cleared. */
+    }
+  }, [savedUploads]);
 
   // ── Delete chat ───────────────────────────────────────────────────────────
 
@@ -849,6 +916,14 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                         msg.aclxDecision === 'ALLOW' && (
                         <div className="mt-1 flex items-center gap-3 px-1">
                           <button
+                            onClick={() => copyMessage(msg.id, stripDocumentTags(msg.content))}
+                            className={`flex items-center gap-1.5 text-xs transition-colors ${copiedId === msg.id ? 'text-green-600' : 'text-gray-400 hover:text-teal-600'}`}
+                            title="Copy response to clipboard"
+                          >
+                            <FontAwesomeIcon icon={copiedId === msg.id ? faCheck : faCopy} style={{ fontSize: 11 }} />
+                            {copiedId === msg.id ? 'Copied' : 'Copy'}
+                          </button>
+                          <button
                             onClick={() => api.exportDocx(deriveTitleFromMessage(msg.content), extractDocumentBody(msg.content)).catch(() => {})}
                             className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-600 transition-colors"
                             title={hasDocumentBody(msg.content) ? 'Download the generated document as Word' : 'Download this response as a Word document'}
@@ -939,6 +1014,57 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                 </div>
               )}
 
+              {/* Save-to-library prompt — offered for freshly uploaded files when a
+                  client or project is attached, so the doc is reused in future chats. */}
+              {(() => {
+                const target = activeChat?.clientId
+                  ? { kind: 'client' as const, id: activeChat.clientId,
+                      label: activeClient?.preferredName || activeClient?.firstName || 'this client' }
+                  : activeChat?.projectId
+                  ? { kind: 'project' as const, id: activeChat.projectId,
+                      label: activeChat.projectLabel || 'this project' }
+                  : null;
+                if (!target) return null;
+                const saveable = attachedFiles.filter((f) => f.source === 'upload' && f.file);
+                if (saveable.length === 0) return null;
+                return (
+                  <div className="mb-2 flex flex-col gap-1.5">
+                    {saveable.map((f) => {
+                      const saved  = savedUploads[f.id];
+                      const saving = savingUpload[f.id];
+                      const err    = saveUploadErr[f.id];
+                      return (
+                        <div key={f.id} className="flex items-center gap-2 text-xs text-gray-500">
+                          {saved ? (
+                            <>
+                              <FontAwesomeIcon icon={faCheckCircle} className="text-green-600" />
+                              <span>Saved <span className="font-medium text-gray-700">{f.name}</span> to {saved.label}</span>
+                              <button
+                                onClick={() => undoSaveUpload(f.id)}
+                                className="font-semibold text-teal-700 hover:underline"
+                              >Undo</button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => saveUploadToLibrary(f, target)}
+                                disabled={saving}
+                                className="flex items-center gap-1.5 text-teal-700 hover:text-teal-800 font-medium disabled:opacity-50"
+                                title={`Save "${f.name}" to ${target.label} for reuse in future chats`}
+                              >
+                                <FontAwesomeIcon icon={saving ? faSpinner : faBookmark} className={saving ? 'animate-spin' : ''} />
+                                {saving ? 'Saving…' : <>Save <span className="max-w-[160px] truncate inline-block align-bottom">{f.name}</span> to {target.label}</>}
+                              </button>
+                              {err && <span className="text-red-500">{err}</span>}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               <div
                 className="flex items-end gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2"
                 style={{ boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}
@@ -1003,6 +1129,8 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           onClose={() => setShowFileAttach(false)}
           onAttach={handleAttach}
           alreadyAttached={attachedFiles.map((f) => f.id)}
+          projectId={activeChat?.projectId || undefined}
+          projectName={activeChat?.projectLabel || undefined}
         />
       )}
       {templateSourceContent !== null && (

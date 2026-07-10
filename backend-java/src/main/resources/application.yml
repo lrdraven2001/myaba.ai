@@ -99,6 +99,42 @@ firebase:
   client-email: ${FIREBASE_CLIENT_EMAIL:}
   private-key: ${FIREBASE_PRIVATE_KEY:}
 
+# ── Document storage (Google Cloud Storage) ───────────────────────────────
+# Original uploaded files are stored in GCS; extracted text stays in Firestore
+# (that feeds the auto-reuse / chat-context pipeline). When GCS_DOCUMENTS_BUCKET
+# is unset the app runs normally — originals are simply not stored and the
+# "download original" action is hidden. The bucket, IAM, and CMEK are provisioned
+# MANUALLY in GCP (see the setup checklist), not by application code.
+#   kms-key                 – optional CMEK resource name applied on write; empty
+#                             uses the bucket's default (Google-managed or bucket CMEK).
+#   signed-url-ttl-minutes  – lifetime of download signed URLs.
+gcs:
+  documents-bucket:       ${GCS_DOCUMENTS_BUCKET:}
+  kms-key:                ${GCS_KMS_KEY:}
+  signed-url-ttl-minutes: ${GCS_SIGNED_URL_TTL_MINUTES:10}
+
+# ── Billing (Stripe) ──────────────────────────────────────────────────────
+# Real monthly subscription billing via Stripe Checkout (card capture) + Billing
+# Portal (plan/payment management). Card data never touches our servers.
+# All values are env-driven with EMPTY defaults — when STRIPE_SECRET_KEY is unset
+# the billing endpoints are DISABLED (fail-graceful), exactly like GCS. Keys,
+# prices, and the webhook secret are provisioned MANUALLY in the Stripe dashboard
+# (see the setup checklist), never committed. Price IDs map the existing plan
+# tiers to monthly recurring Stripe Prices; enterprise may be left unset
+# (contact-sales) and is handled gracefully.
+stripe:
+  secret-key:     ${STRIPE_SECRET_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  prices:
+    solo:       ${STRIPE_PRICE_SOLO:}
+    team:       ${STRIPE_PRICE_TEAM:}
+    enterprise: ${STRIPE_PRICE_ENTERPRISE:}
+  # Where Stripe redirects back to after Checkout / Billing Portal — the app's
+  # Billing & Usage tab.
+  checkout-success-url: ${STRIPE_CHECKOUT_SUCCESS_URL:https://app.myaba.ai/settings?tab=billing&checkout=success}
+  checkout-cancel-url:  ${STRIPE_CHECKOUT_CANCEL_URL:https://app.myaba.ai/settings?tab=billing&checkout=cancel}
+  portal-return-url:    ${STRIPE_PORTAL_RETURN_URL:https://app.myaba.ai/settings?tab=billing}
+
 # ── CORS ──────────────────────────────────────────────────────────────────
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
@@ -108,6 +144,10 @@ cors:
 # Override per environment via USAGE_LIMIT_SOLO / TEAM / ENTERPRISE env vars.
 usage:
   limits:
+    # Free / lapsed tier — applied when a billed org's subscription is past_due,
+    # canceled, or unpaid (Stripe is source of truth). Never-subscribed orgs keep
+    # their existing plan behaviour unchanged.
+    free:       ${USAGE_LIMIT_FREE:20}
     solo:       ${USAGE_LIMIT_SOLO:200}
     team:       ${USAGE_LIMIT_TEAM:2000}
     enterprise: ${USAGE_LIMIT_ENTERPRISE:-1}

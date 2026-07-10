@@ -6,7 +6,7 @@ import {
   faFileAlt, faFolderOpen, faLink, faSpinner, faTimes,
   faRobot, faComments, faExternalLinkAlt,
   faUserNurse, faUsers, faCheck, faShieldAlt, faTrashAlt,
-  faBoxArchive, faBoxOpen, faFileExport, faUpload,
+  faBoxArchive, faBoxOpen, faFileExport, faUpload, faDownload,
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
@@ -1090,6 +1090,17 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
                     </p>
                   )}
                 </div>
+                {/* Download original — only when a stored original exists in GCS. */}
+                {d.gcsObject && (
+                  <button
+                    type="button"
+                    onClick={() => api.openClientDocumentOriginal(clientId, d.id).catch(() => {})}
+                    className="shrink-0 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Download original file"
+                  >
+                    <FontAwesomeIcon icon={faDownload} className="text-sm" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

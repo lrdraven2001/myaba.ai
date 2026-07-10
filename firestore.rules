@@ -74,13 +74,22 @@ service cloud.firestore {
       }
 
       // ── projects ──────────────────────────────────────────────────────────
+      // Per-project RBAC: projects are NOT auto-shared org-wide. A caller may read
+      // a project only if they are an admin (oversight) or an explicit member
+      // (owner or added member — both live in memberIds). Writes are backend-only.
 
       match /projects/{projectId} {
-        allow read:  if isOrgMember(orgId);
+        allow read:  if isOrgMember(orgId) &&
+                        (isAdmin() || request.auth.uid in resource.data.memberIds);
         allow write: if false;
 
+        // Knowledge docs inherit the parent project's membership. The subcollection
+        // doc has no memberIds of its own, so consult the parent project doc.
         match /knowledgeDocs/{docId} {
-          allow read:  if isOrgMember(orgId);
+          allow read:  if isOrgMember(orgId) &&
+                          (isAdmin() ||
+                           request.auth.uid in
+                             get(/databases/$(database)/documents/organizations/$(orgId)/projects/$(projectId)).data.memberIds);
           allow write: if false;
         }
       }

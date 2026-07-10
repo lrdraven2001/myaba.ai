@@ -67,6 +67,17 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             .supervisorId(null)
             .build();
 
+    /**
+     * The Stripe webhook is authenticated by its own signature (not a Firebase
+     * token), so skip this filter entirely for it — it must reach the controller
+     * with the raw body and no auth context.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return "POST".equalsIgnoreCase(request.getMethod())
+                && "/api/billing/webhook".equals(request.getServletPath());
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,

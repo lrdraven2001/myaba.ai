@@ -40,6 +40,7 @@ public class ClientController {
     private final ChatService chatService;
     private final DocumentFormatService documentFormatService;
     private final DocumentPersistenceService documentPersistenceService;
+    private final ai.myaba.service.GcsStorageService gcsStorageService;
 
     @org.springframework.beans.factory.annotation.Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -182,7 +183,9 @@ public class ClientController {
             @AuthenticationPrincipal AppUser user) {
         try {
             Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
-            if (!authorizationService.canAccessClient(user, client)) {
+            // Saving to a client's permanent record is a WRITE — require edit access
+            // (treating/supervising BCBA or admin), not mere read access.
+            if (!authorizationService.canEditClient(user, client)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "Not authorized to add documents for this client"));
             }
@@ -196,18 +199,20 @@ public class ClientController {
             } catch (Exception e) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Could not read the uploaded file."));
             }
+            String contentType = file.getContentType();
             String docTitle = (title != null && !title.isBlank())
                     ? title.trim()
                     : filename.replaceAll("\\.[A-Za-z0-9]+$", "");
             // Async: create a PROCESSING placeholder now (appears immediately in the
-            // Documents tab), extract text in the background. Large/scanned uploads
-            // no longer time the request out — the doc flips to READY when done.
+            // Documents tab), store the original in GCS + extract text in the
+            // background. Large/scanned uploads no longer time the request out — the
+            // doc flips to READY when done.
             String docId = documentPersistenceService.createUploadPlaceholder(
                     user.getOrgId(), clientId, user.getUid(), docTitle, filename);
             if (docId == null) {
                 return ResponseEntity.internalServerError().body(Map.of("error", "Failed to save document"));
             }
-            documentPersistenceService.finalizeUpload(user.getOrgId(), clientId, docId, filename, bytes);
+            documentPersistenceService.finalizeUpload(user.getOrgId(), clientId, docId, filename, contentType, bytes);
             auditService.log("CLIENT_DOCUMENT_UPLOADED", user.getOrgId(), user.getUid(),
                     clientId, docId, null, null, null);
             return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -459,6 +464,79 @@ public class ClientController {
         } catch (Exception e) {
             log.error("getClientDocument failed {} / {} / {}: {}", user.getOrgId(), clientId, docId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to load document"));
+        }
+    }
+
+    // ── GET /api/clients/{clientId}/documents/{docId}/original ────────────────
+    // Returns a short-lived signed URL to download the ORIGINAL uploaded file
+    // from GCS. Read-gated (canAccessClient). 404 if no original was stored
+    // (text-only legacy doc); 503 if GCS/signing isn't configured yet.
+    @GetMapping("/{clientId}/documents/{docId}/original")
+    public ResponseEntity<?> getClientDocumentOriginal(
+            @PathVariable String clientId,
+            @PathVariable String docId,
+            @AuthenticationPrincipal AppUser user) {
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canAccessClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to view documents for this client"));
+            }
+            Map<String, Object> doc = documentPersistenceService.getDocument(user.getOrgId(), clientId, docId);
+            if (doc == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Document not found"));
+            }
+            Object gcsObject = doc.get("gcsObject");
+            if (!(gcsObject instanceof String path) || path.isBlank()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "No original file is stored for this document"));
+            }
+            String filename = String.valueOf(doc.getOrDefault("sourceFilename",
+                    doc.getOrDefault("title", "document")));
+            String url = gcsStorageService.signedDownloadUrl(user.getOrgId(), path, filename);
+            if (url == null) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of("error", "Document download is not available yet. Storage is not fully configured."));
+            }
+            auditService.log("CLIENT_DOCUMENT_DOWNLOADED", user.getOrgId(), user.getUid(),
+                    clientId, docId, null, null, null);
+            return ResponseEntity.ok(Map.of("url", url));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("getClientDocumentOriginal failed {}/{}: {}", clientId, docId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to prepare download"));
+        }
+    }
+
+    // ── DELETE /api/clients/{clientId}/documents/{docId} ──────────────────────
+    // Removes a stored document (Firestore record + GCS original). Write-gated
+    // (canEditClient). Backs the chat "Undo" affordance and document management.
+    @DeleteMapping("/{clientId}/documents/{docId}")
+    public ResponseEntity<?> deleteClientDocument(
+            @PathVariable String clientId,
+            @PathVariable String docId,
+            @AuthenticationPrincipal AppUser user) {
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canEditClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to delete documents for this client"));
+            }
+            boolean deleted = documentPersistenceService.deleteDocument(user.getOrgId(), clientId, docId);
+            if (!deleted) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Document not found"));
+            }
+            auditService.log("CLIENT_DOCUMENT_DELETED", user.getOrgId(), user.getUid(),
+                    clientId, docId, null, null, null);
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (Exception e) {
+            log.error("deleteClientDocument failed {}/{}: {}", clientId, docId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to delete document"));
         }
     }
 

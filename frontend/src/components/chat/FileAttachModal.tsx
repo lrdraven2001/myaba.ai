@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTimes, faFileAlt, faUpload, faUsers, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+import { faTimes, faFileAlt, faUpload, faUsers, faFolderOpen, faDownload } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import { FAKE_TEMPLATES } from '../../lib/fakeData';
 import type { AttachedFile, FakeClientFile } from '../../lib/fakeData';
@@ -38,9 +38,12 @@ interface Props {
   onClose: () => void;
   onAttach: (files: AttachedFile[]) => void;
   alreadyAttached: string[];
+  /** When the active chat is project-attached, its id/name enable the Project Files tab. */
+  projectId?: string;
+  projectName?: string;
 }
 
-type Tab = 'templates' | 'client_files' | 'upload';
+type Tab = 'templates' | 'client_files' | 'project_files' | 'upload';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   bip:               { bg: '#dbeafe', text: '#1d4ed8' },
@@ -61,7 +64,7 @@ interface DisplayTemplate {
   content: string;
 }
 
-export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: Props) {
+export default function FileAttachModal({ onClose, onAttach, alreadyAttached, projectId, projectName }: Props) {
   const [activeTab, setActiveTab]     = useState<Tab>('templates');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(alreadyAttached));
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
@@ -73,6 +76,8 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [clientDocs, setClientDocs]   = useState<Record<string, FakeClientFile[]>>({});
+  const [projectDocs, setProjectDocs] = useState<{ id: string; title: string; content: string; hasOriginal: boolean }[]>([]);
+  const [projectDocsLoaded, setProjectDocsLoaded] = useState(false);
   const [resolving, setResolving]     = useState(false);
 
   const handleFilesChosen = async (fileList: FileList | null) => {
@@ -90,7 +95,9 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
         const { name, text } = await api.extractAttachment(file);
         setUploadedFiles((prev) => [
           ...prev,
-          { id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, source: 'upload', content: text },
+          // Retain the original File so the chat can later offer to save it to the
+          // attached client's / project's document library (original stored in GCS).
+          { id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, source: 'upload', content: text, file },
         ]);
         current++;
       }
@@ -138,9 +145,10 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
               const docs: FakeClientFile[] = (res.documents ?? []).map((d) => ({
                 id: d.id,
                 clientId: c.id,
-                title: prettyDocType(d.documentType),
+                title: d.title || prettyDocType(d.documentType),
                 category: DOCTYPE_CATEGORY[d.documentType ?? ''] ?? 'other',
                 uploadedAt: d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '',
+                hasOriginal: !!d.gcsObject,
               }));
               setClientDocs((prev) => ({ ...prev, [c.id]: docs }));
             })
@@ -149,6 +157,18 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
       })
       .catch(() => {});
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load this project's saved knowledge docs when the Project Files tab is active.
+  // All state writes happen in promise callbacks (never synchronously in the effect
+  // body) to avoid cascading renders.
+  useEffect(() => {
+    if (activeTab !== 'project_files' || !projectId || projectDocsLoaded) return;
+    api.getProjectKnowledge(projectId)
+      .then((docs) => setProjectDocs(
+        (docs ?? []).map((d) => ({ id: d.id, title: d.title, content: d.textContent ?? '', hasOriginal: !!d.gcsObject }))))
+      .catch(() => setProjectDocs([]))
+      .finally(() => setProjectDocsLoaded(true));
+  }, [activeTab, projectId, projectDocsLoaded]);
 
   const toggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -192,6 +212,11 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
           files.push({ id: d.id, name: d.title, source: 'client_file', clientId, content });
         }
       }
+      // Project knowledge docs carry their content in the list response.
+      projectDocs.forEach((d) => {
+        if (selectedIds.has(d.id))
+          files.push({ id: d.id, name: d.title, source: 'client_file', content: d.content });
+      });
       files.push(...uploadedFiles);
       onAttach(files);
     } finally {
@@ -205,6 +230,7 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
   const tabs: { id: Tab; label: string; icon: typeof faFileAlt }[] = [
     { id: 'templates',    label: 'Templates',    icon: faFolderOpen },
     { id: 'client_files', label: 'Client Files', icon: faUsers },
+    ...(projectId ? [{ id: 'project_files' as Tab, label: 'Project Files', icon: faFolderOpen }] : []),
     { id: 'upload',       label: 'Upload New',   icon: faUpload },
   ];
 
@@ -319,6 +345,46 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached }: 
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* ── Project Files ──────────────────────────────────────── */}
+          {activeTab === 'project_files' && (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-400 px-1 mb-2">
+                Saved knowledge documents for {projectName || 'this project'} — attach any as context.
+              </p>
+              {!projectDocsLoaded ? (
+                <p className="text-sm text-gray-400 italic py-4 text-center">Loading project files…</p>
+              ) : projectDocs.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-6 text-center">
+                  No project files yet. Upload a file and choose “Save to project” to build this library.
+                </p>
+              ) : (
+                projectDocs.map((d) => (
+                  <label key={d.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(d.id)}
+                      onChange={() => toggle(d.id)}
+                      className="w-4 h-4 rounded"
+                      style={{ accentColor: '#2a5f6f' }}
+                    />
+                    <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm flex-shrink-0" />
+                    <span className="flex-1 text-sm text-gray-700 truncate">{d.title}</span>
+                    {d.hasOriginal && projectId && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.openProjectKnowledgeOriginal(projectId, d.id).catch(() => {}); }}
+                        className="text-gray-400 hover:text-teal-600 transition-colors flex-shrink-0"
+                        title="Download original file"
+                      >
+                        <FontAwesomeIcon icon={faDownload} className="text-sm" />
+                      </button>
+                    )}
+                  </label>
+                ))
               )}
             </div>
           )}
@@ -470,6 +536,16 @@ function ClientFileRow({
       />
       <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm flex-shrink-0" />
       <span className="flex-1 text-sm text-gray-700">{file.title}</span>
+      {file.hasOriginal && (
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.openClientDocumentOriginal(file.clientId, file.id).catch(() => {}); }}
+          className="text-gray-400 hover:text-teal-600 transition-colors flex-shrink-0"
+          title="Download original file"
+        >
+          <FontAwesomeIcon icon={faDownload} className="text-sm" />
+        </button>
+      )}
       <span className="text-xs text-gray-400 flex-shrink-0">{file.uploadedAt}</span>
       <span
         className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"

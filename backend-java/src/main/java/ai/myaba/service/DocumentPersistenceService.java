@@ -49,9 +49,12 @@ public class DocumentPersistenceService {
     private boolean devMode;
 
     private final DocumentFormatService documentFormatService;
+    private final GcsStorageService gcsStorageService;
 
-    public DocumentPersistenceService(DocumentFormatService documentFormatService) {
+    public DocumentPersistenceService(DocumentFormatService documentFormatService,
+                                      GcsStorageService gcsStorageService) {
         this.documentFormatService = documentFormatService;
+        this.gcsStorageService = gcsStorageService;
     }
 
     /**
@@ -236,9 +239,23 @@ public class DocumentPersistenceService {
      */
     @Async
     public void finalizeUpload(String orgId, String clientId, String docId,
-                               String filename, byte[] bytes) {
+                               String filename, String contentType, byte[] bytes) {
         if (devMode) return;
         Map<String, Object> update = new HashMap<>();
+
+        // Store the ORIGINAL bytes in GCS (extracted text still goes to Firestore
+        // below). Content hash is recorded regardless of GCS, for dedup/integrity.
+        update.put("contentHash", GcsStorageService.sha256Hex(bytes));
+        update.put("sizeBytes",   (long) bytes.length);
+        if (contentType != null && !contentType.isBlank()) update.put("contentType", contentType);
+        if (gcsStorageService.isEnabled()) {
+            String objectPath = gcsStorageService.clientObjectPath(orgId, clientId, docId, filename);
+            if (gcsStorageService.upload(objectPath, contentType, bytes)) {
+                update.put("gcsBucket", gcsStorageService.getBucket());
+                update.put("gcsObject", objectPath);
+            }
+        }
+
         try {
             String text = documentFormatService.extractText(filename, bytes, true);
             if (text == null || text.isBlank()) {
@@ -265,6 +282,56 @@ public class DocumentPersistenceService {
                     .set(update, com.google.cloud.firestore.SetOptions.merge()).get();
         } catch (Exception e) {
             log.error("finalizeUpload update failed doc={}: {}", docId, e.getMessage());
+        }
+    }
+
+    /**
+     * Fetch a single client document record (including {@code gcsObject}). Returns
+     * null if it doesn't exist. Caller must have already verified client access.
+     */
+    public Map<String, Object> getDocument(String orgId, String clientId, String docId) {
+        if (devMode) return null;
+        try {
+            var snap = FirestoreClient.getFirestore()
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS).document(docId)
+                    .get().get();
+            if (!snap.exists()) return null;
+            Map<String, Object> data = new HashMap<>(snap.getData());
+            data.put("id", snap.getId());
+            return data;
+        } catch (Exception e) {
+            log.error("getDocument failed org={} client={} doc={}: {}", orgId, clientId, docId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Delete a client document: removes the GCS original (best-effort) and the
+     * Firestore record. Used by the "Undo" affordance and document management.
+     * Caller must have already verified WRITE access to the client.
+     *
+     * @return true if a document was deleted
+     */
+    public boolean deleteDocument(String orgId, String clientId, String docId) {
+        if (devMode) return true;
+        try {
+            var ref = FirestoreClient.getFirestore()
+                    .collection(FirestoreCollections.DOCUMENTS_ROOT).document(orgId)
+                    .collection(FirestoreCollections.CLIENTS).document(clientId)
+                    .collection(FirestoreCollections.DOCUMENTS).document(docId);
+            var snap = ref.get().get();
+            if (!snap.exists()) return false;
+            Object gcsObject = snap.get("gcsObject");
+            if (gcsObject instanceof String s && !s.isBlank()) {
+                gcsStorageService.delete(s);
+            }
+            ref.delete().get();
+            return true;
+        } catch (Exception e) {
+            log.error("deleteDocument failed org={} client={} doc={}: {}", orgId, clientId, docId, e.getMessage());
+            return false;
         }
     }
 

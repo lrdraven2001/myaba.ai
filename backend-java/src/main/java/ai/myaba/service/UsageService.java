@@ -69,6 +69,14 @@ public class UsageService {
     @Value("${usage.limits.enterprise:-1}")
     private int enterpriseLimit;
 
+    /**
+     * Free / lapsed tier limit — applied when a billed org's Stripe subscription is
+     * not active/trialing (past_due, canceled, unpaid). Never-subscribed orgs are
+     * unaffected. Stripe is the source of truth (see {@link BillingService}).
+     */
+    @Value("${usage.limits.free:20}")
+    private int freeLimit;
+
     // ── Dev-mode in-memory store ──────────────────────────────────────────────
 
     /** orgId → total request count this session (dev mode only). */
@@ -86,8 +94,19 @@ public class UsageService {
         return switch (plan.toLowerCase()) {
             case "enterprise" -> enterpriseLimit;
             case "team"       -> teamLimit;
+            case "free"       -> freeLimit;
             default           -> soloLimit;
         };
+    }
+
+    /**
+     * A subscription status that entitles the org to its full plan. Null/blank means
+     * "never subscribed" — treated as entitled so existing (unbilled) orgs are
+     * unaffected. Only an explicit lapsed status downgrades enforcement to free.
+     */
+    private boolean isEntitled(String subscriptionStatus) {
+        if (subscriptionStatus == null || subscriptionStatus.isBlank()) return true;
+        return "active".equals(subscriptionStatus) || "trialing".equals(subscriptionStatus);
     }
 
     /**
@@ -109,6 +128,12 @@ public class UsageService {
                 return true;
             }
             String plan      = orgSnap.getString("plan");
+            String subStatus = orgSnap.getString("subscriptionStatus");
+            // Lapsed paid subscription (past_due/canceled/unpaid) → enforce the free tier
+            // regardless of the stored plan string. Stripe is source of truth.
+            if (!isEntitled(subStatus)) {
+                plan = "free";
+            }
             int    planLimit  = limitForPlan(plan);
 
             // Enterprise orgs may have a custom spending cap set by their admin
@@ -215,6 +240,9 @@ public class UsageService {
 
             var orgSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
             String plan        = orgSnap.exists() ? orgSnap.getString("plan") : "solo";
+            String subStatus   = orgSnap.exists() ? orgSnap.getString("subscriptionStatus") : null;
+            boolean lapsed     = !isEntitled(subStatus);
+            if (lapsed) plan = "free"; // enforce free tier when the subscription has lapsed
             int    planLimit   = limitForPlan(plan);
             boolean isEnterprise = "enterprise".equalsIgnoreCase(plan);
 
@@ -235,6 +263,8 @@ public class UsageService {
             result.put("effectiveLimit",    effectiveLimit);  // what's actually enforced
             result.put("unlimited",         effectiveLimit < 0);
             result.put("canSetCustomLimit", isEnterprise);
+            if (subStatus != null) result.put("subscriptionStatus", subStatus);
+            result.put("planLapsed",        lapsed);
 
             // Include custom cap in response when set
             if (isEnterprise && customLimitOverride != null && customLimitOverride > 0) {

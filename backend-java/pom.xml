@@ -93,6 +93,24 @@
             <artifactId>pdfbox</artifactId>
             <version>2.0.24</version>
         </dependency>
+
+        <!-- Google Cloud Storage — stores ORIGINAL uploaded files (extracted text
+             stays in Firestore). Version aligned with the google-cloud BOM that
+             firebase-admin already pulls in transitively. -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-storage</artifactId>
+            <version>2.40.1</version>
+        </dependency>
+
+        <!-- Stripe — subscription billing (Checkout + Billing Portal + webhooks).
+             Card data never touches our servers (hosted Checkout keeps us out of
+             PCI scope). Disabled at runtime when STRIPE_SECRET_KEY is unset. -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>24.16.0</version>
+        </dependency>
     </dependencies>
 
     <build>

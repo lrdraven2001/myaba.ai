@@ -8,6 +8,7 @@ export interface AttachedFile {
   source: 'template' | 'client_file' | 'upload';
   clientId?: string; // set when source = 'client_file'
   content?: string;  // extracted text — set when source = 'upload' (sent as chat context)
+  file?: File;       // original File — retained for source = 'upload' so it can be saved to a client/project library
 }
 
 export interface FakeTemplate {
@@ -22,6 +23,7 @@ export interface FakeClientFile {
   title: string;
   category: string;
   uploadedAt: string;
+  hasOriginal?: boolean; // true when an original file is stored in GCS (download available)
 }
 
 export const FAKE_TEMPLATES: FakeTemplate[] = [];

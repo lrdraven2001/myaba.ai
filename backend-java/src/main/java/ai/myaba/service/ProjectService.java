@@ -61,6 +61,11 @@ public class ProjectService {
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
 
+    // Injected (via @RequiredArgsConstructor) — used by the project file-upload path.
+    private final DocumentFormatService documentFormatService;
+    private final GcsStorageService     gcsStorageService;
+    private final OrgService            orgService;
+
     private final Map<String, Map<String, Object>>       devProjects      = new LinkedHashMap<>();
     /** projectId → ordered list of knowledge docs */
     private final Map<String, List<Map<String, Object>>> devKnowledgeDocs = new ConcurrentHashMap<>();
@@ -128,8 +133,10 @@ public class ProjectService {
         String now = TimestampUtil.now();
         List<String> clientIds      = req.getClientIds() != null ? req.getClientIds() : List.of();
         Map<String, String> members = req.getMembers()   != null ? req.getMembers()   : Map.of();
-        boolean isShared = Boolean.TRUE.equals(req.getIsShared());
 
+        // NOTE: `isShared` is retired — projects are strictly per-member (owner +
+        // explicit members), never auto-shared org-wide. The DTO field is kept for
+        // backward-compatible deserialization but is no longer persisted or read.
         Map<String, Object> data = new HashMap<>();
         data.put("title",        req.getTitle());
         data.put("description",  req.getDescription()  != null ? req.getDescription()  : "");
@@ -137,7 +144,6 @@ public class ProjectService {
         data.put("orgId",        user.getOrgId());
         data.put("ownerId",      user.getUid());
         data.put("clientIds",    clientIds);
-        data.put("isShared",     isShared);
         data.put("containsPhi",  Boolean.TRUE.equals(req.getContainsPhi()));
         data.put("members",      members);
         data.put("memberIds",    computeMemberIds(user.getUid(), members));
@@ -166,7 +172,7 @@ public class ProjectService {
         if (req.getDescription()  != null) updates.put("description",  req.getDescription());
         if (req.getInstructions() != null) updates.put("instructions", req.getInstructions());
         if (req.getClientIds()    != null) updates.put("clientIds",    req.getClientIds());
-        if (req.getIsShared()     != null) updates.put("isShared",     req.getIsShared());
+        // `isShared` intentionally ignored — retired (see createProject).
         if (req.getContainsPhi()  != null) updates.put("containsPhi",  req.getContainsPhi());
         updates.put("updatedAt", TimestampUtil.now());
 
@@ -191,13 +197,14 @@ public class ProjectService {
         } else {
             if (!"editor".equals(role) && !"viewer".equals(role))
                 throw new IllegalArgumentException("Role must be 'editor' or 'viewer'");
-            // PHI gate: non-clinical roles cannot be added to PHI projects
-            if (Boolean.TRUE.equals(project.get("containsPhi"))) {
-                // targetUserId's role comes from Firestore org member lookup
-                // For now we rely on the frontend to pre-filter; log a warning here
-                // so security teams can audit unexpected attempts.
-                log.warn("PHI project member add: projectId={} targetUser={} — caller is responsible for role validation",
+            // PHI gate (ENFORCED): a member added to a PHI-flagged project must be
+            // able to access PHI. Look up the target's org-member record and reject
+            // if they lack PHI access — no longer merely logged.
+            if (Boolean.TRUE.equals(project.get("containsPhi")) && !memberHasPhiAccess(user.getOrgId(), targetUserId)) {
+                log.warn("Blocked PHI project member add: projectId={} targetUser={} lacks PHI access",
                         projectId, targetUserId);
+                throw new IllegalArgumentException(
+                        "This project contains PHI. Only members with PHI access (a clinical role) can be added.");
             }
             members.put(targetUserId, role);
         }
@@ -315,7 +322,7 @@ public class ProjectService {
     public String addKnowledgeDoc(AppUser user, String projectId,
                                    String title, String textContent) throws Exception {
         Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
-        if (!canManageProject(user, project))
+        if (!canEditProject(user, project))
             throw new SecurityException("Cannot add knowledge to project: " + projectId);
 
         String now = TimestampUtil.now();
@@ -338,10 +345,10 @@ public class ProjectService {
         return ref.getId();
     }
 
-    /** Remove a knowledge document from a project. */
+    /** Remove a knowledge document from a project (Firestore record + GCS original). */
     public void removeKnowledgeDoc(AppUser user, String projectId, String docId) throws Exception {
         Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
-        if (!canManageProject(user, project))
+        if (!canEditProject(user, project))
             throw new SecurityException("Cannot remove knowledge from project: " + projectId);
 
         if (devMode) {
@@ -350,9 +357,173 @@ public class ProjectService {
             return;
         }
         Firestore db = FirestoreClient.getFirestore();
-        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
           .collection(FirestoreCollections.PROJECTS).document(projectId)
-          .collection("knowledgeDocs").document(docId).delete().get();
+          .collection("knowledgeDocs").document(docId);
+        // Delete the GCS original first (best-effort), then the Firestore record.
+        var snap = ref.get().get();
+        if (snap.exists()) {
+            Object gcsObject = snap.get("gcsObject");
+            if (gcsObject instanceof String s && !s.isBlank()) gcsStorageService.delete(s);
+        }
+        ref.delete().get();
+    }
+
+    // ── Project file upload (parity with client document upload) ────────────────
+
+    /**
+     * Create a PROCESSING placeholder knowledge doc for an uploaded file and
+     * return its ID immediately. Heavy extraction + the GCS original upload run in
+     * the background via {@link #finalizeKnowledgeUpload}.
+     *
+     * <p>Gated by {@link #canEditProject}. Enforces the PHI rule: a document may
+     * only be saved into a project that is PHI-flagged ({@code containsPhi=true}) —
+     * this blocks client-specific PHI leaking into a non-PHI (possibly multi-client)
+     * project library.
+     *
+     * @throws SecurityException     if the caller cannot edit the project
+     * @throws IllegalStateException with message {@code "PHI_NOT_ENABLED"} if the
+     *                               project is not PHI-flagged
+     */
+    public String createKnowledgePlaceholder(AppUser user, String projectId,
+                                              String title, String filename) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canEditProject(user, project))
+            throw new SecurityException("Cannot add knowledge to project: " + projectId);
+        if (!Boolean.TRUE.equals(project.get("containsPhi")))
+            throw new IllegalStateException("PHI_NOT_ENABLED");
+
+        String now = TimestampUtil.now();
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("projectId",        projectId);
+        doc.put("title",            title);
+        doc.put("textContent",      "");
+        doc.put("source",           "upload");
+        doc.put("sourceFilename",   filename);
+        doc.put("extractionStatus", "PROCESSING");
+        doc.put("createdAt",        now);
+
+        if (devMode) {
+            String id = "kd-" + UUID.randomUUID().toString().substring(0, 8);
+            doc.put("id", id);
+            devKnowledgeDocs.computeIfAbsent(projectId, k -> new ArrayList<>()).add(doc);
+            return id;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                    .collection(FirestoreCollections.PROJECTS).document(projectId)
+                    .collection("knowledgeDocs").add(doc).get();
+        return ref.getId();
+    }
+
+    /**
+     * Background finalize for an uploaded project knowledge doc: store the original
+     * in GCS and extract text into {@code textContent}. Mirrors the client-document
+     * pipeline. Called cross-bean so the {@code @Async} proxy applies.
+     */
+    @org.springframework.scheduling.annotation.Async
+    public void finalizeKnowledgeUpload(String orgId, String projectId, String docId,
+                                        String filename, String contentType, byte[] bytes) {
+        if (devMode) return;
+        Map<String, Object> update = new HashMap<>();
+        update.put("contentHash", GcsStorageService.sha256Hex(bytes));
+        update.put("sizeBytes",   (long) bytes.length);
+        if (contentType != null && !contentType.isBlank()) update.put("contentType", contentType);
+        if (gcsStorageService.isEnabled()) {
+            String objectPath = gcsStorageService.projectObjectPath(orgId, projectId, docId, filename);
+            if (gcsStorageService.upload(objectPath, contentType, bytes)) {
+                update.put("gcsBucket", gcsStorageService.getBucket());
+                update.put("gcsObject", objectPath);
+            }
+        }
+        try {
+            String text = documentFormatService.extractText(filename, bytes, true);
+            if (text == null || text.isBlank()) {
+                update.put("extractionStatus", "FAILED");
+                update.put("extractionError", "No readable text found in \"" + filename + "\".");
+            } else {
+                update.put("textContent", text);
+                update.put("characters",  text.length());
+                update.put("extractionStatus", "READY");
+            }
+        } catch (IllegalArgumentException e) {
+            update.put("extractionStatus", "FAILED");
+            update.put("extractionError", e.getMessage());
+        } catch (Exception e) {
+            log.error("finalizeKnowledgeUpload extraction failed doc={} file={}: {}", docId, filename, e.getMessage());
+            update.put("extractionStatus", "FAILED");
+            update.put("extractionError", "Could not read the file.");
+        }
+        try {
+            FirestoreClient.getFirestore()
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection(FirestoreCollections.PROJECTS).document(projectId)
+                    .collection("knowledgeDocs").document(docId)
+                    .set(update, com.google.cloud.firestore.SetOptions.merge()).get();
+        } catch (Exception e) {
+            log.error("finalizeKnowledgeUpload update failed doc={}: {}", docId, e.getMessage());
+        }
+    }
+
+    /**
+     * Fetch a single knowledge doc (including {@code gcsObject}) for the download
+     * path. Runs the read auth check via {@link #getProject}. Null if not found.
+     */
+    public Map<String, Object> getKnowledgeDoc(AppUser user, String projectId, String docId) throws Exception {
+        getProject(user, projectId); // auth check (canAccessProject)
+        if (devMode) {
+            List<Map<String, Object>> docs = devKnowledgeDocs.getOrDefault(projectId, List.of());
+            return docs.stream().filter(d -> docId.equals(d.get("id"))).findFirst().orElse(null);
+        }
+        var snap = FirestoreClient.getFirestore()
+                .collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection(FirestoreCollections.PROJECTS).document(projectId)
+                .collection("knowledgeDocs").document(docId).get().get();
+        if (!snap.exists()) return null;
+        Map<String, Object> data = new HashMap<>(snap.getData());
+        data.put("id", snap.getId());
+        return data;
+    }
+
+    // ── Members ─────────────────────────────────────────────────────────────────
+
+    /**
+     * List a project's members (owner + explicit members) with their roles,
+     * resolved to display name / email. Read-gated via {@link #getProject}.
+     */
+    public List<Map<String, Object>> getProjectMembers(AppUser user, String projectId) throws Exception {
+        Map<String, Object> project = getProject(user, projectId); // auth
+        String ownerId = (String) project.get("ownerId");
+        @SuppressWarnings("unchecked")
+        Map<String, String> members = (Map<String, String>) project.getOrDefault("members", Map.of());
+
+        Map<String, Map<String, Object>> memberById = new HashMap<>();
+        if (!devMode) {
+            try {
+                for (Map<String, Object> m : orgService.getOrgMembers(user.getOrgId())) {
+                    memberById.put(String.valueOf(m.get("id")), m);
+                }
+            } catch (Exception e) {
+                log.warn("getProjectMembers: org member resolution failed for {}: {}", projectId, e.getMessage());
+            }
+        }
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+        if (ownerId != null) ordered.add(ownerId);
+        ordered.addAll(members.keySet());
+        for (String uid : ordered) {
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("id",   uid);
+            entry.put("role", uid.equals(ownerId) ? "owner" : members.getOrDefault(uid, "viewer"));
+            Map<String, Object> m = memberById.get(uid);
+            if (m != null) {
+                entry.put("name",  m.getOrDefault("displayName", m.getOrDefault("email", uid)));
+                entry.put("email", m.get("email"));
+            }
+            out.add(entry);
+        }
+        return out;
     }
 
     // ── System prompt builder ─────────────────────────────────────────────
@@ -441,6 +612,42 @@ public class ProjectService {
     private boolean canManageProject(AppUser user, Map<String, Object> project) {
         if (user.isAdmin()) return true;
         return user.getUid().equals(project.get("ownerId"));
+    }
+
+    /**
+     * Write access to project CONTENT (knowledge docs, uploads, instructions):
+     * admin, the owner, or an explicit member with the "editor" role. Distinct
+     * from {@link #canManageProject} (owner/admin), which governs membership and
+     * project settings/deletion.
+     */
+    private boolean canEditProject(AppUser user, Map<String, Object> project) {
+        if (user.isAdmin()) return true;
+        if (user.getUid().equals(project.get("ownerId"))) return true;
+        @SuppressWarnings("unchecked")
+        Map<String, String> members = (Map<String, String>) project.getOrDefault("members", Map.of());
+        return "editor".equals(members.get(user.getUid()));
+    }
+
+    /**
+     * True if the org member identified by {@code uid} may access PHI — used to
+     * enforce the PHI gate on project membership. Reads the member's stored role /
+     * explicit {@code phiAccess} flag; fails CLOSED (denies) if the member can't be
+     * resolved. Admins always qualify.
+     */
+    private boolean memberHasPhiAccess(String orgId, String uid) {
+        if (devMode) return true;
+        try {
+            for (Map<String, Object> m : orgService.getOrgMembers(orgId)) {
+                if (!uid.equals(String.valueOf(m.get("id")))) continue;
+                Object explicit = m.get("phiAccess");
+                if (explicit instanceof Boolean b) return b;
+                String role = (String) m.get("role");
+                return UserRole.isAdmin(role) || UserRole.hasPhiAccess(role);
+            }
+        } catch (Exception e) {
+            log.warn("memberHasPhiAccess lookup failed org={} uid={}: {}", orgId, uid, e.getMessage());
+        }
+        return false; // fail closed — unknown member cannot be added to a PHI project
     }
 
     private List<String> computeMemberIds(String ownerId, Map<String, String> members) {
