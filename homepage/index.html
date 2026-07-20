@@ -5,11 +5,66 @@
     <link rel="icon" href="/app-icon.png" type="image/png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="myABA.ai — AI-powered clinical documentation for ABA therapy providers. HIPAA-compliant, BACB-aligned, with built-in content governance." />
-    <meta property="og:title" content="myABA.ai — AI-Powered ABA Clinical Documentation" />
-    <meta property="og:description" content="Generate progress notes, BIPs, and FBAs in seconds. Built for BCBAs, RBTs, and clinical teams." />
-    <meta property="og:image" content="/app-icon.png" />
     <title>myABA.ai — AI-Powered ABA Clinical Documentation</title>
+    <meta name="description" content="myABA.ai — AI-powered clinical documentation for ABA therapy providers. HIPAA-compliant, BACB-aligned, with built-in content governance. Generate progress notes, BIPs, and FBAs in seconds." />
+    <meta name="keywords" content="ABA documentation, BCBA software, behavior intervention plan, functional behavior assessment, ABA progress notes, HIPAA clinical documentation, applied behavior analysis software" />
+    <meta name="author" content="myABA.ai" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#1E88FF" />
+
+    <!-- Canonical URL — tells search engines the preferred address for this page -->
+    <link rel="canonical" href="https://myaba.ai/" />
+
+    <!-- Open Graph (Facebook / LinkedIn / iMessage previews) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="myABA.ai" />
+    <meta property="og:url" content="https://myaba.ai/" />
+    <meta property="og:title" content="myABA.ai — AI-Powered ABA Clinical Documentation" />
+    <meta property="og:description" content="Generate progress notes, BIPs, and FBAs in seconds. Built for BCBAs, RBTs, and clinical teams. HIPAA-compliant, BACB-aligned." />
+    <meta property="og:image" content="https://myaba.ai/app-icon.png" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="myABA.ai — AI-Powered ABA Clinical Documentation" />
+    <meta name="twitter:description" content="Generate progress notes, BIPs, and FBAs in seconds. Built for BCBAs, RBTs, and clinical teams." />
+    <meta name="twitter:image" content="https://myaba.ai/app-icon.png" />
+
+    <!-- Search-engine ownership verification. Paste the codes from Google Search
+         Console and Bing Webmaster Tools, then uncomment. (Values come from those
+         dashboards — see the setup notes.) -->
+    <!-- <meta name="google-site-verification" content="PASTE_GOOGLE_CODE_HERE" /> -->
+    <!-- <meta name="msvalidate.01" content="PASTE_BING_CODE_HERE" /> -->
+
+    <!-- Structured data (JSON-LD) — helps Google/Bing understand the site -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "name": "myABA.ai",
+          "url": "https://myaba.ai/",
+          "logo": "https://myaba.ai/app-icon.png",
+          "description": "AI-powered clinical documentation for ABA therapy providers."
+        },
+        {
+          "@type": "WebSite",
+          "name": "myABA.ai",
+          "url": "https://myaba.ai/"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "myABA.ai",
+          "applicationCategory": "HealthApplication",
+          "operatingSystem": "Web",
+          "url": "https://myaba.ai/",
+          "description": "AI-powered, HIPAA-compliant clinical documentation for ABA therapy teams — generate progress notes, Behavior Intervention Plans (BIPs), and Functional Behavior Assessments (FBAs) in seconds.",
+          "publisher": { "@type": "Organization", "name": "myABA.ai", "url": "https://myaba.ai/" }
+        }
+      ]
+    }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -23,6 +78,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- No-JavaScript fallback: gives crawlers that don't run JS (and users with
+         scripting off) real, indexable content instead of an empty page. -->
+    <noscript>
+      <main style="max-width: 720px; margin: 0 auto; padding: 48px 24px;">
+        <h1>myABA.ai — AI-Powered ABA Clinical Documentation</h1>
+        <p>
+          myABA.ai helps ABA therapy providers — BCBAs, RBTs, and clinical teams —
+          draft compliant clinical documentation with AI. Generate progress notes,
+          Behavior Intervention Plans (BIPs), and Functional Behavior Assessments
+          (FBAs) in seconds, with HIPAA-compliant, BACB-aligned output governance
+          built in.
+        </p>
+        <p>
+          <a href="/documents">Documentation</a> &middot;
+          <a href="https://app.myaba.ai">Sign in to the app</a>
+        </p>
+        <p>This site works best with JavaScript enabled.</p>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

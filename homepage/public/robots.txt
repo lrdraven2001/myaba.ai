@@ -1,0 +1,7 @@
+# robots.txt for https://myaba.ai
+# Allow all search engines to crawl the marketing site.
+User-agent: *
+Allow: /
+
+# Point crawlers at the sitemap.
+Sitemap: https://myaba.ai/sitemap.xml
