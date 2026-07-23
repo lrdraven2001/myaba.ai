@@ -302,6 +302,7 @@ export const api = {
     clientIds?: string[],
     chatId?: string,
     contextDocs?: { name: string; content: string }[],
+    signal?: AbortSignal,
   ) =>
     request<{ reply: string; decision: string; chatId?: string }>('/chat', {
       method: 'POST',
@@ -313,6 +314,8 @@ export const api = {
         history: history.map((m) => ({ role: m.role, content: m.content })),
         contextDocs: contextDocs && contextDocs.length > 0 ? contextDocs : undefined,
       }),
+      // Lets the caller cancel an in-flight generation (the chat "Stop" button).
+      signal,
     }, LONG_API_BASE),
 
   // ── Clients ───────────────────────────────────────────────────────────────

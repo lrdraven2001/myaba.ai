@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
@@ -289,6 +289,13 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           content:   m.content,
           timestamp: (m as Record<string, string>).createdAt ?? new Date().toISOString(),
           createdAt: (m as Record<string, string>).createdAt,
+          // Carry ACLX governance through on reload — the per-response action row
+          // (Copy / Word / feedback) only renders when aclxDecision === 'ALLOW',
+          // and the compliance badge needs it too. Dropping these made the icons
+          // vanish after a refresh.
+          aclxDecision:  m.aclxDecision,
+          aclxLabel:     m.aclxLabel,
+          aclxContentId: m.aclxContentId,
         }));
         setMessagesByChat((prev) => ({ ...prev, [activeChatId]: mapped }));
         // set preview to last message text
@@ -548,6 +555,10 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       api.updateChatTitle(activeChatId, autoTitle).catch(() => {/* non-fatal */});
     }
 
+    // Fresh AbortController for this request so "Stop" can cancel it.
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await api.chat(
         text + fileContext,
@@ -556,6 +567,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         allClientIds,
         activeChatId,
         contextDocs,
+        controller.signal,
       );
 
       const assistantMsg: ChatMessage = {
@@ -572,6 +584,12 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       }));
       setPreviews((prev) => ({ ...prev, [activeChatId]: (res.reply ?? '').slice(0, 60) }));
     } catch (err) {
+      // ── Stopped by the user ───────────────────────────────────────────────
+      // Aborting the fetch rejects with an AbortError. That's intentional — leave
+      // the user's message in place, append no reply, and show no error.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return; // finally still runs (clears loading + abortRef)
+      }
       // ── Input guard block ─────────────────────────────────────────────────
       // The backend detected a policy violation and returned HTTP 422 with a
       // structured error body (code, message, detected).  Surface the guard
@@ -654,10 +672,21 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       }
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Holds the in-flight chat request so the user can cancel it (the "Stop" button).
+  const abortRef = useRef<AbortController | null>(null);
+
+  /** Cancel an in-flight generation (e.g. a message sent by accident). */
+  const stopGeneration = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  }, []);
 
   // Auto-resize textarea to fit content
   const resizeTextarea = () => {
@@ -911,9 +940,10 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                           <AclxBadge decision={msg.aclxDecision} />
                         )}
                       </div>
-                      {/* Document actions — only on genuine allowed AI responses */}
-                      {msg.role === 'assistant' &&
-                        msg.aclxDecision === 'ALLOW' && (
+                      {/* Document actions — shown on every AI response (not only
+                          compliance-ALLOW ones), so Copy / Word / feedback are
+                          always available and survive a refresh. */}
+                      {msg.role === 'assistant' && (
                         <div className="mt-1 flex items-center gap-3 px-1">
                           <button
                             onClick={() => copyMessage(msg.id, stripDocumentTags(msg.content))}
@@ -1091,19 +1121,32 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                   style={{ maxHeight: 200, minHeight: 28 }}
                 />
 
-                {/* Green send button */}
-                <button
-                  onClick={sendMessage}
-                  disabled={loading || !input.trim() || !activeChatId}
-                  title="Send (Ctrl+Enter)"
-                  className="flex-shrink-0 mb-0.5 transition-all"
-                  style={{
-                    color: input.trim() && activeChatId ? '#3F9B2F' : '#C8D8C8',
-                    cursor: input.trim() && activeChatId ? 'pointer' : 'default',
-                  }}
-                >
-                  <FontAwesomeIcon icon={faArrowCircleUp} style={{ fontSize: 28 }} />
-                </button>
+                {/* While generating: a Stop button to cancel a request (e.g. sent
+                    by accident). Otherwise: the green send button. */}
+                {loading ? (
+                  <button
+                    onClick={stopGeneration}
+                    title="Stop generating"
+                    aria-label="Stop generating"
+                    className="flex-shrink-0 mb-0.5 transition-all"
+                    style={{ color: '#E5484D', cursor: 'pointer' }}
+                  >
+                    <FontAwesomeIcon icon={faStopCircle} style={{ fontSize: 28 }} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={sendMessage}
+                    disabled={!input.trim() || !activeChatId}
+                    title="Send (Ctrl+Enter)"
+                    className="flex-shrink-0 mb-0.5 transition-all"
+                    style={{
+                      color: input.trim() && activeChatId ? '#3F9B2F' : '#C8D8C8',
+                      cursor: input.trim() && activeChatId ? 'pointer' : 'default',
+                    }}
+                  >
+                    <FontAwesomeIcon icon={faArrowCircleUp} style={{ fontSize: 28 }} />
+                  </button>
+                )}
               </div>
               <p className="text-center text-xs mt-1.5" style={{ color: '#B0BEC5' }}>
                 Shift+Enter for new line
