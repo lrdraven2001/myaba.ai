@@ -60,6 +60,8 @@ public class ChatService {
     private final Map<String, Map<String, Object>> devChats = new LinkedHashMap<>();
     /** In-memory messages keyed by chatId → ordered list. */
     private final Map<String, List<Map<String, Object>>> devMessages = new LinkedHashMap<>();
+    /** In-memory chat attachments keyed by chatId → ordered list (dev mode only). */
+    private final Map<String, List<Map<String, Object>>> devChatAttachments = new LinkedHashMap<>();
 
     // ── Dev data seed ─────────────────────────────────────────────────────
 
@@ -475,18 +477,86 @@ public class ChatService {
         if (devMode) {
             devChats.remove(chatId);
             devMessages.remove(chatId);
+            devChatAttachments.remove(chatId);
             return;
         }
-        // Firestore: delete subcollection messages first, then the chat doc
+        // Firestore: delete subcollection messages + attachments first, then the chat doc
         Firestore db = FirestoreClient.getFirestore();
-        var msgsSnap = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
-                .collection("chats").document(chatId)
-                .collection("messages").get().get();
-        for (var doc : msgsSnap.getDocuments()) {
+        var chatRef = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").document(chatId);
+        for (var doc : chatRef.collection("messages").get().get().getDocuments()) {
             doc.getReference().delete().get();
         }
+        for (var doc : chatRef.collection("attachments").get().get().getDocuments()) {
+            doc.getReference().delete().get();
+        }
+        chatRef.delete().get();
+    }
+
+    // ── Chat attachments (chat-scoped working documents) ────────────────────
+    // Stored at organizations/{orgId}/chats/{chatId}/attachments/{id}. These are
+    // documents the user uploaded to work with IN THIS CHAT — persisted so they
+    // survive across messages and page refreshes, but deliberately NOT part of the
+    // client / project / knowledge libraries. They are removed with the chat.
+
+    /**
+     * Persist an already-extracted document to a chat's working set. Content is the
+     * extracted text (the client extracts on upload). Owner/member only.
+     * @return the new attachment's ID
+     */
+    public String addChatAttachment(AppUser user, String chatId, String name,
+                                    String content, String sourceFilename) throws Exception {
+        Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
+        if (!canManageChat(user, chat)) throw new SecurityException("Cannot modify chat: " + chatId);
+
+        String now = TimestampUtil.now();
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("name",           name != null && !name.isBlank() ? name : "attachment");
+        doc.put("content",        content != null ? content : "");
+        doc.put("sourceFilename", sourceFilename != null && !sourceFilename.isBlank() ? sourceFilename : name);
+        doc.put("characters",     content != null ? content.length() : 0);
+        doc.put("createdAt",      now);
+        doc.put("createdBy",      user.getUid());
+
+        if (devMode) {
+            String id = "att-" + UUID.randomUUID().toString().substring(0, 8);
+            doc.put("id", id);
+            devChatAttachments.computeIfAbsent(chatId, k -> new ArrayList<>()).add(doc);
+            return id;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").document(chatId)
+                .collection("attachments").add(doc).get();
+        return ref.getId();
+    }
+
+    /** List a chat's attachments (id, name, content, …), oldest-first. Any member may read. */
+    public List<Map<String, Object>> getChatAttachments(AppUser user, String chatId) throws Exception {
+        getChat(user, chatId); // authorization check
+        if (devMode) {
+            return new ArrayList<>(devChatAttachments.getOrDefault(chatId, List.of()));
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").document(chatId)
+                .collection("attachments").orderBy("createdAt").get().get().getDocuments();
+        return toList(docs);
+    }
+
+    /** Remove one chat attachment. Owner/member only. */
+    public void deleteChatAttachment(AppUser user, String chatId, String attachmentId) throws Exception {
+        Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
+        if (!canManageChat(user, chat)) throw new SecurityException("Cannot modify chat: " + chatId);
+        if (devMode) {
+            List<Map<String, Object>> atts = devChatAttachments.get(chatId);
+            if (atts != null) atts.removeIf(a -> attachmentId.equals(a.get("id")));
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
         db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
-                .collection("chats").document(chatId).delete().get();
+                .collection("chats").document(chatId)
+                .collection("attachments").document(attachmentId).delete().get();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

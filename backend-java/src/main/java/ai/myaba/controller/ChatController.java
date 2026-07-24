@@ -135,6 +135,55 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    // ── Chat attachments (chat-scoped working documents) ──────────────────
+    // Documents the user uploads to work with in THIS chat — persisted so they
+    // survive across messages/refreshes and are auto-injected as context on every
+    // message, but NOT stored in the client/project/knowledge libraries.
+
+    /**
+     * GET /api/chats/{chatId}/attachments
+     * Lists the chat's working documents (id, name, content) — used to re-hydrate
+     * them when the chat is opened.
+     */
+    @GetMapping("/{chatId}/attachments")
+    public ResponseEntity<List<Map<String, Object>>> listAttachments(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String chatId) throws Exception {
+        return ResponseEntity.ok(chatService.getChatAttachments(user, chatId));
+    }
+
+    /**
+     * POST /api/chats/{chatId}/attachments
+     * Body: { name, content, sourceFilename? }  (content = already-extracted text)
+     * Persists an uploaded document to this chat's working set.
+     */
+    @PostMapping("/{chatId}/attachments")
+    public ResponseEntity<?> addAttachment(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String chatId,
+            @RequestBody Map<String, String> body) throws Exception {
+        String name = body.get("name");
+        if (name == null || name.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "name is required"));
+        }
+        String id = chatService.addChatAttachment(
+                user, chatId, name, body.getOrDefault("content", ""), body.get("sourceFilename"));
+        return ResponseEntity.ok(Map.of("id", id, "name", name));
+    }
+
+    /**
+     * DELETE /api/chats/{chatId}/attachments/{attachmentId}
+     * Removes one working document from the chat.
+     */
+    @DeleteMapping("/{chatId}/attachments/{attachmentId}")
+    public ResponseEntity<Void> deleteAttachment(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String chatId,
+            @PathVariable String attachmentId) throws Exception {
+        chatService.deleteChatAttachment(user, chatId, attachmentId);
+        return ResponseEntity.noContent().build();
+    }
+
     // ── Delete chat ───────────────────────────────────────────────────────
 
     /**

@@ -61,6 +61,12 @@ service cloud.firestore {
           allow read:  if isOrgMember(orgId);
           allow write: if false;
         }
+
+        // Chat-scoped working documents (uploaded to work with in this chat).
+        match /attachments/{attachmentId} {
+          allow read:  if isOrgMember(orgId);
+          allow write: if false;  // backend-only via Admin SDK
+        }
       }
 
       // ── clients ───────────────────────────────────────────────────────────

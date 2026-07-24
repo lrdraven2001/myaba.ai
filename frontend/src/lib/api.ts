@@ -167,6 +167,23 @@ export const api = {
   /** Get message history for a chat (oldest-first). */
   getChatMessages: (chatId: string) => request<ChatMessage[]>(`/chats/${chatId}/messages`),
 
+  // ── Chat working documents (persist to a chat, not a library) ──────────────
+
+  /** List a chat's working documents (id, name, content) — re-hydrated on chat open. */
+  getChatAttachments: (chatId: string) =>
+    request<{ id: string; name: string; content?: string }[]>(`/chats/${chatId}/attachments`),
+
+  /** Persist an uploaded document to this chat (content = already-extracted text). */
+  addChatAttachment: (chatId: string, name: string, content: string, sourceFilename?: string) =>
+    request<{ id: string; name: string }>(`/chats/${chatId}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify({ name, content, sourceFilename }),
+    }),
+
+  /** Remove one working document from a chat. */
+  deleteChatAttachment: (chatId: string, attachmentId: string) =>
+    request<void>(`/chats/${chatId}/attachments/${attachmentId}`, { method: 'DELETE' }),
+
   /** Reviewer/oversight: messages for any org chat (Chat Review tab). Admin-gated. */
   getChatReviewMessages: (chatId: string) => request<ChatMessage[]>(`/chats/${chatId}/review-messages`),
 

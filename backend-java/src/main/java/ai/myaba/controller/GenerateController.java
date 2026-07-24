@@ -759,6 +759,32 @@ public class GenerateController {
                     .metadata(Map.of("sensitivity", "HIGH", "subject_id", req.getClientId()))
                     .build());
         }
+        // Manually-attached documents (uploads/templates/client files chosen via the
+        // paperclip) are first-class grounding too. Critically, an uploaded PDF's
+        // FULL extracted text — including the figure/chart data the model read off
+        // graphs (frequency averages, integrity %, etc.) — must reach the
+        // groundedness checker. Otherwise those chart-derived numbers appear in the
+        // reply but not in any source the checker sees, and every one is flagged as
+        // an "unsupported claim" → false-positive escalation. The conversation source
+        // alone truncates large attachments (~16k cap), so add each in full here.
+        if (req.getContextDocs() != null) {
+            int attachIdx = 0;
+            for (ChatRequest.ContextDoc cd : req.getContextDocs()) {
+                if (cd == null || cd.getContent() == null || cd.getContent().isBlank()) continue;
+                String attachName = cd.getName() != null && !cd.getName().isBlank() ? cd.getName() : "attachment";
+                Map<String, Object> attachMeta = (req.getClientId() != null && !req.getClientId().isBlank())
+                        ? Map.of("sensitivity", "HIGH", "subject_id", req.getClientId())
+                        : Map.of("sensitivity", "HIGH");
+                chatGroundingSources.add(ai.myaba.model.dto.AclxRequest.Source.builder()
+                        .id("attachment/" + (attachIdx++) + "/" + Integer.toHexString(attachName.hashCode()))
+                        .label(attachName)
+                        .distribution("INTERNAL")
+                        .owner(user.getOrgId())
+                        .text(cd.getContent())
+                        .metadata(attachMeta)
+                        .build());
+            }
+        }
         // The clinician's own conversation input is legitimate grounding too.
         // Without it, facts the user themselves supplied (e.g. pasted draft
         // goals or observations) read as "unsupported claims" and the reply

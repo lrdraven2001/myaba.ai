@@ -395,7 +395,7 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached, pr
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif"
+                accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif"
                 multiple
                 style={{ display: 'none' }}
                 onChange={(e) => handleFilesChosen(e.target.files)}
@@ -408,7 +408,7 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached, pr
               >
                 <FontAwesomeIcon icon={faUpload} className="text-4xl text-gray-300 mb-3" />
                 <p className="font-semibold text-gray-600">Drag files here or click to browse</p>
-                <p className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT, images/screenshots — max 20 MB each, up to {MAX_ATTACHMENTS} files</p>
+                <p className="text-xs text-gray-400 mt-1">PDF, Word, Excel, CSV, text, images/screenshots — max 20 MB each, up to {MAX_ATTACHMENTS} files</p>
                 <button
                   type="button"
                   className="mt-4 px-5 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50"

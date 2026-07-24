@@ -208,6 +208,10 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const [showNewChat, setShowNewChat]           = useState(false);
   const [showFileAttach, setShowFileAttach]     = useState(false);
   const [attachedFiles, setAttachedFiles]       = useState<AttachedFile[]>([]);
+  // Persistent chat documents (uploads that stay attached to THIS chat across
+  // messages/refreshes), keyed by chatId. Not stored in any library.
+  const [chatDocsByChat, setChatDocsByChat]     = useState<Record<string, { id: string; name: string; content: string }[]>>({});
+  const [attachError, setAttachError]           = useState<string | null>(null);
   const [templateSourceContent, setTemplateSourceContent] = useState<string | null>(null);
   const [editingTitle, setEditingTitle]                   = useState(false);
   const [titleDraft, setTitleDraft]                       = useState('');
@@ -220,6 +224,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
     ? sidebarClients.find((c) => c.id === activeChat.clientId)
     : null;
   const messages = activeChatId ? (messagesByChat[activeChatId] ?? []) : [];
+  const chatDocs = activeChatId ? (chatDocsByChat[activeChatId] ?? []) : [];
 
   /** Attach (clientId) or detach ('') a client on the active chat. */
   const attachClient = async (clientId: string) => {
@@ -312,6 +317,17 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
     })();
   }, [activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Load this chat's persistent working documents ─────────────────────────
+  useEffect(() => {
+    if (!activeChatId || chatDocsByChat[activeChatId]) return; // once per chat
+    api.getChatAttachments(activeChatId)
+      .then((docs) => setChatDocsByChat((prev) => ({
+        ...prev,
+        [activeChatId]: (docs ?? []).map((d) => ({ id: d.id, name: d.name, content: d.content ?? '' })),
+      })))
+      .catch(() => setChatDocsByChat((prev) => ({ ...prev, [activeChatId]: [] })));
+  }, [activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Auto-scroll ───────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -373,14 +389,44 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
   // ── File attachment ───────────────────────────────────────────────────────
 
-  const handleAttach = useCallback((files: AttachedFile[]) => {
-    setAttachedFiles(files);
+  const handleAttach = useCallback(async (files: AttachedFile[]) => {
     setShowFileAttach(false);
-  }, []);
+    setAttachError(null);
+    // Uploaded files become PERSISTENT chat documents (stay attached to this chat
+    // across messages/refreshes). Templates and library file references stay
+    // one-shot (attached to the next message only).
+    const uploads = files.filter((f) => f.source === 'upload' && f.content && f.content.trim());
+    const oneShot = files.filter((f) => f.source !== 'upload');
+    setAttachedFiles(oneShot);
+
+    if (uploads.length && activeChatId) {
+      for (const f of uploads) {
+        try {
+          const res = await api.addChatAttachment(activeChatId, f.name, f.content as string, f.name);
+          setChatDocsByChat((prev) => ({
+            ...prev,
+            [activeChatId]: [...(prev[activeChatId] ?? []), { id: res.id, name: f.name, content: f.content as string }],
+          }));
+        } catch (e) {
+          setAttachError(`Couldn't attach ${f.name}: ${e instanceof Error ? e.message : 'save failed'}`);
+        }
+      }
+    }
+  }, [activeChatId]);
 
   const removeAttached = useCallback((id: string) => {
     setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
+
+  /** Remove a persistent chat document from the active chat. */
+  const removeChatDoc = useCallback(async (id: string) => {
+    if (!activeChatId) return;
+    setChatDocsByChat((prev) => ({
+      ...prev,
+      [activeChatId]: (prev[activeChatId] ?? []).filter((d) => d.id !== id),
+    })); // optimistic
+    try { await api.deleteChatAttachment(activeChatId, id); } catch { /* best-effort */ }
+  }, [activeChatId]);
 
   // ── Copy a response to the clipboard ────────────────────────────────────────
   // Copies the rendered text (document tags stripped, matching what's shown).
@@ -513,12 +559,17 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         ? `\n\n📎 ${attachedFiles.map((f) => f.name).join(', ')}`
         : '';
 
-    // The actual document CONTENT (uploads, templates, client files) is sent
-    // separately as contextDocs so it reaches the model but stays OUT of the
-    // visible/persisted chat message.
-    const contextDocs = attachedFiles
-      .filter((f) => f.content && f.content.trim())
-      .map((f) => ({ name: f.name, content: f.content as string }));
+    // The actual document CONTENT is sent separately as contextDocs so it reaches
+    // the model but stays OUT of the visible/persisted chat message. Includes both
+    // one-shot attachments (templates/client files) AND this chat's persistent
+    // working documents — the latter go with EVERY message so the user never
+    // re-uploads them within the chat.
+    const contextDocs = [
+      ...attachedFiles
+        .filter((f) => f.content && f.content.trim())
+        .map((f) => ({ name: f.name, content: f.content as string })),
+      ...chatDocs.map((d) => ({ name: d.name, content: d.content })),
+    ];
 
     const userMsg: ChatMessage = {
       id:        Date.now().toString(),
@@ -1023,6 +1074,37 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           {/* Input area — full chat-window width (messages stay centered) */}
           <div className="px-6 pb-6 pt-2">
             <div className="w-full">
+              {/* Documents in this chat — persistent working set. Uploaded once,
+                  they stay attached to this chat and are sent with every message
+                  (no re-uploading). Not stored in any client/project/library. */}
+              {chatDocs.length > 0 && (
+                <div className="mb-2">
+                  <div className="flex items-center gap-1.5 mb-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+                    <FontAwesomeIcon icon={faFileAlt} style={{ fontSize: 10 }} /> Documents in this chat
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {chatDocs.map((d) => (
+                      <span
+                        key={d.id}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border"
+                        style={{ background: '#eef7f0', borderColor: '#7cc08f', color: '#1e4d2c' }}
+                        title="Available to every message in this chat. Click ✕ to remove."
+                      >
+                        <FontAwesomeIcon icon={faFileAlt} className="text-xs" /> {d.name}
+                        <button
+                          className="hover:text-red-500 transition-colors"
+                          onClick={() => removeChatDoc(d.id)}
+                          title="Remove from this chat"
+                        >
+                          <FontAwesomeIcon icon={faTimes} className="text-xs" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {attachError && <p className="text-xs text-red-500 mb-2">{attachError}</p>}
+
               {/* Attached file chips */}
               {attachedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2">
