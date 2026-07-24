@@ -174,22 +174,26 @@ export default function ChatSidebar({
           </button>
         )}
 
-        {/* Input box — search when active, new-chat trigger when idle */}
+        {/* Input box — a real search field once search is active; when idle it's a
+            "New chat" click-target. Clicking the idle box starts a new chat (so the
+            "New chat…" label matches what clicking it does); search is the magnifier
+            icon, which flips this into an editable search field. */}
         <div
-          className="flex-1 flex items-center rounded-lg px-2.5 py-1.5 transition-colors"
+          className={`flex-1 flex items-center rounded-lg px-2.5 py-1.5 transition-colors ${searching ? '' : 'cursor-pointer'}`}
           style={{
             background: searching ? '#f0faf0' : '#F4F7F9',
             border: searching ? '1.5px solid #55C943' : '1.5px solid #DCE7EE',
           }}
+          onClick={() => { if (!searching) onNewChat(); }}
         >
           <input
             ref={searchRef}
             type="text"
             value={query}
+            readOnly={!searching}
             onChange={(e) => { setSearching(true); setQuery(e.target.value); }}
-            onFocus={() => { if (!searching) setSearching(true); }}
             placeholder={searching ? 'Search chats…' : 'New chat…'}
-            className="flex-1 bg-transparent text-sm outline-none min-w-0"
+            className={`flex-1 bg-transparent text-sm outline-none min-w-0 ${searching ? '' : 'pointer-events-none'}`}
             style={{ color: '#1E3347' }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') closeSearch();
