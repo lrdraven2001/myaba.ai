@@ -57,7 +57,7 @@ export default function AdminView() {
 
   const [apiKeyVal, setApiKeyVal]   = useState('');
   const [showKey, setShowKey]             = useState(false);
-  const [model, setModel]                 = useState('gemini-3.1-flash-lite');
+  const [model, setModel]                 = useState('gemini-3.5-flash-lite');
   const [maxTokens, setMaxTokens]         = useState('4000');
   const [testStatus, setTestStatus]       = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [aiSave, setAiSave]               = useState<SaveStatus>({ state: 'idle' });
@@ -290,9 +290,9 @@ export default function AdminView() {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
-                    <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite  (fast — chat + light docs)</option>
-                    <option value="gemini-2.5-pro">gemini-2.5-pro  (reasoning — signable clinical docs)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash  (balanced)</option>
+                    <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite  (fast — chat + light docs)</option>
+                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview  (reasoning — signable clinical docs)</option>
+                    <option value="gemini-3.5-flash">gemini-3.5-flash  (balanced)</option>
                   </select>
                 </div>
                 <div>

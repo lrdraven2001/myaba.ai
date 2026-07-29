@@ -68,11 +68,16 @@ spec:
             - name: GEMINI_LOCATION
               value: "global"
             - name: GEMINI_MODEL
-              value: "gemini-3.1-flash-lite"
+              value: "gemini-3.5-flash-lite"
             # Semantic detector runs on a stronger model to avoid false-positive
             # redaction of clinical ABA terminology (DRA, extinction, FCT, …).
             - name: SEMANTIC_DETECTOR_MODEL
-              value: "gemini-2.5-flash"
+              value: "gemini-3.5-flash"
+            # Groundedness (faithfulness) checker must NOT fall back to the shared
+            # flash-lite model — full Flash was tuned to stop over-flagging clinical
+            # source-internal inconsistencies as hallucinations. Pin it explicitly.
+            - name: GROUNDEDNESS_MODEL
+              value: "gemini-3.5-flash"
 
             # Cloud DLP optional (myABA's own API already scrubs); off here.
             - name: ENABLE_CLOUD_DLP

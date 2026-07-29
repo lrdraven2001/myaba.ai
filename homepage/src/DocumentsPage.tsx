@@ -667,7 +667,7 @@ export default function DocumentsPage() {
     {
       id: 'vrr',
       title: 'Vendor Risk Register',
-      description: 'Google Cloud / Firebase, Anthropic via Vertex AI, CentralReach, Rethink, OfficePuzzle — BAA status, certifications, and risk tier for each.',
+      description: 'Google Cloud / Firebase, Google Gemini via Vertex AI, CentralReach, Rethink, OfficePuzzle — BAA status, certifications, and risk tier for each.',
       badge: 'Internal',
       badgeColor: '#94A3B8',
       cta: 'request',

@@ -44,7 +44,7 @@ public class GeminiService implements LlmProvider {
      * multi-region values are NOT valid Vertex hostname prefixes.
      */
     private final String geminiLocation;
-    /** Tier 1 — fast/cheap model (chat + lightweight docs), e.g. {@code gemini-3.1-flash-lite}. */
+    /** Tier 1 — fast/cheap model (chat + lightweight docs), e.g. {@code gemini-3.5-flash-lite}. */
     private final String geminiModelFast;
     /** Tier 2 — higher-reasoning model for clinical documents and client-attached chat, e.g. {@code gemini-3.1-pro-preview}. */
     private final String geminiModelReasoning;
@@ -63,11 +63,12 @@ public class GeminiService implements LlmProvider {
             @Value("${vertex.project-id:}")            String vertexProjectId,
             @Value("${gemini.location:global}")        String geminiLocation,
             // Fast tier defaults to gemini.model-fast, then legacy gemini.model, then Flash-Lite.
-            @Value("${gemini.model-fast:${gemini.model:gemini-3.1-flash-lite}}") String geminiModelFast,
+            @Value("${gemini.model-fast:${gemini.model:gemini-3.5-flash-lite}}") String geminiModelFast,
             @Value("${gemini.model-reasoning:gemini-3.1-pro-preview}")           String geminiModelReasoning,
-            // Search-grounded research: 2.5-flash reliably returns groundingChunks
+            // Search-grounded research: full Flash reliably returns groundingChunks
             // (source citations); 3.1-flash-lite runs the search but omits them.
-            @Value("${gemini.model-research:gemini-2.5-flash}")                  String geminiModelResearch,
+            // NOTE: re-verify citations after the 3.5 move (2.5-flash is obsolete).
+            @Value("${gemini.model-research:gemini-3.5-flash}")                  String geminiModelResearch,
             @Value("${gemini.max-tokens:4000}")               int maxTokens,
             @Value("${gemini.max-tokens-reasoning:32768}")    int reasoningMaxTokens) {
         this.mapper               = mapper;

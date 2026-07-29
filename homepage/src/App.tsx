@@ -860,7 +860,7 @@ function Pricing() {
 const FAQS = [
   {
     q: 'Is my client data used to train AI?',
-    a: 'No. Client data entered into myABA.ai is never used to train AI models. Claude is accessed through Google Cloud\'s enterprise infrastructure, where Google\'s data processing terms explicitly prohibit using customer data for model training. Your clients\' information stays yours.',
+    a: 'No. Client data entered into myABA.ai is never used to train AI models. The AI runs on Google Cloud\'s enterprise infrastructure (Vertex AI), where Google\'s data processing terms explicitly prohibit using customer data for model training. Your clients\' information stays yours.',
   },
   {
     q: 'Is this actually HIPAA compliant — not just "compliant-ish"?',
@@ -868,7 +868,7 @@ const FAQS = [
   },
   {
     q: 'What AI model powers myABA.ai?',
-    a: 'We use Claude, built by Anthropic — one of the leading clinical-grade language models, chosen for its accuracy and safety characteristics. Claude runs on Google Cloud\'s infrastructure, which means the AI layer is covered under Google\'s enterprise HIPAA compliance program. We evaluate model updates carefully before rolling them to production.',
+    a: 'We use Google\'s Gemini models, running on Google Cloud\'s Vertex AI — chosen for their strong clinical-reasoning accuracy and safety characteristics. Because the AI runs on Google Cloud\'s infrastructure, the AI layer is covered under Google\'s enterprise HIPAA compliance program. We evaluate model updates carefully before rolling them to production.',
   },
   {
     q: 'What happens when the 14-day Solo trial ends?',

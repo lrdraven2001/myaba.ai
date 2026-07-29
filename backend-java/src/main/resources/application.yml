@@ -29,11 +29,11 @@ vertex:
 # data in the US. Model names: GCP Console → Vertex AI → Model Garden → Gemini.
 gemini:
   location: ${GEMINI_LOCATION:global}
-  model:    ${GEMINI_MODEL:gemini-2.5-flash}        # legacy single-model fallback
+  model:    ${GEMINI_MODEL:gemini-3.5-flash}        # legacy single-model fallback
   max-tokens: ${GEMINI_MAX_TOKENS:4000}
   # Tiered models: fast (general/non-client chat) vs reasoning (all document
   # building + client-attached chat).
-  model-fast:      ${GEMINI_MODEL_FAST:gemini-3.1-flash-lite}
+  model-fast:      ${GEMINI_MODEL_FAST:gemini-3.5-flash-lite}
   model-reasoning: ${GEMINI_MODEL_REASONING:gemini-3.1-pro-preview}
   max-tokens-reasoning: ${GEMINI_MAX_TOKENS_REASONING:65535}
 

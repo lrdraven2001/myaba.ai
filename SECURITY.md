@@ -48,7 +48,7 @@ The following are **in scope** for responsible disclosure:
 
 The following are **out of scope**:
 
-- Third-party services (Firebase, Google Cloud, Anthropic/Claude, Firestore)
+- Third-party services (Firebase, Google Cloud, Google Gemini/Vertex AI, Firestore)
   — report those directly to their respective vendors
 - Social engineering or phishing attacks against myABA.ai employees
 - Physical attacks against infrastructure

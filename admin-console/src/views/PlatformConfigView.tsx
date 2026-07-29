@@ -33,8 +33,8 @@ export default function PlatformConfigView() {
 
   // AI state — Gemini on Vertex AI (ADC, no API key). Models are set via
   // GEMINI_MODEL_FAST / GEMINI_MODEL_REASONING env vars; shown here read-only.
-  const [modelFast, setModelFast]           = useState('gemini-3.1-flash-lite');
-  const [modelReasoning, setModelReasoning] = useState('gemini-2.5-pro');
+  const [modelFast, setModelFast]           = useState('gemini-3.5-flash-lite');
+  const [modelReasoning, setModelReasoning] = useState('gemini-3.1-pro-preview');
   const [testState, setTestState] = useState<'idle'|'testing'|'ok'|'fail'>('idle');
 
   // DLP state

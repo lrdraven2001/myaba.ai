@@ -59,8 +59,8 @@ public class PlatformService {
     void seedDevData() {
         if (!devMode) return;
 
-        devConfig.put("geminiModelFast",      "gemini-3.1-flash-lite");
-        devConfig.put("geminiModelReasoning", "gemini-2.5-pro");
+        devConfig.put("geminiModelFast",      "gemini-3.5-flash-lite");
+        devConfig.put("geminiModelReasoning", "gemini-3.1-pro-preview");
         devConfig.put("aclxEnabled",          false);
         devConfig.put("aclxGatewayUrl",       "http://localhost:8080");
         devConfig.put("dlpEnabled",           false);

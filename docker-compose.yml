@@ -77,11 +77,10 @@ services:
       - RESEARCH_LOOKUP_ENABLED=${RESEARCH_LOOKUP_ENABLED:-false}
       - VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID:-myapaai}
       - VERTEX_LOCATION=${VERTEX_LOCATION:-us-east5}
-      - VERTEX_MODEL=${VERTEX_MODEL:-claude-sonnet-4@20250514}
       - GEMINI_LOCATION=${GEMINI_LOCATION:-global}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
       # Tiered models: Flash-Lite for chat + light docs, 3.1 Pro for client chat + documents.
-      - GEMINI_MODEL_FAST=${GEMINI_MODEL_FAST:-gemini-3.1-flash-lite}
+      - GEMINI_MODEL_FAST=${GEMINI_MODEL_FAST:-gemini-3.5-flash-lite}
       - GEMINI_MODEL_REASONING=${GEMINI_MODEL_REASONING:-gemini-3.1-pro-preview}
       - GOOGLE_CLOUD_PROJECT=myapaai
       - FIREBASE_PROJECT_ID=demo-myaba

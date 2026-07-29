@@ -33,16 +33,16 @@ HIPAA (§164.308(b)) and SOC 2 Common Criteria CC9.2.
 | **Certifications** | ISO 27001, SOC 2 Type II, FedRAMP High, HIPAA |
 | **Data residency** | us-central1 (Iowa) by default; confirm per deployment |
 | **Last reviewed** | 2026-06-14 |
-| **Notes** | Claude AI also runs on Google Cloud (Vertex AI); covered under same BAA |
+| **Notes** | Gemini AI also runs on Google Cloud (Vertex AI); covered under same BAA |
 
-### 2. Anthropic (Claude AI via Google Vertex AI)
+### 2. Google Gemini (via Google Vertex AI)
 
 | Field | Value |
 |---|---|
-| **Service** | Claude large language model for clinical documentation generation |
+| **Service** | Gemini large language models for clinical documentation generation |
 | **Data processed** | Clinical prompts containing PHI (sent to model for inference) |
 | **Risk tier** | Critical |
-| **BAA in place** | Covered under Google Cloud HIPAA BAA (Vertex AI-hosted Claude) |
+| **BAA in place** | Covered under Google Cloud HIPAA BAA (Vertex AI-hosted Gemini) |
 | **Data training** | Google's enterprise data processing terms prohibit use of customer data for model training |
 | **Certifications** | Via Google Cloud: ISO 27001, SOC 2 Type II |
 | **Last reviewed** | 2026-06-14 |

@@ -28,7 +28,8 @@ include:
   # myABA base stack (firebase, api, frontend, homepage)
   - path: ./docker-compose.yml
 
-  # ACLX stack — env_file forwards .env so ANTHROPIC_API_KEY reaches gateway-api
+  # ACLX stack — env_file forwards .env (GCP creds/config) to gateway-api;
+  # the gateway defaults to Gemini via Vertex (ADC), no Anthropic key needed
   - path: ${ACLX_DIR:-D:/aegislayer/ACL/deploy/docker-compose}/docker-compose.yml
     project_directory: ${ACLX_DIR:-D:/aegislayer/ACL/deploy/docker-compose}
     env_file:
