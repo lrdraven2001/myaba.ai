@@ -790,7 +790,7 @@ export const api = {
 
   getClientDocuments: (clientId: string) =>
     request<{ documents: { id: string; documentType?: string; title?: string; createdAt?: string;
-                           gcsObject?: string; sourceFilename?: string }[] }>(
+                           gcsObject?: string; sourceFilename?: string; contentHash?: string }[] }>(
       `/clients/${clientId}/documents`,
     ),
 

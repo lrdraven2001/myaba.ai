@@ -400,7 +400,16 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
     setAttachedFiles(oneShot);
 
     if (uploads.length && activeChatId) {
+      const existing = chatDocsByChat[activeChatId] ?? [];
       for (const f of uploads) {
+        // Advise on a duplicate: same filename OR identical extracted content.
+        const dupe = existing.find((d) =>
+          d.name.trim().toLowerCase() === f.name.trim().toLowerCase() ||
+          d.content === f.content);
+        if (dupe && !window.confirm(
+          `"${f.name}" is already attached to this chat. Upload it again anyway?`)) {
+          continue;
+        }
         try {
           const res = await api.addChatAttachment(activeChatId, f.name, f.content as string, f.name);
           setChatDocsByChat((prev) => ({
@@ -412,7 +421,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         }
       }
     }
-  }, [activeChatId]);
+  }, [activeChatId, chatDocsByChat]);
 
   const removeAttached = useCallback((id: string) => {
     setAttachedFiles((prev) => prev.filter((f) => f.id !== id));

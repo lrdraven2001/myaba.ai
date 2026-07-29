@@ -24,6 +24,18 @@ function clientDisplayName(c: { preferredName?: string; firstName?: string; last
   return c.preferredName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.legalName || 'this client';
 }
 
+/** SHA-256 hex of a file's bytes — matches the backend's stored contentHash so we
+ *  can detect an identical file (even renamed) before re-uploading. Empty on failure. */
+async function sha256Hex(file: File): Promise<string> {
+  try {
+    const buf = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return '';
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ClientTab   = 'info' | 'documents' | 'chats' | 'treatment_team' | 'ehr' | 'authorizations' | 'resources';
@@ -1001,11 +1013,21 @@ function ClientDocumentsTab({ clientId, clientName }: { clientId: string; client
     setUploading(true);
     const failures: string[] = [];
     for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      // Advise on a duplicate: same filename OR identical file content (hash).
+      const hash = await sha256Hex(file);
+      const dupe = docs.find((d) =>
+        (d.sourceFilename && d.sourceFilename.toLowerCase() === file.name.toLowerCase()) ||
+        (hash && d.contentHash === hash));
+      if (dupe && !window.confirm(
+        `"${file.name}" appears to already be uploaded for this client. Upload it again anyway?`)) {
+        continue;
+      }
       setUploadProgress(files.length > 1 ? `${i + 1} of ${files.length}` : '');
       try {
-        await api.uploadClientDocument(clientId, files[i]);
+        await api.uploadClientDocument(clientId, file);
       } catch (err) {
-        failures.push(`${files[i].name}: ${err instanceof Error ? err.message : 'upload failed'}`);
+        failures.push(`${file.name}: ${err instanceof Error ? err.message : 'upload failed'}`);
       }
     }
     loadDocs();
