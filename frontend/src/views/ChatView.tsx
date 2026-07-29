@@ -432,13 +432,29 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   // Copies the rendered text (document tags stripped, matching what's shown).
   // Falls back to a hidden textarea when the async Clipboard API is unavailable
   // (older browsers / non-secure contexts). Swaps the icon to a check for ~2s.
-  const copyMessage = useCallback(async (id: string, text: string) => {
+  const copyMessage = useCallback(async (id: string, markdownFallback: string) => {
+    // Copy the RENDERED formatting, not raw markdown. We put both a rich text/html
+    // flavor (from the already-rendered message DOM) and a clean text/plain flavor
+    // on the clipboard. Word / Google Docs paste the HTML → bold/italic/underline/
+    // headings/tables are preserved instead of showing literal ** and # markup.
+    const el = document.querySelector(`[data-msg-md="${id}"]`);
+    const html = el?.innerHTML ?? '';
+    const plain = el instanceof HTMLElement ? el.innerText : markdownFallback;
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const CI = (window as any).ClipboardItem;
+      if (html && navigator.clipboard?.write && CI) {
+        await navigator.clipboard.write([
+          new CI({
+            'text/html':  new Blob([html],  { type: 'text/html'  }),
+            'text/plain': new Blob([plain], { type: 'text/plain' }),
+          }),
+        ]);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(plain);
       } else {
         const ta = document.createElement('textarea');
-        ta.value = text;
+        ta.value = plain;
         ta.style.position = 'fixed';
         ta.style.opacity = '0';
         document.body.appendChild(ta);
@@ -984,7 +1000,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                         style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
                       >
                         {msg.role === 'assistant'
-                          ? <MarkdownContent text={stripDocumentTags(msg.content)} />
+                          ? <div data-msg-md={msg.id}><MarkdownContent text={stripDocumentTags(msg.content)} /></div>
                           : <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
                         }
                         {msg.aclxDecision && msg.aclxDecision !== 'ALLOW' && (

@@ -9,9 +9,12 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.apache.poi.xwpf.usermodel.UnderlinePatterns;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
@@ -68,21 +71,156 @@ public class DocumentFormatService {
                 h.createRun().addBreak();
             }
 
-            String[] lines = (content == null ? "" : content).split("\r?\n", -1);
-            for (String line : lines) {
-                XWPFParagraph p = doc.createParagraph();
-                XWPFRun run = p.createRun();
-                String trimmed = line.trim();
-                boolean heading = !trimmed.isEmpty()
-                        && (trimmed.equals(trimmed.toUpperCase()) && trimmed.matches(".*[A-Z].*")
-                            || trimmed.endsWith(":"));
-                run.setBold(heading);
-                run.setText(line);
-            }
+            renderMarkdownBody(doc, content == null ? "" : content);
 
             doc.write(out);
             return out.toByteArray();
         }
+    }
+
+    // ── Lightweight Markdown → Word rendering ───────────────────────────────────
+    // Turns the same Markdown the chat renders (bold/italic/underline, headings,
+    // bullet & numbered lists, pipe tables) into real Word formatting, so exported
+    // documents show formatting instead of literal ** / # / - markup.
+
+    /** Inline emphasis spans (matches what the chat renders, plus <u>/<b>/<i> HTML). */
+    private static final java.util.regex.Pattern INLINE = java.util.regex.Pattern.compile(
+            "(\\*\\*.+?\\*\\*)"                       // **bold**
+          + "|(<u>.+?</u>)"                           // <u>underline</u>
+          + "|(<(?:b|strong)>.+?</(?:b|strong)>)"     // <b>/<strong> bold
+          + "|(<(?:i|em)>.+?</(?:i|em)>)"             // <i>/<em> italic
+          + "|(`.+?`)"                                // `code`
+          + "|(\\*.+?\\*)",                           // *italic*
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private void renderMarkdownBody(XWPFDocument doc, String content) {
+        String[] lines = content.split("\r?\n", -1);
+        java.util.regex.Pattern numbered = java.util.regex.Pattern.compile("^(\\d+)\\.\\s+(.*)");
+        int i = 0;
+        while (i < lines.length) {
+            String line = lines[i];
+            String t = line.trim();
+
+            // Pipe table: a row immediately followed by a |---|---| separator.
+            if (t.startsWith("|") && i + 1 < lines.length
+                    && lines[i + 1].contains("-")
+                    && lines[i + 1].trim().replaceAll("[\\s|:\\-]", "").isEmpty()) {
+                StringBuilder tbl = new StringBuilder();
+                while (i < lines.length && lines[i].trim().startsWith("|")) {
+                    tbl.append(lines[i]).append('\n');
+                    i++;
+                }
+                renderMarkdownTable(doc, tbl.toString());
+                continue;
+            }
+
+            if (t.startsWith("### ")) { addHeading(doc, t.substring(4), 13); i++; continue; }
+            if (t.startsWith("## "))  { addHeading(doc, t.substring(3), 15); i++; continue; }
+            if (t.startsWith("# "))   { addHeading(doc, t.substring(2), 18); i++; continue; }
+
+            if (t.startsWith("- ") || t.startsWith("* ")) {
+                XWPFParagraph p = doc.createParagraph();
+                p.setIndentationLeft(360);
+                p.createRun().setText("•  ");
+                addInlineRuns(p, t.substring(2));
+                i++; continue;
+            }
+
+            java.util.regex.Matcher nm = numbered.matcher(t);
+            if (nm.matches()) {
+                XWPFParagraph p = doc.createParagraph();
+                p.setIndentationLeft(360);
+                p.createRun().setText(nm.group(1) + ".  ");
+                addInlineRuns(p, nm.group(2));
+                i++; continue;
+            }
+
+            if (t.isEmpty()) { doc.createParagraph(); i++; continue; }
+
+            // Plain paragraph. Preserve the old cue: an ALL-CAPS or trailing-colon
+            // line reads as a section header → bold the whole line.
+            XWPFParagraph p = doc.createParagraph();
+            boolean capsHeading = (t.equals(t.toUpperCase()) && t.matches(".*[A-Z].*")) || t.endsWith(":");
+            if (capsHeading) {
+                XWPFRun r = p.createRun();
+                r.setBold(true);
+                r.setText(stripInlineMarkers(t));
+            } else {
+                addInlineRuns(p, line);
+            }
+            i++;
+        }
+    }
+
+    /** Split a line into runs, applying bold/italic/underline/code from inline markup. */
+    private void addInlineRuns(XWPFParagraph p, String text) {
+        if (text == null || text.isEmpty()) { p.createRun(); return; }
+        java.util.regex.Matcher m = INLINE.matcher(text);
+        int last = 0;
+        while (m.find()) {
+            if (m.start() > last) addRun(p, text.substring(last, m.start()), false, false, false, false);
+            String tok = m.group();
+            String low = tok.toLowerCase();
+            if (tok.startsWith("**"))                                 addRun(p, tok.substring(2, tok.length() - 2), true, false, false, false);
+            else if (low.startsWith("<u>"))                           addRun(p, stripTags(tok), false, false, true, false);
+            else if (low.startsWith("<b") || low.startsWith("<strong")) addRun(p, stripTags(tok), true, false, false, false);
+            else if (low.startsWith("<i") || low.startsWith("<em"))   addRun(p, stripTags(tok), false, true, false, false);
+            else if (tok.startsWith("`"))                             addRun(p, tok.substring(1, tok.length() - 1), false, false, false, true);
+            else if (tok.startsWith("*"))                             addRun(p, tok.substring(1, tok.length() - 1), false, true, false, false);
+            else                                                       addRun(p, tok, false, false, false, false);
+            last = m.end();
+        }
+        if (last < text.length()) addRun(p, text.substring(last), false, false, false, false);
+    }
+
+    private void addRun(XWPFParagraph p, String text, boolean bold, boolean italic, boolean underline, boolean code) {
+        XWPFRun r = p.createRun();
+        if (bold)      r.setBold(true);
+        if (italic)    r.setItalic(true);
+        if (underline) r.setUnderline(UnderlinePatterns.SINGLE);
+        if (code)      r.setFontFamily("Consolas");
+        r.setText(text);
+    }
+
+    private void addHeading(XWPFDocument doc, String text, int size) {
+        XWPFParagraph p = doc.createParagraph();
+        p.setSpacingBefore(120);
+        XWPFRun r = p.createRun();
+        r.setBold(true);
+        r.setFontSize(size);
+        r.setText(stripInlineMarkers(text.trim()));
+    }
+
+    private void renderMarkdownTable(XWPFDocument doc, String tableText) {
+        List<String[]> rows = parseMarkdownTable(tableText);
+        if (rows.isEmpty()) return;
+        int cols = 0;
+        for (String[] r : rows) cols = Math.max(cols, r.length);
+        if (cols == 0) return;
+        XWPFTable table = doc.createTable(rows.size(), cols);
+        for (int r = 0; r < rows.size(); r++) {
+            String[] cells = rows.get(r);
+            for (int c = 0; c < cols; c++) {
+                XWPFTableCell cell = table.getRow(r).getCell(c);
+                XWPFParagraph cp = cell.getParagraphs().isEmpty() ? cell.addParagraph() : cell.getParagraphs().get(0);
+                String val = c < cells.length ? cells[c] : "";
+                if (r == 0) {
+                    XWPFRun cr = cp.createRun();
+                    cr.setBold(true);
+                    cr.setText(stripInlineMarkers(val));
+                } else {
+                    addInlineRuns(cp, val);
+                }
+            }
+        }
+        doc.createParagraph(); // spacer after the table
+    }
+
+    private static String stripTags(String s) { return s.replaceAll("<[^>]+>", ""); }
+
+    /** Remove leftover inline markers from text that is rendered as a single styled run. */
+    private static String stripInlineMarkers(String s) {
+        return s.replaceAll("\\*\\*", "").replaceAll("`", "").replaceAll("<[^>]+>", "").trim();
     }
 
     /**
