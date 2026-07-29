@@ -326,7 +326,7 @@ function ResourceManager({
     <div className="flex-1 flex overflow-hidden">
       {/* Main column */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-1">
             <h1 className="text-2xl font-bold text-gray-900">{meta.title}</h1>

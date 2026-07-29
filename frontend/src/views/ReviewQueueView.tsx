@@ -224,7 +224,7 @@ export default function ReviewQueueView() {
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center gap-4">
+      <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 flex items-center gap-4">
         <div
           className="w-9 h-9 rounded-lg flex items-center justify-center"
           style={{ background: '#e8f4f8' }}
@@ -283,11 +283,11 @@ export default function ReviewQueueView() {
       {/* Body — left-justified, no max-width centering */}
       {/* Chat Review gets its own flex layout so its two panels can scroll independently */}
       {tab === 'chats' ? (
-        <div className="flex-1 overflow-hidden px-8 py-6">
+        <div className="flex-1 overflow-hidden px-4 md:px-8 py-6">
           <ChatReviewTab currentUserId={currentUid} currentUserRole={currentRole} orgId={orgId} />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <FontAwesomeIcon icon={faSpinner} className="animate-spin text-gray-400 text-2xl" />

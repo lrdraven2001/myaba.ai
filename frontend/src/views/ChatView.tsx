@@ -984,7 +984,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           </div>
 
           {/* Messages */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-6">
             {loadingMessages ? (
               <div className="h-full flex items-center justify-center">
                 <p className="text-gray-400 text-sm animate-pulse">Loading messages…</p>
@@ -1117,7 +1117,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           </div>
 
           {/* Input area — full chat-window width (messages stay centered) */}
-          <div className="px-6 pb-6 pt-2">
+          <div className="px-4 md:px-6 pb-6 pt-2">
             <div className="w-full">
               {/* Documents in this chat — persistent working set. Uploaded once,
                   they stay attached to this chat and are sent with every message
