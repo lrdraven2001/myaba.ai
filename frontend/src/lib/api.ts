@@ -85,6 +85,10 @@ async function request<T>(path: string, options: RequestInit = {}, base: string 
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    // Server-enforced session cap reached — tell the app to sign the user out.
+    if (res.status === 401 && body.code === 'SESSION_EXPIRED') {
+      window.dispatchEvent(new CustomEvent('auth:session-expired'));
+    }
     throw new ApiError(
       body.error || `HTTP ${res.status}`,
       body.code as string | undefined,

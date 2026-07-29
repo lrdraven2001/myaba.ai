@@ -48,6 +48,14 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     @Value("${dev.auth-enabled:false}")
     private boolean devAuthEnabled;
 
+    /**
+     * Absolute session cap: force re-authentication this many hours after the user's
+     * ORIGINAL sign-in, regardless of Firebase's silent hourly token refresh. 0 disables.
+     * Complements the client-side inactivity auto-logoff with a server-enforced ceiling.
+     */
+    @Value("${auth.max-session-hours:12}")
+    private int maxSessionHours;
+
     /** Injected as nullable — will be null when no Firebase credentials are configured. */
     private final com.google.firebase.FirebaseApp firebaseApp;
 
@@ -111,6 +119,25 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         try {
             FirebaseToken decoded = FirebaseAuth.getInstance().verifyIdToken(token);
             Map<String, Object> claims = decoded.getClaims();
+
+            // Absolute session cap. auth_time is the ORIGINAL login time (epoch seconds)
+            // and does NOT advance on Firebase's silent token refresh — only on a real
+            // re-authentication. Once the session exceeds the cap, reject with a
+            // distinguishable code so the UI can sign the user out and prompt re-login.
+            if (maxSessionHours > 0) {
+                Object authTimeClaim = claims.get("auth_time");
+                long authTime = authTimeClaim instanceof Number n ? n.longValue() : 0L;
+                long ageSeconds = (System.currentTimeMillis() / 1000L) - authTime;
+                if (authTime > 0 && ageSeconds > (long) maxSessionHours * 3600L) {
+                    log.info("Session cap exceeded (age {}h > {}h) — forcing re-auth for uid={}",
+                            ageSeconds / 3600, maxSessionHours, decoded.getUid());
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json");
+                    response.getWriter().write(
+                            "{\"error\":\"Session expired. Please sign in again.\",\"code\":\"SESSION_EXPIRED\"}");
+                    return;
+                }
+            }
 
             AppUser user = AppUser.builder()
                     .uid(decoded.getUid())

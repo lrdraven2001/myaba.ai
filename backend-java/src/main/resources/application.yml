@@ -135,6 +135,13 @@ stripe:
   checkout-cancel-url:  ${STRIPE_CHECKOUT_CANCEL_URL:https://app.myaba.ai/settings?tab=billing&checkout=cancel}
   portal-return-url:    ${STRIPE_PORTAL_RETURN_URL:https://app.myaba.ai/settings?tab=billing}
 
+# ── Session ────────────────────────────────────────────────────────────────
+# Absolute session cap: force re-authentication this many hours after the user's
+# original sign-in, regardless of Firebase's silent hourly token refresh. 0 disables.
+# Server-enforced ceiling that complements the client-side inactivity auto-logoff.
+auth:
+  max-session-hours: ${AUTH_MAX_SESSION_HOURS:12}
+
 # ── CORS ──────────────────────────────────────────────────────────────────
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

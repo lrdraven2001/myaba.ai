@@ -156,6 +156,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   };
 
+  // The backend rejects requests past the absolute session cap (SESSION_EXPIRED);
+  // api.ts dispatches this event so we sign the user out cleanly and show login,
+  // instead of the app spinning on repeated 401s.
+  useEffect(() => {
+    const onExpired = () => { void logout(); };
+    window.addEventListener('auth:session-expired', onExpired);
+    return () => window.removeEventListener('auth:session-expired', onExpired);
+  }, []);
+
   const refreshUser = async () => {
     if (DEV_AUTH) return;
     const { auth } = await import('../lib/firebase');
