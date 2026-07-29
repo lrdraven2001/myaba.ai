@@ -23,6 +23,8 @@ interface Props {
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat?: (id: string) => void;
+  /** Mobile master-detail: render full-width, always expanded, no collapse strip. */
+  mobile?: boolean;
 }
 
 // ── Time bucket helpers ───────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ export default function ChatSidebar({
   onSelectChat,
   onNewChat,
   onDeleteChat,
+  mobile = false,
 }: Props) {
   const [activeTab, setActiveTab]   = useState<Tab>('recents');
   const [collapsed, setCollapsed]   = useState(true); // minimized on first load
@@ -99,7 +102,7 @@ export default function ChatSidebar({
 
   // ── Collapsed strip ──────────────────────────────────────────────────────
 
-  if (collapsed) {
+  if (collapsed && !mobile) {
     return (
       <div
         className="flex flex-col items-center py-3 border-r border-gray-200 bg-gray-50 gap-3"
@@ -137,18 +140,20 @@ export default function ChatSidebar({
   return (
     <div
       className="flex flex-col border-r border-gray-200 bg-gray-50 overflow-hidden"
-      style={{ width: 272, flexShrink: 0 }}
+      style={mobile ? { width: '100%', flexShrink: 1 } : { width: 272, flexShrink: 0 }}
     >
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-gray-200 bg-white">
-        {/* Collapse button */}
-        <button
-          onClick={() => setCollapsed(true)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition-colors shrink-0"
-          title="Collapse chat history"
-        >
-          <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
-        </button>
+        {/* Collapse button — desktop only (nothing to collapse into on mobile) */}
+        {!mobile && (
+          <button
+            onClick={() => setCollapsed(true)}
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition-colors shrink-0"
+            title="Collapse chat history"
+          >
+            <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+          </button>
+        )}
 
         {/* Search icon — always visible */}
         <button

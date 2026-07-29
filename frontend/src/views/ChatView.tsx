@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle, faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
@@ -219,6 +220,11 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Mobile master-detail: show the list OR the conversation (not both). Desktop
+  // shows both, so mobilePane is only consulted when isMobile.
+  const isMobile = useIsMobile();
+  const [mobilePane, setMobilePane] = useState<'list' | 'chat'>(initialChatId ? 'chat' : 'list');
+
   const activeChat   = chats.find((c) => c.id === activeChatId) ?? null;
   const activeClient = activeChat?.clientId
     ? sidebarClients.find((c) => c.id === activeChat.clientId)
@@ -380,6 +386,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
       setChats((prev) => [newChat, ...prev]);
       setMessagesByChat((prev) => ({ ...prev, [chatId]: [] }));
       setActiveChatId(chatId);
+      setMobilePane('chat'); // mobile: show the new conversation
       setShowNewChat(false);
       setAttachedFiles([]);
       setInput('');
@@ -520,7 +527,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const handleDeleteChat = useCallback(async (id: string) => {
     // Optimistic remove
     setChats((prev) => prev.filter((c) => c.id !== id));
-    if (activeChatId === id) setActiveChatId(null);
+    if (activeChatId === id) { setActiveChatId(null); setMobilePane('list'); } // mobile: back to list
 
     try {
       await api.deleteChat(id);
@@ -816,19 +823,22 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      {/* Left: chat list */}
-      <ChatSidebar
-        chats={chats}
-        clients={sidebarClients}
-        activeChatId={activeChatId}
-        previews={previews}
-        onSelectChat={handleSelectChat}
-        onNewChat={() => setShowNewChat(true)}
-        onDeleteChat={handleDeleteChat}
-      />
+      {/* Left pane: chat list. On mobile, only shown in 'list' mode. */}
+      {(!isMobile || mobilePane === 'list') && (
+        <ChatSidebar
+          chats={chats}
+          clients={sidebarClients}
+          activeChatId={activeChatId}
+          previews={previews}
+          onSelectChat={(id) => { handleSelectChat(id); setMobilePane('chat'); }}
+          onNewChat={() => setShowNewChat(true)}
+          onDeleteChat={handleDeleteChat}
+          mobile={isMobile}
+        />
+      )}
 
-      {/* Right: active chat */}
-      {activeChat ? (
+      {/* Right pane: conversation / landing. On mobile, only shown in 'chat' mode. */}
+      {(!isMobile || mobilePane === 'chat') && (activeChat ? (
         <div
           className="flex-1 min-w-0 flex flex-col overflow-hidden"
           style={{ background: 'linear-gradient(160deg, #eef5fb 0%, #f1f8f1 100%)' }}
@@ -864,7 +874,17 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           )}
 
           {/* Chat header */}
-          <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
+          <div className="border-b border-gray-200 bg-white px-4 md:px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
+            {/* Back to chat list (mobile master-detail) */}
+            {isMobile && (
+              <button
+                onClick={() => setMobilePane('list')}
+                aria-label="Back to chats"
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 shrink-0"
+              >
+                <FontAwesomeIcon icon={faArrowLeft} className="text-sm" />
+              </button>
+            )}
             {/* Client attach / picker */}
             {!isGeneralChatOnly && (
               <div className="relative">
@@ -1263,7 +1283,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         </div>
       ) : (
         <ChatLandingPage onNewChat={() => setShowNewChat(true)} hasPhiAccess={userHasPhiAccess} />
-      )}
+      ))}
 
       {/* Modals */}
       {showNewChat && (
