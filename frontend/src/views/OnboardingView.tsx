@@ -373,7 +373,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Plan
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {PLANS.map((p) => {
                     const isEnterprise = p.value === 'enterprise';
                     return isEnterprise ? (

@@ -876,7 +876,7 @@ function NewClientModal({
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lc}>First Name <span className="text-red-400">*</span></label>
               <input className={ic} value={form.firstName} onChange={(e) => set('firstName', e.target.value)} placeholder="First name" />
@@ -892,7 +892,7 @@ function NewClientModal({
             <input className={ic} value={form.preferredName} onChange={(e) => set('preferredName', e.target.value)} placeholder="e.g. Alex, Sam — shown in chats" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lc}>Date of Birth</label>
               <input type="date" className={ic} value={form.dateOfBirth} onChange={(e) => set('dateOfBirth', e.target.value)} />
@@ -922,7 +922,7 @@ function NewClientModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lc}>EHR Provider</label>
               <input className={ic} value={form.ehrProvider} onChange={(e) => set('ehrProvider', e.target.value)} placeholder="Optional" />

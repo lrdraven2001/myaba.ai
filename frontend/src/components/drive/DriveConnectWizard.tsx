@@ -333,7 +333,7 @@ function RoleCheckboxes({
   };
 
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-2">
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Clinical Staff</p>
         {CLINICAL_ROLES.map((r) => (

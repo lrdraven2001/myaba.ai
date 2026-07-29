@@ -873,7 +873,7 @@ function UserUsageTab({ memberId, memberName, orgId }: { memberId: string; membe
   return (
     <div className="max-w-lg space-y-4">
       {/* Summary row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <div className="text-2xl font-bold text-gray-800">{activity.length}</div>
           <div className="text-xs text-gray-400 mt-0.5">Events</div>

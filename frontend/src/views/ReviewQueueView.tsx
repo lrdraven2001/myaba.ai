@@ -582,7 +582,7 @@ function InsightsTab() {
       <p className="text-xs text-gray-400">Last {summary.periodDays} days · policy {summary.latestPolicyVersion ?? '—'}</p>
 
       {/* Metric cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {cards.map(({ label, value, bg, color }) => (
           <div key={label} className="rounded-xl border border-gray-200 p-4" style={{ background: bg }}>
             <div className="text-2xl font-bold" style={{ color }}>{value}</div>
@@ -1012,7 +1012,7 @@ function ReviewCard({
           </div>
 
           {/* Metadata */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div>
               <span className="text-gray-400 font-medium">Content type: </span>
               <span className="text-gray-700">{EVENT_LABELS[item.eventType]}</span>
@@ -1691,7 +1691,7 @@ function HistoryCard({ item }: { item: ReviewQueueItem }) {
               {item.rawContent}
             </pre>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div>
               <span className="text-gray-400 font-medium">ACLX reason: </span>
               <span className="text-gray-700">{item.aclxReason ?? '--'}</span>

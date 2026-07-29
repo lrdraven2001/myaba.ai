@@ -955,7 +955,7 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
           </Field>
 
           {!isTemplate && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {tab === 'library' && (
                 <Field label="Resource Type">
                   <select value={resourceType} onChange={(e) => setRT(e.target.value)} className={inputCls}>
@@ -981,7 +981,7 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
           )}
 
           {tab === 'library' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Source">
                 <select value={source} onChange={(e) => setSource(e.target.value)} className={inputCls}>
                   {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}

@@ -282,7 +282,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">
                 Expiry Date <span className="font-normal text-gray-400">(optional)</span>

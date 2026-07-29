@@ -392,7 +392,7 @@ function TemplateFormModal({
               Visible to roles{' '}
               <span className="text-gray-400 font-normal normal-case">(leave all unchecked = all roles)</span>
             </label>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
               {ALL_ROLES.map((r) => (
                 <label key={r.value} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                   <input
