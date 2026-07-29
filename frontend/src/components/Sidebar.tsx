@@ -8,6 +8,7 @@ import {
   faCog,
   faProjectDiagram,
   faShieldAlt,
+  faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -17,6 +18,9 @@ import type { View } from '../App';
 interface SidebarProps {
   activeView: View;
   onViewChange: (view: View) => void;
+  /** Mobile drawer: open state + close handler. Ignored on desktop (md+). */
+  mobileOpen?: boolean;
+  onClose?: () => void;
 }
 
 const navItems: { view: View; icon: typeof faCommentDots; label: string; color: string }[] = [
@@ -27,7 +31,7 @@ const navItems: { view: View; icon: typeof faCommentDots; label: string; color: 
   { view: 'team',      icon: faUsersCog,       label: 'Team',      color: '#F5A623' },
 ];
 
-export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, mobileOpen = false, onClose }: SidebarProps) {
   const { currentUser } = useAuth();
   const [orgName, setOrgName] = useState('');
 
@@ -92,24 +96,11 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
     </button>
   );
 
-  return (
+  // Shared nav body (logo + items). onNavigate lets the mobile drawer also close.
+  const navBody = (onNavigate: (view: View) => void) => (
     <>
-      <div
-        className="flex flex-col"
-        style={{
-          width: 195,
-          /* Soft brand gradient (blue → green); dark nav text keeps AA contrast. */
-          background: 'linear-gradient(180deg, #eaf3fb 0%, #e7f3eb 100%)',
-          height: '100%',       /* fill the flex row exactly — no more, no less */
-          flexShrink: 0,
-          borderRight: '1px solid #DCE7EE',
-          overflowY: 'auto',    /* sidebar itself scrolls if nav items ever overflow */
-          overflowX: 'hidden',
-          position: 'relative',
-        }}
-      >
-        {/* ── Logo card — sticky so it never scrolls out of view ── */}
-        <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE', position: 'sticky', top: 0, background: '#eaf3fb', zIndex: 10 }}>
+      {/* ── Logo card — sticky so it never scrolls out of view ── */}
+      <div style={{ padding: '14px 12px 12px', borderBottom: '1px solid #DCE7EE', position: 'sticky', top: 0, background: '#eaf3fb', zIndex: 10 }}>
           <div
             style={{
               display: 'flex',
@@ -154,7 +145,7 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
             const isActive = activeView === view;
             return navBtn(
               isActive,
-              () => onViewChange(view),
+              () => onNavigate(view),
               <FontAwesomeIcon
                 icon={icon}
                 style={{ fontSize: 19, color: isActive ? color : '#A8B4BF', flexShrink: 0, width: 22 }}
@@ -170,7 +161,7 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
             const reviewActive = activeView === 'review';
             return navBtn(
               reviewActive,
-              () => onViewChange('review'),
+              () => onNavigate('review'),
               <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 19, color: reviewActive ? '#F5A623' : '#A8B4BF', flexShrink: 0, width: 22 }} />,
               'Review',
             );
@@ -181,15 +172,52 @@ export default function Sidebar({ activeView, onViewChange }: SidebarProps) {
             const settingsActive = activeView === 'settings';
             return navBtn(
               settingsActive,
-              () => onViewChange('settings'),
+              () => onNavigate('settings'),
               <FontAwesomeIcon icon={faCog} style={{ fontSize: 19, color: settingsActive ? '#3F9B2F' : '#A8B4BF', flexShrink: 0, width: 22 }} />,
               'Settings',
             );
           })()}
 
         </div>
+    </>
+  );
+
+  const panelVisual: React.CSSProperties = {
+    width: 195,
+    background: 'linear-gradient(180deg, #eaf3fb 0%, #e7f3eb 100%)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+  };
+
+  return (
+    <>
+      {/* Desktop: fixed left column (hidden below md) */}
+      <div
+        className="hidden md:flex flex-col"
+        style={{ ...panelVisual, height: '100%', flexShrink: 0, borderRight: '1px solid #DCE7EE', position: 'relative' }}
+      >
+        {navBody(onViewChange)}
       </div>
 
+      {/* Mobile: slide-over drawer + backdrop (below md only) */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0" style={{ zIndex: 60 }}>
+          <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+          <div
+            className="absolute left-0 top-0 bottom-0 flex flex-col"
+            style={{ ...panelVisual, borderRight: '1px solid #DCE7EE' }}
+          >
+            <button
+              onClick={onClose}
+              aria-label="Close menu"
+              className="absolute top-3 right-2 z-20 w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-white/60"
+            >
+              <FontAwesomeIcon icon={faTimes} className="text-sm" />
+            </button>
+            {navBody((v) => { onViewChange(v); onClose?.(); })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

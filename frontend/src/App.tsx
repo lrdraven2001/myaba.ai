@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch } from '@fortawesome/free-solid-svg-icons';
+import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch, faBars } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import IdleTimeout from './components/IdleTimeout';
 import ProfileModal from './components/ProfileModal';
 import NotificationBell from './components/NotificationBell';
 import HelpMenu from './components/HelpMenu';
@@ -102,6 +103,7 @@ function ProfileMenu() {
 function AppShell() {
   const { currentUser, firebaseUser, loading } = useAuth();
   const [activeView, setActiveView]           = useState<View>('chat');
+  const [mobileNavOpen, setMobileNavOpen]     = useState(false); // hamburger drawer (mobile)
   const [pendingChatId, setPendingChatId]     = useState<string | null>(null);
   const [pendingClientId, setPendingClientId] = useState<string | null>(null);
   const [pendingDocTab, setPendingDocTab]     = useState<DocumentTab>('resources');
@@ -232,9 +234,16 @@ function AppShell() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
+      {/* Inactivity auto-logoff (HIPAA automatic logoff) */}
+      <IdleTimeout />
       {/* Main content row */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar activeView={activeView} onViewChange={setActiveView} />
+        <Sidebar
+          activeView={activeView}
+          onViewChange={setActiveView}
+          mobileOpen={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+        />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Top bar — HIPAA banner (left) · help, notifications, profile (right) */}
           <div
@@ -243,20 +252,31 @@ function AppShell() {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 24, paddingRight: 20,
             }}
           >
-            {/* HIPAA note */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#3F9B2F', fontSize: 13 }} />
-              <span style={{ fontSize: 12, color: '#6B7B88' }}>
-                All data is HIPAA compliant and role-permissioned.
-              </span>
-              <a
-                href="#"
-                style={{ fontSize: 12, color: '#1E88FF', textDecoration: 'none', fontWeight: 500 }}
-                onMouseEnter={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'underline')}
-                onMouseLeave={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'none')}
+            {/* Left group: hamburger (mobile only) + HIPAA note (desktop only) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                className="flex md:hidden items-center justify-center"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Open menu"
+                style={{ width: 32, height: 32, borderRadius: 8, color: '#5A7184', background: 'transparent', cursor: 'pointer', border: 'none' }}
               >
-                Learn more
-              </a>
+                <FontAwesomeIcon icon={faBars} style={{ fontSize: 16 }} />
+              </button>
+              {/* HIPAA note — hidden on mobile to make room */}
+              <div className="hidden md:flex" style={{ alignItems: 'center', gap: 7 }}>
+                <FontAwesomeIcon icon={faShieldAlt} style={{ color: '#3F9B2F', fontSize: 13 }} />
+                <span style={{ fontSize: 12, color: '#6B7B88' }}>
+                  All data is HIPAA compliant and role-permissioned.
+                </span>
+                <a
+                  href="#"
+                  style={{ fontSize: 12, color: '#1E88FF', textDecoration: 'none', fontWeight: 500 }}
+                  onMouseEnter={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'underline')}
+                  onMouseLeave={(e) => ((e.target as HTMLAnchorElement).style.textDecoration = 'none')}
+                >
+                  Learn more
+                </a>
+              </div>
             </div>
             {/* Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
