@@ -6,6 +6,8 @@ import ai.myaba.util.FirestoreCollections;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ProjectRequest;
 import ai.myaba.model.dto.UserRole;
+import ai.myaba.security.Capability;
+import ai.myaba.security.Permissions;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -246,7 +248,7 @@ public class ProjectService {
      * way out the door.
      */
     public void restoreProject(AppUser user, String projectId) throws Exception {
-        if (!UserRole.ORG_SUPER_ADMIN.equals(user.getRole()))
+        if (!Permissions.can(user, Capability.ADMIN_SUPER))
             throw new SecurityException("Only a Practice Administrator can restore projects.");
         Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
         Object deletedAt = project.get("deletedAt");
@@ -272,7 +274,7 @@ public class ProjectService {
      * shows ALL deleted projects in the org so nothing is lost silently.
      */
     public List<Map<String, Object>> getTrashedProjects(AppUser user) throws Exception {
-        if (!UserRole.ORG_SUPER_ADMIN.equals(user.getRole()))
+        if (!Permissions.can(user, Capability.ADMIN_SUPER))
             throw new SecurityException("Only a Practice Administrator can view trashed projects.");
         java.util.stream.Stream<Map<String, Object>> all;
         if (devMode) {
@@ -642,7 +644,7 @@ public class ProjectService {
                 Object explicit = m.get("phiAccess");
                 if (explicit instanceof Boolean b) return b;
                 String role = (String) m.get("role");
-                return UserRole.isAdmin(role) || UserRole.hasPhiAccess(role);
+                return Permissions.phiAccess(role, orgId);
             }
         } catch (Exception e) {
             log.warn("memberHasPhiAccess lookup failed org={} uid={}: {}", orgId, uid, e.getMessage());

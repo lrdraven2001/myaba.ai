@@ -50,11 +50,11 @@ public class AppUser {
     public boolean isAdmin()     { return Permissions.can(this, Capability.ADMIN_MANAGE); }
 
     public boolean canInitiateChat() {
-        return UserRole.canInitiateClinicalChat(role);
+        return Permissions.can(this, Capability.AI_CLINICAL_CHAT);
     }
 
     public boolean canUseGeneralChat() {
-        return UserRole.canUseGeneralChat(role);
+        return Permissions.can(this, Capability.AI_GENERAL_CHAT);
     }
 
     /**
@@ -64,6 +64,6 @@ public class AppUser {
      */
     public boolean hasPhiAccess() {
         if (phiAccess != null) return phiAccess;
-        return isClinical() || isAdmin();
+        return Permissions.phiAccess(this);
     }
 }

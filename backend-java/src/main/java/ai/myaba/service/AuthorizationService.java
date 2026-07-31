@@ -45,7 +45,7 @@ public class AuthorizationService {
      * clinical content is still governed by ACLX at response time.
      */
     public boolean canAccessClient(AppUser user, Map<String, Object> clientData) {
-        if (UserRole.isAdmin(user.getRole())) return true;
+        if (Permissions.can(user, Capability.CLIENT_VIEW_ALL)) return true;
 
         String uid = user.getUid();
         if (uid.equals(clientData.get("treatingBcbaId")))    return true;
@@ -61,7 +61,7 @@ public class AuthorizationService {
      * Treating BCBA, supervising BCBA, or org admin.
      */
     public boolean canEditClient(AppUser user, Map<String, Object> clientData) {
-        if (UserRole.isAdmin(user.getRole())) return true;
+        if (Permissions.can(user, Capability.CLIENT_VIEW_ALL)) return true;
         String uid = user.getUid();
         return uid.equals(clientData.get("treatingBcbaId")) ||
                uid.equals(clientData.get("supervisingBcbaId"));
@@ -138,7 +138,7 @@ public class AuthorizationService {
     public boolean canAccessProject(AppUser user,
                                      Map<String, Object> projectData,
                                      String requiredPermission) {
-        if (UserRole.isAdmin(user.getRole())) return true;
+        if (Permissions.can(user, Capability.PROJECT_VIEW_ALL)) return true;
 
         @SuppressWarnings("unchecked")
         Map<String, String> members = (Map<String, String>)
