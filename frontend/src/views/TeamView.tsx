@@ -61,6 +61,9 @@ export default function TeamView() {
   const [inviteGenerating, setInviteGenerating] = useState(false);
   const [inviteError, setInviteError]     = useState('');
   const [inviteCopied, setInviteCopied]   = useState(false);
+  // Org-defined custom roles (from the Roles & Permissions matrix) — assignable alongside
+  // the built-in roles. Practice Administrator stays creator-only, not in this list.
+  const [customRoles, setCustomRoles]     = useState<{ key: string; label: string }[]>([]);
 
   // Load real members
   useEffect(() => {
@@ -80,6 +83,22 @@ export default function TeamView() {
       .finally(() => setLoadingMembers(false));
   }, [orgId]);
 
+  // Load the org's custom roles so they can be assigned on invite.
+  useEffect(() => {
+    if (!orgId) return;
+    api.getRoleConfig(orgId)
+      .then((c) => setCustomRoles((c.customRoles ?? []).map((r) => ({ key: r.key, label: r.label }))))
+      .catch(() => {});
+  }, [orgId]);
+
+  // Assignable roles = built-in assignable + org custom roles. {key,label} for the dropdowns.
+  const assignableOptions = [
+    ...ASSIGNABLE_ROLES.map((k) => ({ key: k, label: ROLE_LABELS[k] ?? k })),
+    ...customRoles,
+  ];
+  const roleLabelOf = (role: string) =>
+    ROLE_LABELS[role] ?? customRoles.find((r) => r.key === role)?.label ?? role;
+
   const handleOpenInvite = () => {
     setInviteRole('RBT');
     setInviteEmail('');
@@ -90,7 +109,7 @@ export default function TeamView() {
   };
 
   const handleEmailInvite = () => {
-    const roleLabel = ROLE_LABELS[inviteRole] ?? inviteRole;
+    const roleLabel = roleLabelOf(inviteRole);
     const subject = encodeURIComponent('Your invitation to MyABA.ai');
     const body = encodeURIComponent(
       `You've been invited to join your organization on MyABA.ai as a ${roleLabel}.\n\n` +
@@ -304,11 +323,10 @@ export default function TeamView() {
                   onChange={(e) => { setInviteRole(e.target.value); setInviteUrl(''); setInviteError(''); }}
                   disabled={!!inviteUrl}
                 >
-                  {/* Single source of truth: the shared assignable-roles list.
-                      Practice Administrator (ORG_SUPER_ADMIN) is creator-only and
-                      intentionally not offered here. */}
-                  {ASSIGNABLE_ROLES.map((val) => (
-                    <option key={val} value={val}>{ROLE_LABELS[val] ?? val}</option>
+                  {/* Built-in assignable roles + the org's custom roles. Practice
+                      Administrator (ORG_SUPER_ADMIN) is creator-only, not offered here. */}
+                  {assignableOptions.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
                   ))}
                 </select>
               </div>
