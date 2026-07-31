@@ -55,7 +55,7 @@ export function usePermissions() {
   const can = (cap: Capability): boolean =>
     perms ? perms.capabilities.includes(cap) : fallbackCan(cap, role, user);
 
-  const phiAccess = perms ? perms.phiAccess : hasPhiAccess(user);
+  const phiAccess = perms ? perms.phiAccess : (user ? hasPhiAccess(user) : false);
 
   return { can, phiAccess, ready: !!perms };
 }
@@ -76,7 +76,7 @@ function fallbackCan(cap: Capability, role: string, user: AppUser | undefined): 
       return canUseGeneralChat(role);
     case 'AI_CLINICAL_CHAT':
     case 'DOCUMENT_GENERATE':
-      return hasPhiAccess(user);
+      return user ? hasPhiAccess(user) : false;
     default:
       // Category-specific capabilities (create/manage/approve/library) — no legacy
       // equivalent; default hidden until the server response arrives.
