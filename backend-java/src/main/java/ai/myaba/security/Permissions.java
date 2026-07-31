@@ -26,7 +26,13 @@ public final class Permissions {
     /** True when the user holds the capability (resolved against their org's matrix). */
     public static boolean can(AppUser user, Capability capability) {
         PermissionService s = service;
-        return (s != null) ? s.can(user, capability) : legacyFallback(user, capability);
+        if (s == null) return legacyFallback(user, capability);
+        try {
+            return s.can(user, capability);
+        } catch (Exception e) {
+            // Never break the request path on a resolver error — fall back to legacy roles.
+            return legacyFallback(user, capability);
+        }
     }
 
     /** Throw 403 (via GlobalExceptionHandler) unless the user holds the capability. */
@@ -39,16 +45,24 @@ public final class Permissions {
     /** Whether the user may view/process PHI (resolved against their org matrix). */
     public static boolean phiAccess(AppUser user) {
         PermissionService s = service;
-        if (s != null) return s.resolve(user).phiAccess();
         String role = user == null ? null : user.getRole();
-        return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        if (s == null) return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        try {
+            return s.resolve(user).phiAccess();
+        } catch (Exception e) {
+            return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        }
     }
 
     /** PHI access for a raw role key in an org — used to vet a member for a PHI project. */
     public static boolean phiAccess(String role, String orgId) {
         PermissionService s = service;
-        if (s != null) return s.resolveForRole(role, orgId).phiAccess();
-        return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        if (s == null) return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        try {
+            return s.resolveForRole(role, orgId).phiAccess();
+        } catch (Exception e) {
+            return UserRole.isClinical(role) || UserRole.isAdmin(role);
+        }
     }
 
     /** Legacy UserRole equivalents — used only before the service bean is constructed. */
