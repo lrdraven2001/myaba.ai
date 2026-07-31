@@ -2,6 +2,7 @@ package ai.myaba.controller;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.security.AuthorizationUtil;
+import ai.myaba.security.PermissionService;
 import ai.myaba.service.RoleConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ import java.util.Map;
 public class RoleConfigController {
 
     private final RoleConfigService roleConfigService;
+    private final PermissionService permissionService;
 
     @GetMapping("/{orgId}/role-config")
     public ResponseEntity<?> getRoleConfig(
@@ -43,6 +45,7 @@ public class RoleConfigController {
             @RequestBody Map<String, Object> body) {
         AuthorizationUtil.verifyOrgMembership(user, orgId);
         Map<String, Object> saved = roleConfigService.saveConfig(user, body);
+        permissionService.invalidate(orgId); // matrix changed → drop the cached resolution
         log.info("Role config saved for org {}", orgId);
         return ResponseEntity.ok(saved);
     }
