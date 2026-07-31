@@ -6,6 +6,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import type { SubjectAuthorization } from '../types';
 import { HIPAA_AUTH_TYPES, HIPAA_SCOPES } from '../types';
 
@@ -53,7 +54,8 @@ interface Props {
 
 export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = '' }: Props) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const [records, setRecords]     = useState<SubjectAuthorization[]>([]);
   const [loading, setLoading]     = useState(true);

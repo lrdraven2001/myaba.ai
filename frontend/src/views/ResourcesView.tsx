@@ -12,6 +12,7 @@ import type { ResourceInput } from '../lib/api';
 import type { DriveConnection } from '../types';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { DOCUMENT_TYPES, documentTypeLabel, defaultTemplateFor, categoryFor } from '../lib/documentTypes';
 
 /** Bucket each tab writes to. */
@@ -114,7 +115,8 @@ function slug(name: string): string {
 export default function ResourcesView() {
   const { currentUser } = useAuth();
   const orgId = currentUser?.orgId ?? '';
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const [activeTab, setActiveTab] = useState<Tab>('templates');
   const [resources, setResources] = useState<Resource[]>([]);

@@ -8,6 +8,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import type {
   ReviewQueueItem, ReviewStatus, ReviewVerdict,
   OrgPolicyRule, OrgAclxPolicy, OrgPolicyRuleType,
@@ -180,8 +181,8 @@ export default function ReviewQueueView() {
   // Chat Review is org-wide oversight — restricted to admin roles, matching the
   // admin-gated /chats/all endpoint. (Non-admins only ever saw their own chats
   // here anyway; those remain in the main Chat window.)
-  const canViewChats = currentRole === 'ORG_SUPER_ADMIN'
-                    || currentRole === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const canViewChats = can('ADMIN_MANAGE');
 
   const load = () => {
     setLoading(true);

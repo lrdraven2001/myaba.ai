@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell, faCheckDouble, faPaperPlane, faTimes, faCircle } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminRole } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface Note {
   id: string; title: string; body?: string; level?: string; type?: string;
@@ -30,7 +30,8 @@ function relTime(iso?: string): string {
 export default function NotificationBell() {
   const { currentUser } = useAuth();
   const orgId = currentUser?.orgId ?? '';
-  const isAdmin = currentUser ? isAdminRole(currentUser.role) : false;
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const [open, setOpen]       = useState(false);
   const [items, setItems]     = useState<Note[]>([]);

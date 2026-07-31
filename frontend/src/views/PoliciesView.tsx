@@ -7,6 +7,7 @@ import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
 import type { DriveConnection, PolicyDocument, PolicyCategory } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
 
 const CATEGORY_LABELS: Record<PolicyCategory, string> = {
@@ -31,7 +32,8 @@ const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as PolicyCategory[];
 
 export default function PoliciesView({ embedded = false }: { embedded?: boolean }) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const [policies, setPolicies]       = useState<PolicyDocument[]>([]);
   const [loading, setLoading]         = useState(true);

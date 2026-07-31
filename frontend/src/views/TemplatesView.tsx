@@ -7,6 +7,7 @@ import {
 import { api } from '../lib/api';
 import type { Template, TemplateCategory, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 // ── Category metadata ─────────────────────────────────────────────────────────
 
@@ -44,7 +45,8 @@ const ALL_ROLES: { value: UserRole; label: string }[] = [
 
 export default function TemplatesView({ embedded = false }: { embedded?: boolean }) {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const [templates, setTemplates]   = useState<Template[]>([]);
   const [loading, setLoading]       = useState(true);

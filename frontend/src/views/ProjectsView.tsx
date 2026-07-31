@@ -10,6 +10,7 @@ import { faGoogleDrive } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
 import { importDriveFile, isPickerConfigured } from '../lib/googlePicker';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { isAdminRole } from '../types';
 import type { Project, ProjectKnowledgeDoc, Chat } from '../types';
 
@@ -44,7 +45,8 @@ export default function ProjectsView({ onNavigateToChat }: Props) {
   const [selected, setSelected] = useState<Project | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showTrash, setShowTrash]   = useState(false);
-  const isSuperAdmin = currentUser?.role === 'ORG_SUPER_ADMIN';
+  const { can } = usePermissions();
+  const isSuperAdmin = can('ADMIN_SUPER');
 
   useEffect(() => {
     api.getProjects()
@@ -739,8 +741,9 @@ function ProjectAccessModal({
   const [addingMember, setAddingMember] = useState(false);
   const [removingId, setRemovingId]   = useState<string | null>(null);
 
+  const { can } = usePermissions();
   const isOwner = project.ownerId === currentUserId;
-  const canManage = isOwner || isAdminRole(currentUserRole as never);
+  const canManage = isOwner || can('PROJECT_VIEW_ALL');
 
   useEffect(() => {
     if (!orgId) return;
