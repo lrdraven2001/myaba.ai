@@ -3,6 +3,8 @@ package ai.myaba.controller;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.OrgRequest;
 import ai.myaba.model.dto.UserRole;
+import ai.myaba.security.Capability;
+import ai.myaba.security.Permissions;
 import ai.myaba.service.OrgService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -99,7 +101,7 @@ public class OrgController {
             @PathVariable String orgId,
             @AuthenticationPrincipal AppUser user) {
 
-        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+        if (!orgId.equals(user.getOrgId()) && !Permissions.can(user, Capability.ADMIN_SUPER)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Access denied"));
         }
@@ -327,7 +329,7 @@ public class OrgController {
             @PathVariable String orgId,
             @AuthenticationPrincipal AppUser user) {
 
-        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+        if (!orgId.equals(user.getOrgId()) && !Permissions.can(user, Capability.ADMIN_SUPER)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
         }
         try {
@@ -399,7 +401,7 @@ public class OrgController {
             @PathVariable String orgId,
             @AuthenticationPrincipal AppUser user) {
 
-        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+        if (!orgId.equals(user.getOrgId()) && !Permissions.can(user, Capability.ADMIN_SUPER)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
         }
         try {
@@ -425,7 +427,7 @@ public class OrgController {
     public ResponseEntity<?> getServiceContractStatus(
             @PathVariable String orgId,
             @AuthenticationPrincipal AppUser user) {
-        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+        if (!orgId.equals(user.getOrgId()) && !Permissions.can(user, Capability.ADMIN_SUPER)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
         }
         try {
@@ -481,7 +483,7 @@ public class OrgController {
     public ResponseEntity<?> downloadServiceContractDocument(
             @PathVariable String orgId,
             @AuthenticationPrincipal AppUser user) {
-        if (!orgId.equals(user.getOrgId()) && !UserRole.ORG_SUPER_ADMIN.equals(user.getRole())) {
+        if (!orgId.equals(user.getOrgId()) && !Permissions.can(user, Capability.ADMIN_SUPER)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
         }
         try {
@@ -661,11 +663,10 @@ public class OrgController {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private boolean isAdminOf(AppUser user, String orgId) {
+        // Org-admin gate now resolves the 'administration' permission category (matrix-driven).
+        // On the built-in defaults this is exactly {ORG_SUPER_ADMIN, CLINICAL_DIRECTOR}.
         return orgId.equals(user.getOrgId())
-                && (UserRole.ORG_SUPER_ADMIN.equals(user.getRole())
-                    // CLINICAL_DIRECTOR is the org creator / primary practice admin — must
-                    // have the same org-admin access (members, invites, activity, role changes).
-                    || UserRole.CLINICAL_DIRECTOR.equals(user.getRole()));
+                && Permissions.can(user, Capability.ADMIN_MANAGE);
     }
 
     // ── Exception handlers ────────────────────────────────────────────────────

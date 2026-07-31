@@ -2,7 +2,8 @@ package ai.myaba.controller;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.FederationConfigRequest;
-import ai.myaba.model.dto.UserRole;
+import ai.myaba.security.Capability;
+import ai.myaba.security.Permissions;
 import ai.myaba.service.FederationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -103,6 +104,6 @@ public class FederationController {
 
     private boolean isSuperAdminOf(AppUser user, String orgId) {
         return orgId.equals(user.getOrgId())
-                && UserRole.ORG_SUPER_ADMIN.equals(user.getRole());
+                && Permissions.can(user, Capability.ADMIN_SUPER);
     }
 }

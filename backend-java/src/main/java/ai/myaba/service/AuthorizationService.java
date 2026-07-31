@@ -2,6 +2,8 @@ package ai.myaba.service;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
+import ai.myaba.security.Capability;
+import ai.myaba.security.Permissions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -115,7 +117,7 @@ public class AuthorizationService {
      * ORG_ADMIN and ORG_SUPER_ADMIN only — BCBAs are consumers, not authors, of org content.
      */
     public boolean canWriteOrgContent(AppUser user) {
-        return UserRole.isAdmin(user.getRole());
+        return Permissions.can(user, Capability.ORG_CONTENT_WRITE);
     }
 
     /**

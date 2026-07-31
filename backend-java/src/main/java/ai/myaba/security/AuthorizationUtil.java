@@ -1,7 +1,6 @@
 package ai.myaba.security;
 
 import ai.myaba.model.dto.AppUser;
-import ai.myaba.model.dto.UserRole;
 
 /**
  * Centralized authorization checks shared across controllers and services.
@@ -15,11 +14,9 @@ public final class AuthorizationUtil {
 
     private AuthorizationUtil() {}
 
-    /** Throw unless the user holds an administrator role. */
+    /** Throw unless the user holds org-admin capability (administration category). */
     public static void requireAdmin(AppUser user) {
-        if (user == null || !UserRole.isAdmin(user.getRole())) {
-            throw new SecurityException("Administrator access required");
-        }
+        Permissions.require(user, Capability.ADMIN_MANAGE);
     }
 
     /** Throw unless the user belongs to the given organization. */

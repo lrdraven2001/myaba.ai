@@ -1,5 +1,7 @@
 package ai.myaba.model.dto;
 
+import ai.myaba.security.Capability;
+import ai.myaba.security.Permissions;
 import lombok.Builder;
 import lombok.Data;
 
@@ -45,7 +47,7 @@ public class AppUser {
 
     public boolean isClinical()  { return UserRole.isClinical(role); }
     public boolean isBcba()      { return UserRole.isBcba(role); }
-    public boolean isAdmin()     { return UserRole.isAdmin(role); }
+    public boolean isAdmin()     { return Permissions.can(this, Capability.ADMIN_MANAGE); }
 
     public boolean canInitiateChat() {
         return UserRole.canInitiateClinicalChat(role);
