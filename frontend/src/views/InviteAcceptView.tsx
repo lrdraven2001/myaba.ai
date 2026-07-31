@@ -9,6 +9,7 @@ import {
   updateProfile,
   multiFactor,
   type TotpSecret,
+  type User,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
@@ -88,6 +89,22 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Start TOTP enrollment (secret + QR) and advance to the 2FA step. If TOTP MFA
+  // isn't enabled on the Firebase project, enrollment can't start — rather than
+  // dead-end the invitee with a blank QR, skip 2FA so they can finish setup.
+  // (Org MFA enforcement still applies at login once TOTP is enabled.)
+  const beginTwoFactor = async (user: User) => {
+    try {
+      const enroll = await startTotpEnrollment(user, user.email ?? email ?? undefined);
+      setTotpSecret(enroll.secret);
+      setQrDataUrl(enroll.qrDataUrl);
+      setManualKey(enroll.manualKey);
+      setStep('twoFactor');
+    } catch {
+      setStep('agreements');
+    }
+  };
+
   // If user is already authenticated (e.g. returning to an in-progress invite),
   // skip straight to the appropriate step.
   useEffect(() => {
@@ -95,9 +112,12 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
     if (!u) return;
     if (IS_EMULATOR) {
       setStep('agreements');
+    } else if (multiFactor(u).enrolledFactors.length > 0) {
+      setStep('agreements');
     } else {
-      const mfaInfo = multiFactor(u).enrolledFactors;
-      setStep(mfaInfo.length > 0 ? 'agreements' : 'twoFactor');
+      // Re-generate the QR (it was never persisted across a reload); if TOTP is
+      // unavailable this skips 2FA rather than stranding them on a blank screen.
+      void beginTwoFactor(u);
     }
   }, []);
 
@@ -118,11 +138,7 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
       if (IS_EMULATOR) {
         setStep('agreements');
       } else {
-        const { secret, qrDataUrl, manualKey } = await startTotpEnrollment(user, email);
-        setTotpSecret(secret);
-        setQrDataUrl(qrDataUrl);
-        setManualKey(manualKey);
-        setStep('twoFactor');
+        await beginTwoFactor(user);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -335,6 +351,18 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
             <button type="submit" disabled={loading || otpCode.length !== 6} style={btnStyle(loading || otpCode.length !== 6)}>
               {loading ? 'Verifying…' : 'Verify & Continue →'}
             </button>
+
+            {/* Fallback when the QR couldn't be generated (TOTP MFA not enabled on
+                the project) — don't strand the invitee; let them finish setup. */}
+            {!qrDataUrl && (
+              <button
+                type="button"
+                onClick={() => setStep('agreements')}
+                style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 12.5, cursor: 'pointer', marginTop: 2 }}
+              >
+                Two-factor setup is unavailable — continue without it →
+              </button>
+            )}
           </form>
         )}
 
