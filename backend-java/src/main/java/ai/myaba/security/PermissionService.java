@@ -51,6 +51,18 @@ public class PermissionService {
         if (orgId != null) cache.remove(orgId);
     }
 
+    /** True if {@code role} is a built-in role or a custom role defined in the org's config. */
+    public boolean isKnownRole(String role, String orgId) {
+        if (role == null || role.isBlank()) return false;
+        if (PermissionDefaults.DEFAULTS.containsKey(role)) return true;
+        if (orgId == null) return false;
+        for (Object cr : asList(configFor(orgId).get("customRoles"))) {
+            Map<String, Object> m = asMap(cr);
+            if (m != null && role.equals(str(m.get("key")))) return true;
+        }
+        return false;
+    }
+
     /** Resolve for the given user in their own org. */
     public EffectivePermissions resolve(AppUser user) {
         return resolve(user, user == null ? null : user.getOrgId());

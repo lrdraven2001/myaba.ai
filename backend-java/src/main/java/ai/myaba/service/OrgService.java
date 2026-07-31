@@ -66,6 +66,9 @@ public class OrgService {
     @org.springframework.beans.factory.annotation.Autowired
     private AuditService auditService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private ai.myaba.security.PermissionService permissionService;
+
     private final Map<String, Map<String, Object>>        devOrgs       = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>>        devTokens     = new ConcurrentHashMap<>();
     /** orgId → list of member maps (dev mode only) */
@@ -913,7 +916,9 @@ public class OrgService {
      * Returns the full invite URL.
      */
     public String generateInviteToken(String orgId, String role, String createdByUid) throws Exception {
-        if (!UserRole.isValid(role)) throw new IllegalArgumentException("Invalid role: " + role);
+        // Accept a built-in role OR a custom role defined in this org's role config.
+        if (!permissionService.isKnownRole(role, orgId))
+            throw new IllegalArgumentException("Invalid role: " + role);
         String token     = UUID.randomUUID().toString().replace("-", "");
         String expiresAt = Instant.now().plusSeconds(7 * 24 * 3600).toString(); // 7 days
 
@@ -1166,7 +1171,8 @@ public class OrgService {
             claims.put("purpose",   purpose);
             // Explicit PHI-access capability claim — lets downstream code gate on a boolean
             // instead of knowing every possible role name (critical for custom org roles).
-            claims.put("phiAccess", UserRole.hasPhiAccess(role));
+            // Resolver-derived so custom roles (and matrix overrides) get correct PHI access.
+            claims.put("phiAccess", permissionService.resolveForRole(role, orgId).phiAccess());
             FirebaseAuth.getInstance().setCustomUserClaims(uid, claims);
         } catch (Exception e) {
             log.error("Failed to set custom claims for user {}: {}", uid, e.getMessage());
