@@ -822,7 +822,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden min-h-0">
       {/* Left pane: chat list. On mobile, only shown in 'list' mode. */}
       {(!isMobile || mobilePane === 'list') && (
         <ChatSidebar

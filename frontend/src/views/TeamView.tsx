@@ -8,7 +8,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
-import { ALL_ROLE_LABELS as ROLE_LABELS, canSupervise } from '../types';
+import { ALL_ROLE_LABELS as ROLE_LABELS, ASSIGNABLE_ROLES, canSupervise } from '../types';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
 
@@ -304,11 +304,12 @@ export default function TeamView() {
                   onChange={(e) => { setInviteRole(e.target.value); setInviteUrl(''); setInviteError(''); }}
                   disabled={!!inviteUrl}
                 >
-                  {Object.entries(ROLE_LABELS)
-                    .filter(([v]) => ['CLINICAL_DIRECTOR', 'SUPERVISING_BCBA', 'RBT', 'GENERAL_STAFF'].includes(v))
-                    .map(([val, label]) => (
-                      <option key={val} value={val}>{label}</option>
-                    ))}
+                  {/* Single source of truth: the shared assignable-roles list.
+                      Practice Administrator (ORG_SUPER_ADMIN) is creator-only and
+                      intentionally not offered here. */}
+                  {ASSIGNABLE_ROLES.map((val) => (
+                    <option key={val} value={val}>{ROLE_LABELS[val] ?? val}</option>
+                  ))}
                 </select>
               </div>
 
@@ -603,8 +604,15 @@ function UserProfileTab({
               onChange={(e) => handleRoleChange(e.target.value)}
               disabled={member.role === 'ORG_SUPER_ADMIN'}
             >
-              {Object.entries(ROLE_LABELS).map(([val, label]) => (
-                <option key={val} value={val}>{label}</option>
+              {/* Same assignable list as the invite dropdown. If the member's
+                  current role isn't assignable (creator = ORG_SUPER_ADMIN, or a
+                  legacy role), show it too so it displays and isn't silently
+                  overwritten — the select is disabled for ORG_SUPER_ADMIN anyway. */}
+              {((ASSIGNABLE_ROLES as readonly string[]).includes(member.role)
+                ? [...ASSIGNABLE_ROLES]
+                : [member.role, ...ASSIGNABLE_ROLES]
+              ).map((val) => (
+                <option key={val} value={val}>{ROLE_LABELS[val] ?? val}</option>
               ))}
             </select>
             {member.role === 'ORG_SUPER_ADMIN' && (
