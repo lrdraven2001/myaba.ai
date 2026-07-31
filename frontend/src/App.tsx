@@ -102,18 +102,20 @@ function ProfileMenu() {
 // ── App shell ──────────────────────────────────────────────────────────────────
 
 function AppShell() {
-  const { currentUser, firebaseUser, loading } = useAuth();
+  const { currentUser, firebaseUser, loading, refreshUser } = useAuth();
   const [activeView, setActiveView]           = useState<View>('chat');
   const [mobileNavOpen, setMobileNavOpen]     = useState(false); // hamburger drawer (mobile)
   const [pendingChatId, setPendingChatId]     = useState<string | null>(null);
   const [pendingClientId, setPendingClientId] = useState<string | null>(null);
   const [pendingDocTab, setPendingDocTab]     = useState<DocumentTab>('resources');
-  const [invitePreview, setInvitePreview]     = useState<{ orgName: string; role: string } | null>(null);
+  const [invitePreview, setInvitePreview]     = useState<{ orgName: string; role: string; mfaEnforced?: boolean } | null>(null);
   // Org BAA state — absent field on legacy orgs treated as accepted (true).
   const [baaAccepted, setBaaAccepted] = useState<boolean>(true);
   // Pathfinder org-creation eligibility for users with no org yet.
   // null = unknown/loading; true = may create; false = show "not provisioned".
   const [orgEligible, setOrgEligible] = useState<boolean | null>(null);
+  // Gate onboarding/not-provisioned until we've tried to auto-join via an email invite.
+  const [inviteClaimAttempted, setInviteClaimAttempted] = useState(false);
   // Workspace search modal (opened from the top-bar icon or Ctrl/⌘+K).
   const [showSearch, setShowSearch] = useState(false);
   // MFA enforcement: does the org require MFA, and has this user enrolled a factor?
@@ -146,6 +148,22 @@ function AppShell() {
     if (DEV_AUTH || !firebaseUser) { setHasMfaFactor(true); return; }
     hasEnrolledFactor(firebaseUser).then(setHasMfaFactor).catch(() => setHasMfaFactor(true));
   }, [firebaseUser]);
+
+  // An email-invited user who signs in (Google/password) WITHOUT the invite link:
+  // auto-claim the pending invite matching their verified email so they join with
+  // their invited role instead of being sent to onboarding as an unregistered stranger.
+  useEffect(() => {
+    if (DEV_AUTH) { setInviteClaimAttempted(true); return; }
+    if (!currentUser) { setInviteClaimAttempted(false); return; }
+    if (currentUser.orgId) { setInviteClaimAttempted(true); return; }
+    let cancelled = false;
+    setInviteClaimAttempted(false);
+    api.claimInviteByEmail()
+      .then((r) => { if (!cancelled && r?.claimed) return refreshUser(); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setInviteClaimAttempted(true); });
+    return () => { cancelled = true; };
+  }, [currentUser?.uid, currentUser?.orgId]);
 
   // For signed-in users with no org, check the Pathfinder allowlist before
   // showing the create-org flow. Fail closed on error (show "not provisioned").
@@ -214,7 +232,7 @@ function AppShell() {
   if (!currentUser) return <LoginView />;
 
   if (!DEV_AUTH && (!currentUser.orgId || currentUser.orgId === '')) {
-    if (orgEligible === null) {
+    if (!inviteClaimAttempted || orgEligible === null) {
       return (
         <div className="h-screen flex items-center justify-center">
           <div className="text-gray-400 text-lg">Loading…</div>

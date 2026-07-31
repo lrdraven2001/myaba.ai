@@ -87,7 +87,7 @@ public class OrgService {
         org.put("createdAt",  "2026-01-01T00:00:00Z");
         Map<String, Object> settings = new HashMap<>();
         settings.put("sessionTimeoutMinutes", 15);
-        settings.put("mfaRequired",    false);
+        settings.put("mfaEnforced",    false);
         settings.put("reviewRequired", true);
         settings.put("aclxEnabled",    true);
         settings.put("hipaaMode",      true);
@@ -394,7 +394,7 @@ public class OrgService {
         data.put("setupMode",   itSetup ? "it_setup" : "clinical_director");
         data.put("baaAccepted", false);   // set to true in acceptBaa()
         data.put("createdAt",   now);
-        data.put("settings",    Map.of("sessionTimeoutMinutes", 15, "mfaRequired", false));
+        data.put("settings",    Map.of("sessionTimeoutMinutes", 15, "mfaEnforced", false));
 
         if (devMode) {
             devOrgs.put(orgId, data);
@@ -915,17 +915,22 @@ public class OrgService {
      * Generate a single-use invite token for a given role.
      * Returns the full invite URL.
      */
-    public String generateInviteToken(String orgId, String role, String createdByUid) throws Exception {
+    public String generateInviteToken(String orgId, String role, String createdByUid, String recipientEmail) throws Exception {
         // Accept a built-in role OR a custom role defined in this org's role config.
         if (!permissionService.isKnownRole(role, orgId))
             throw new IllegalArgumentException("Invalid role: " + role);
         String token     = UUID.randomUUID().toString().replace("-", "");
         String expiresAt = Instant.now().plusSeconds(7 * 24 * 3600).toString(); // 7 days
+        // Store the addressee (lowercased) so we can (a) email the link and (b) match a
+        // Google/password sign-in to this invite by verified email. Null = link-only invite.
+        String email = (recipientEmail == null || recipientEmail.isBlank())
+                ? null : recipientEmail.trim().toLowerCase();
 
         Map<String, Object> data = new HashMap<>();
         data.put("token",     token);
         data.put("orgId",     orgId);
         data.put("role",      role);
+        data.put("email",     email);
         data.put("createdBy", createdByUid);
         data.put("expiresAt", expiresAt);
         data.put("usedBy",    null);
@@ -963,6 +968,7 @@ public class OrgService {
                     m.put("id",        t.get("token"));   // token doubles as the id
                     m.put("token",     t.get("token"));
                     m.put("role",      t.get("role"));
+                    m.put("email",     t.get("email"));
                     m.put("createdBy", t.get("createdBy"));
                     m.put("expiresAt", t.get("expiresAt"));
                     m.put("inviteUrl", appBaseUrl + "/invite/" + t.get("token"));
@@ -1024,8 +1030,52 @@ public class OrgService {
         try {
             Map<String, Object> org = getOrg((String) data.get("orgId"));
             result.put("orgName", org.get("name"));
+            // Surface whether this org requires MFA so the invite flow only forces 2FA
+            // enrollment when the org actually enforces it (the MFA switch controls it).
+            Object settings = org.get("settings");
+            boolean mfaEnforced = settings instanceof Map<?, ?> s && Boolean.TRUE.equals(s.get("mfaEnforced"));
+            result.put("mfaEnforced", mfaEnforced);
         } catch (Exception ignored) {}
         return result;
+    }
+
+    /**
+     * Auto-claim a pending invite addressed to the signed-in user's VERIFIED email. Used when
+     * an invited user signs in with Google/password WITHOUT the invite link — they join with
+     * their invited role instead of being treated as unregistered. The email is taken from the
+     * Firebase record and must be verified (never a client-supplied value), so nobody can claim
+     * another person's invite. Returns {@code {claimed, orgId, role}} or {@code null} on no match.
+     */
+    public Map<String, Object> claimInviteByEmail(String uid, String currentOrgId) throws Exception {
+        if (devMode) return null;
+        UserRecord rec = FirebaseAuth.getInstance().getUser(uid);
+        if (rec.getEmail() == null || rec.getEmail().isBlank() || !rec.isEmailVerified()) return null;
+        String email = rec.getEmail().trim().toLowerCase();
+
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collectionGroup("inviteTokens").whereEqualTo("email", email).get().get().getDocuments();
+        String nowIso = TimestampUtil.now();
+        for (var d : docs) {
+            Map<String, Object> data = d.getData();
+            if (data.get("usedBy") != null) continue;                                   // already used
+            if (nowIso.compareTo(String.valueOf(data.get("expiresAt"))) >= 0) continue; // expired
+            String orgId = (String) data.get("orgId");
+            String role  = (String) data.get("role");
+            // Never silently move a user who already belongs to a different org.
+            if (currentOrgId != null && !currentOrgId.isBlank() && !currentOrgId.equals(orgId)) continue;
+
+            String purpose = defaultPurpose(role);
+            setUserClaims(uid, orgId, role, purpose);
+            d.getReference().update(Map.of("usedBy", uid, "usedAt", nowIso)).get();
+            writeMemberRecord(db, orgId, uid, role, purpose);
+            log.info("Auto-claimed email invite: uid={} -> org={} role={}", uid, orgId, role);
+            Map<String, Object> res = new HashMap<>();
+            res.put("claimed", true);
+            res.put("orgId", orgId);
+            res.put("role", role);
+            return res;
+        }
+        return null;
     }
 
     /**

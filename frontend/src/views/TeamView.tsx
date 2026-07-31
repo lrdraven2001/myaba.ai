@@ -66,6 +66,8 @@ export default function TeamView() {
   // Org-defined custom roles (from the Roles & Permissions matrix) — assignable alongside
   // the built-in roles. Practice Administrator stays creator-only, not in this list.
   const [customRoles, setCustomRoles]     = useState<{ key: string; label: string }[]>([]);
+  const [inviteEmailStatus, setInviteEmailStatus] = useState<'idle' | 'sent' | 'error'>('idle');
+  const [inviteEmailErr, setInviteEmailErr]       = useState('');
 
   // Load real members
   useEffect(() => {
@@ -107,6 +109,8 @@ export default function TeamView() {
     setInviteUrl('');
     setInviteError('');
     setInviteCopied(false);
+    setInviteEmailStatus('idle');
+    setInviteEmailErr('');
     setShowInvite(true);
   };
 
@@ -126,9 +130,21 @@ export default function TeamView() {
     setInviteError('');
     setInviteUrl('');
     setInviteCopied(false);
+    setInviteEmailStatus('idle');
+    setInviteEmailErr('');
     try {
-      const { inviteUrl: url } = await api.generateInvite(orgId, inviteRole);
-      setInviteUrl(url);
+      const to = inviteEmail.trim();
+      // When a recipient email is supplied, the backend emails the link server-side.
+      const res = await api.generateInvite(orgId, inviteRole, to || undefined, roleLabelOf(inviteRole));
+      setInviteUrl(res.inviteUrl);
+      if (to) {
+        if (res.emailSent) {
+          setInviteEmailStatus('sent');
+        } else {
+          setInviteEmailStatus('error');
+          setInviteEmailErr(res.emailError || 'Email could not be sent — copy the link and send it manually.');
+        }
+      }
     } catch (e: unknown) {
       setInviteError(e instanceof Error ? e.message : 'Failed to generate invite link');
     } finally {
@@ -148,6 +164,8 @@ export default function TeamView() {
     setInviteUrl('');
     setInviteError('');
     setInviteCopied(false);
+    setInviteEmailStatus('idle');
+    setInviteEmailErr('');
   };
 
   // ── User detail view ──────────────────────────────────────────────────────
@@ -367,14 +385,25 @@ export default function TeamView() {
                       {inviteCopied ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
-                  <button
-                    onClick={handleEmailInvite}
-                    className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-colors"
-                    style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
-                  >
-                    <FontAwesomeIcon icon={faEnvelope} />
-                    {inviteEmail.trim() ? `Email link to ${inviteEmail.trim()}` : 'Open email draft with link'}
-                  </button>
+                  {inviteEmailStatus === 'sent' && (
+                    <p className="mt-2 text-xs font-medium text-green-700 flex items-center gap-1.5">
+                      <FontAwesomeIcon icon={faCheck} /> Invitation emailed to {inviteEmail.trim()}
+                    </p>
+                  )}
+                  {inviteEmailStatus === 'error' && (
+                    <p className="mt-2 text-xs text-amber-700">{inviteEmailErr}</p>
+                  )}
+                  {/* Local mail-client draft — fallback when server email isn't configured. */}
+                  {inviteEmailStatus !== 'sent' && (
+                    <button
+                      onClick={handleEmailInvite}
+                      className="mt-2 w-full px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 border transition-colors"
+                      style={{ borderColor: '#2a5f6f', color: '#2a5f6f', background: 'white' }}
+                    >
+                      <FontAwesomeIcon icon={faEnvelope} />
+                      {inviteEmail.trim() ? `Open email draft to ${inviteEmail.trim()}` : 'Open email draft with link'}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -399,8 +428,10 @@ export default function TeamView() {
                   onMouseEnter={(e) => { if (!inviteGenerating) (e.currentTarget as HTMLButtonElement).style.background = '#1e4a56'; }}
                   onMouseLeave={(e) => { if (!inviteGenerating) (e.currentTarget as HTMLButtonElement).style.background = '#2a5f6f'; }}
                 >
-                  {inviteGenerating ? 'Generating…' : (
-                    <><FontAwesomeIcon icon={faLink} className="text-xs" /> Generate Link</>
+                  {inviteGenerating ? (inviteEmail.trim() ? 'Sending…' : 'Generating…') : (
+                    inviteEmail.trim()
+                      ? <><FontAwesomeIcon icon={faEnvelope} className="text-xs" /> Send Invitation</>
+                      : <><FontAwesomeIcon icon={faLink} className="text-xs" /> Generate Link</>
                   )}
                 </button>
               ) : (

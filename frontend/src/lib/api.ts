@@ -739,11 +739,14 @@ export const api = {
       `/orgs/${orgId}/members`,
     ),
 
-  /** Generate an invite link for a given role. Returns { inviteUrl }. */
-  generateInvite: (orgId: string, role: string) =>
-    request<{ inviteUrl: string }>(`/orgs/${orgId}/invite`, {
+  /**
+   * Generate an invite link. When {@code email} is given the backend also emails the link
+   * (server-side) and reports emailSent / emailError. Returns { inviteUrl, emailSent?, emailError? }.
+   */
+  generateInvite: (orgId: string, role: string, email?: string, roleLabel?: string) =>
+    request<{ inviteUrl: string; emailSent?: boolean; emailError?: string }>(`/orgs/${orgId}/invite`, {
       method: 'POST',
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({ role, email, roleLabel }),
     }),
 
   /** List pending (unclaimed, unexpired) invite links. Admin only. */
@@ -762,13 +765,21 @@ export const api = {
       `/orgs/${orgId}/members/${uid}/activity`,
     ),
 
-  /** Preview an invite link (doesn't consume it). Returns { orgId, orgName, role }. */
+  /** Preview an invite link (doesn't consume it). Returns { orgId, orgName, role, mfaEnforced }. */
   resolveInvite: (token: string) =>
-    request<{ orgId: string; orgName: string; role: string }>(`/invite/${token}`),
+    request<{ orgId: string; orgName: string; role: string; mfaEnforced?: boolean }>(`/invite/${token}`),
 
   /** Claim an invite token and apply role/org claims to the current user. */
   claimInvite: (token: string) =>
     request<{ message: string }>(`/invite/${token}/claim`, { method: 'POST' }),
+
+  /**
+   * Auto-claim a pending invite addressed to the signed-in user's verified email — used when
+   * an email-invited user signs in with Google/password without the invite link. Returns
+   * { claimed, orgId?, role? }.
+   */
+  claimInviteByEmail: () =>
+    request<{ claimed: boolean; orgId?: string; role?: string }>(`/invite/claim-by-email`, { method: 'POST' }),
 
   // ── Federation (enterprise SSO) ───────────────────────────────────────────
 

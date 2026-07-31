@@ -34,13 +34,15 @@ const RETENTION_OPTIONS = [
 export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [timeout, setTimeoutMin] = useState('15');
   const [mfaEnforced, setMfaEnforced] = useState(false);
+  const [mfaSaving, setMfaSaving] = useState(false);
   const [retentionDays, setRetentionDays] = useState('2555');
 
   useEffect(() => {
     if (!orgId) return;
     api.getOrg(orgId).then((o) => {
       setTimeoutMin(String(o.settings?.sessionTimeoutMinutes ?? 15));
-      setMfaEnforced(Boolean(o.settings?.mfaEnforced));
+      // Read mfaEnforced (canonical); fall back to the legacy mfaRequired field for old orgs.
+      setMfaEnforced(Boolean(o.settings?.mfaEnforced ?? o.settings?.mfaRequired));
       setRetentionDays(String(o.settings?.retentionDays ?? 2555));
     }).catch(() => {});
   }, [orgId]);
@@ -57,8 +59,16 @@ export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string;
   };
 
   const toggleMfaEnforced = async (next: boolean) => {
-    setMfaEnforced(next);
-    await api.updateOrgSettings(orgId, { mfaEnforced: next }).catch(() => setMfaEnforced(!next));
+    if (mfaSaving) return;               // guard against double-fire while a save is in flight
+    setMfaSaving(true);
+    setMfaEnforced(next);                // optimistic
+    try {
+      await api.updateOrgSettings(orgId, { mfaEnforced: next });
+    } catch {
+      setMfaEnforced(!next);            // revert to reality on failure
+    } finally {
+      setMfaSaving(false);
+    }
   };
 
   return (
@@ -82,7 +92,7 @@ export default function SecurityIdentityTab({ orgId, isAdmin }: { orgId: string;
               control={
                 <div className="flex items-center gap-2.5">
                   <Badge tone={mfaEnforced ? 'green' : 'neutral'}>{mfaEnforced ? 'Required' : 'Available'}</Badge>
-                  <Toggle checked={mfaEnforced} onChange={toggleMfaEnforced} disabled={!isAdmin} label="Require MFA for all members" />
+                  <Toggle checked={mfaEnforced} onChange={toggleMfaEnforced} disabled={!isAdmin || mfaSaving} label="Require MFA for all members" />
                 </div>
               }
             />

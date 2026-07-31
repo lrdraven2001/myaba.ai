@@ -22,7 +22,7 @@ type Step = 'account' | 'twoFactor' | 'agreements';
 
 interface Props {
   token: string;
-  invitePreview: { orgName: string; role: string } | null;
+  invitePreview: { orgName: string; role: string; mfaEnforced?: boolean } | null;
 }
 
 function StepIndicator({ step }: { step: Step }) {
@@ -110,9 +110,8 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
   useEffect(() => {
     const u = auth.currentUser;
     if (!u) return;
-    if (IS_EMULATOR) {
-      setStep('agreements');
-    } else if (multiFactor(u).enrolledFactors.length > 0) {
+    // Only force 2FA when the org actually requires it (the MFA switch controls this).
+    if (IS_EMULATOR || !invitePreview?.mfaEnforced || multiFactor(u).enrolledFactors.length > 0) {
       setStep('agreements');
     } else {
       // Re-generate the QR (it was never persisted across a reload); if TOTP is
@@ -135,8 +134,8 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(user, { displayName: displayName.trim() });
 
-      if (IS_EMULATOR) {
-        setStep('agreements');
+      if (IS_EMULATOR || !invitePreview?.mfaEnforced) {
+        setStep('agreements'); // org doesn't require MFA → skip 2FA enrollment
       } else {
         await beginTwoFactor(user);
       }

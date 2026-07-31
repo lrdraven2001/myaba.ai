@@ -12,6 +12,24 @@ spring:
       enabled: true
       max-file-size: 25MB
       max-request-size: 26MB
+  # ── Email (invitations) — SMTP via any provider (SendGrid, SES, Mailgun, Gmail).
+  # Leave MAIL_HOST unset → email is DISABLED and invite endpoints report
+  # "not configured" (never a silent no-op). For SendGrid: host=smtp.sendgrid.net,
+  # username=apikey, password=<the API key>.
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+
+# From address / display name for outbound invitation emails.
+app:
+  mail:
+    from:      ${MAIL_FROM:no-reply@myaba.ai}
+    from-name: ${MAIL_FROM_NAME:myABA.ai}
 
 # ── AI: Gemini via Vertex AI ──────────────────────────────────────────────
 # Gemini is the only model provider. It runs on Vertex AI under the project's

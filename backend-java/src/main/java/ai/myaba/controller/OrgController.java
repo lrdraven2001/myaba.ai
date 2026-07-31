@@ -5,6 +5,7 @@ import ai.myaba.model.dto.OrgRequest;
 import ai.myaba.model.dto.UserRole;
 import ai.myaba.security.Capability;
 import ai.myaba.security.Permissions;
+import ai.myaba.service.EmailService;
 import ai.myaba.service.OrgService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -34,6 +36,7 @@ import java.util.NoSuchElementException;
 public class OrgController {
 
     private final OrgService orgService;
+    private final EmailService emailService;
 
     // ── Create org ────────────────────────────────────────────────────────────
 
@@ -506,8 +509,10 @@ public class OrgController {
 
     /**
      * POST /api/orgs/{orgId}/invite
-     * Body: { role: string }
-     * Returns: { inviteUrl: string }
+     * Body: { role: string, email?: string, roleLabel?: string }
+     * Returns: { inviteUrl, emailSent?, emailError? }. When {@code email} is present the
+     * link is emailed server-side (fail-graceful — reports emailSent=false + emailError
+     * rather than failing the whole request, so the admin can still copy the link).
      * ORG_ADMIN or ORG_SUPER_ADMIN only.
      */
     @PostMapping("/api/orgs/{orgId}/invite")
@@ -525,16 +530,59 @@ public class OrgController {
         if (role == null || role.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "role is required"));
         }
+        String email     = body.get("email");      // optional — email the link when present
+        String roleLabel = body.get("roleLabel");   // optional — human label for the email body
 
         try {
-            String inviteUrl = orgService.generateInviteToken(orgId, role, user.getUid());
-            return ResponseEntity.ok(Map.of("inviteUrl", inviteUrl));
+            String inviteUrl = orgService.generateInviteToken(orgId, role, user.getUid(), email);
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("inviteUrl", inviteUrl);
+
+            if (email != null && !email.isBlank()) {
+                try {
+                    String orgName = null;
+                    try { orgName = String.valueOf(orgService.getOrg(orgId).get("name")); } catch (Exception ignore) {}
+                    emailService.sendInviteEmail(email.trim(), orgName,
+                            roleLabel != null ? roleLabel : role, inviteUrl);
+                    resp.put("emailSent", true);
+                } catch (IllegalStateException notConfigured) {
+                    resp.put("emailSent", false);
+                    resp.put("emailError", notConfigured.getMessage());
+                } catch (Exception mailEx) {
+                    log.warn("Invite link generated but email send failed for org {}: {}", orgId, mailEx.getMessage());
+                    resp.put("emailSent", false);
+                    resp.put("emailError", "Could not send the email — copy the link and send it manually.");
+                }
+            }
+            return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to generate invite for org {}: {}", orgId, e.getMessage());
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "Failed to generate invite link"));
+        }
+    }
+
+    // ── Claim a pending invite by verified email (Google / password sign-in) ───
+    /**
+     * POST /api/invite/claim-by-email
+     * When an invited user signs in WITHOUT the invite link, match a pending invite to their
+     * VERIFIED email and claim it, so they're recognized as a member with their invited role
+     * rather than an unregistered stranger. Authenticated; the email is read from the Firebase
+     * record server-side (never client-supplied). Returns { claimed, orgId?, role? }.
+     */
+    @PostMapping("/api/invite/claim-by-email")
+    public ResponseEntity<?> claimInviteByEmail(@AuthenticationPrincipal AppUser user) {
+        if (user == null || user.getUid() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        try {
+            Map<String, Object> res = orgService.claimInviteByEmail(user.getUid(), user.getOrgId());
+            return ResponseEntity.ok(res != null ? res : Map.of("claimed", false));
+        } catch (Exception e) {
+            log.error("claim-by-email failed for {}: {}", user.getUid(), e.getMessage());
+            return ResponseEntity.ok(Map.of("claimed", false)); // fail-graceful → onboarding handles it
         }
     }
 
