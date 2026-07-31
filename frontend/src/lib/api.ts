@@ -607,6 +607,10 @@ export const api = {
   /** Get org metadata. */
   getOrg: (orgId: string) => request<Org>(`/orgs/${orgId}`),
 
+  /** The current user's resolved capabilities (matrix + custom roles) for UI gating. */
+  getMyPermissions: () =>
+    request<{ capabilities: string[]; phiAccess: boolean; levels: Record<string, string> }>(`/me/permissions`),
+
   /** Per-org role configuration: permission-matrix overrides, custom roles, IdP role mappings. */
   getRoleConfig: (orgId: string) =>
     request<RoleConfig>(`/orgs/${orgId}/role-config`),

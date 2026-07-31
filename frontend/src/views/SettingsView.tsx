@@ -8,6 +8,7 @@ import {
   faUpload, faExclamationTriangle, faTag,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { api } from '../lib/api';
 import OrganizationTab from './settings/OrganizationTab';
 import RolesPermissionsTab from './settings/RolesPermissionsTab';
@@ -32,7 +33,8 @@ export default function SettingsView() {
   const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('org');
 
-  const isAdmin   = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can }   = usePermissions();
+  const isAdmin   = can('ADMIN_MANAGE');
   const orgId     = currentUser?.orgId ?? '';
 
   return (

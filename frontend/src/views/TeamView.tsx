@@ -7,6 +7,7 @@ import {
   faLink, faCheck, faCopy, faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { api } from '../lib/api';
 import { ALL_ROLE_LABELS as ROLE_LABELS, ASSIGNABLE_ROLES, canSupervise } from '../types';
 
@@ -47,7 +48,8 @@ function toInitials(name: string | undefined | null) {
 
 export default function TeamView() {
   const { currentUser } = useAuth();
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
   const orgId   = currentUser?.orgId ?? '';
 
   const [members, setMembers]             = useState<TeamMember[]>([]);

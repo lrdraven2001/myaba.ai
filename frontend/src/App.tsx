@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch, faBars } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { usePermissions } from './hooks/usePermissions';
 import IdleTimeout from './components/IdleTimeout';
 import ProfileModal from './components/ProfileModal';
 import NotificationBell from './components/NotificationBell';
@@ -170,7 +171,8 @@ function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const isAdmin = currentUser?.role === 'ORG_SUPER_ADMIN' || currentUser?.role === 'CLINICAL_DIRECTOR';
+  const { can } = usePermissions();
+  const isAdmin = can('ADMIN_MANAGE');
 
   const handleNavigateToChat = (chatId: string) => {
     setPendingChatId(chatId);

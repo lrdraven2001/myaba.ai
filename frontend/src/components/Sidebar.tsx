@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import { isClinicalRole, isAdminRole } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 import type { View } from '../App';
 
 interface SidebarProps {
@@ -35,8 +36,10 @@ export default function Sidebar({ activeView, onViewChange, mobileOpen = false, 
   const { currentUser } = useAuth();
   const [orgName, setOrgName] = useState('');
 
-  const isAdmin    = isAdminRole(currentUser?.role ?? '');
-  const isClinical = isClinicalRole(currentUser?.role ?? '');
+  const { can, phiAccess } = usePermissions();
+  const isAdmin    = can('ADMIN_MANAGE');
+  // Review nav is for clinical/PHI users + admins; phiAccess == "not restricted General Staff".
+  const isClinical = phiAccess;
 
   // Load org name
   useEffect(() => {

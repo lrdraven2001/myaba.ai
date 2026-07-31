@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle, faArrowLeft } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePermissions } from '../hooks/usePermissions';
 import { useAuth } from '../contexts/AuthContext';
 import type { AttachedFile } from '../lib/fakeData';
 import type { Chat, ChatMessage } from '../types';
@@ -185,8 +186,9 @@ interface ChatViewProps {
 
 export default function ChatView({ initialChatId, initialClientId, baaAccepted = true }: ChatViewProps = {}) {
   const { currentUser } = useAuth();
-  const isGeneralChatOnly = canUseGeneralChat(currentUser?.role ?? 'GENERAL_STAFF');
-  const userHasPhiAccess  = currentUser ? hasPhiAccess(currentUser) : false;
+  const { can, phiAccess } = usePermissions();
+  const isGeneralChatOnly = can('AI_GENERAL_CHAT');
+  const userHasPhiAccess  = phiAccess;
   // Clinical chat is locked when BAA hasn't been signed, even for clinical users.
   // General chat (non-PHI) is always available regardless of BAA status.
   const clinicalChatLocked = !baaAccepted && !isGeneralChatOnly;
