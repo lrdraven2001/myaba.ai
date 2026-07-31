@@ -155,6 +155,23 @@ public class OrgService {
     }
 
     /**
+     * Billable seat count for an org = number of ACTIVE members (min 1). Drives the
+     * per-seat Stripe checkout quantity and the per-seat usage cap. A member counts
+     * as active unless its {@code active} field is explicitly false.
+     */
+    public int seatCount(String orgId) {
+        try {
+            long active = getOrgMembers(orgId).stream()
+                    .filter(m -> !Boolean.FALSE.equals(m.get("active")))
+                    .count();
+            return (int) Math.max(1L, active);
+        } catch (Exception e) {
+            log.warn("seatCount failed for org {} — defaulting to 1 seat: {}", orgId, e.getMessage());
+            return 1;
+        }
+    }
+
+    /**
      * Assigns or clears the supervisor for a member (RBT → Clinical Supervisor relationship).
      * Dev mode: updates the in-memory member record.
      * Production: updates the Firebase custom claim {@code supervisorId} on the user.

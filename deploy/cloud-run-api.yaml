@@ -48,6 +48,16 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
 
+            # ── Cold-start trim (free) ───────────────────────────────────────
+            # Stop JIT at C1 (skip the C2 optimizing compiler) so the JVM spends
+            # less CPU compiling during boot → faster time-to-ready on a cold
+            # container. Steady-state impact is negligible here: the hot paths
+            # (Vertex/Gemini, Firestore, ACLX, extraction) are network/IO-bound,
+            # not CPU-JIT-bound. Remove this value to restore full C2 if a future
+            # CPU-heavy in-process workload needs peak throughput.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:TieredStopAtLevel=1"
+
             # ── AI: tiered Gemini on Vertex (ADC = runtime service account) ──
             - name: VERTEX_PROJECT_ID
               value: "myapaai"
@@ -111,6 +121,42 @@ spec:
             #    which would wipe anything not in this file. ─────────────────────
             - name: PLATFORM_ADMIN_EMAILS
               value: "chris@cbhunt.net"
+
+            # ── Stripe subscription billing ─────────────────────────────────
+            # ⚠ Create BOTH secrets in Secret Manager BEFORE pushing this file —
+            #   a secretKeyRef to a missing secret makes `services replace` FAIL:
+            #     printf '%s' 'sk_live_…' | gcloud secrets create stripe-secret-key     --data-file=- --project myapaai
+            #     printf '%s' 'whsec_…'   | gcloud secrets create stripe-webhook-secret --data-file=- --project myapaai
+            #   then grant the runtime SA secretAccessor on each (see deploy notes).
+            # Until STRIPE_SECRET_KEY resolves, BillingService stays DISABLED and
+            # the app runs normally. Prices are non-secret Stripe Price IDs from
+            # Product catalog (monthly recurring); enterprise = contact-sales (unset).
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-secret-key
+                  key: latest
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-webhook-secret
+                  key: latest
+            - name: STRIPE_PRICE_SOLO
+              value: "price_1Tz6VBD25u0E4OT7DnY5nCBR"
+            - name: STRIPE_PRICE_TEAM
+              value: "price_1Tz7G4D25u0E4OT7fHMGIJM8"
+
+            # ── Plan usage caps (monthly AI requests; -1 = unlimited) ────────
+            # Solo: flat $50/mo, 200 req/mo. Team: $35/seat — TEAM IS PER-SEAT:
+            # this value is the per-seat cap, and the effective org ceiling is
+            # 500 × paid seats (UsageService scales it from the Stripe quantity).
+            - name: USAGE_LIMIT_SOLO
+              value: "200"
+            - name: USAGE_LIMIT_TEAM
+              value: "500"
+            # Checkout/portal return URLs default to https://app.myaba.ai/settings?tab=billing
+            # (application.yml). Add STRIPE_CHECKOUT_SUCCESS_URL / _CANCEL_URL /
+            # STRIPE_PORTAL_RETURN_URL here only to override those defaults.
 
             # NOTE: FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST are
             # intentionally ABSENT — their presence would route to the emulator.

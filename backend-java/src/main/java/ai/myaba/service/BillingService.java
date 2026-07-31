@@ -165,6 +165,12 @@ public class BillingService {
         }
         String customerId = getOrCreateCustomer(orgId, billingEmail);
 
+        // Per-seat plans (Team) bill quantity = the org's active member count; flat
+        // plans (Solo) bill a single unit. The subscription quantity IS the paid
+        // seat count — the webhook syncs it back to the org doc, where it also
+        // drives the per-seat usage cap (UsageService).
+        long quantity = isPerSeat(plan) ? orgService.seatCount(orgId) : 1L;
+
         com.stripe.param.checkout.SessionCreateParams params =
                 com.stripe.param.checkout.SessionCreateParams.builder()
                         .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.SUBSCRIPTION)
@@ -173,7 +179,7 @@ public class BillingService {
                         .setCancelUrl(orDefault(checkoutCancelUrl, "https://app.myaba.ai/settings?tab=billing"))
                         .setClientReferenceId(orgId)
                         .addLineItem(com.stripe.param.checkout.SessionCreateParams.LineItem.builder()
-                                .setPrice(priceId).setQuantity(1L).build())
+                                .setPrice(priceId).setQuantity(quantity).build())
                         // Stamp orgId on the subscription so subscription.* webhooks resolve the tenant.
                         .setSubscriptionData(com.stripe.param.checkout.SessionCreateParams.SubscriptionData.builder()
                                 .putMetadata("orgId", orgId).build())
@@ -333,6 +339,10 @@ public class BillingService {
         Long periodEnd = subscriptionPeriodEnd(sub);
         if (periodEnd != null) updates.put("currentPeriodEnd", periodEnd);
 
+        // Paid seat count (per-seat plans) → drives the per-seat usage cap.
+        Long seats = subscriptionSeats(sub);
+        if (seats != null) updates.put("seats", seats);
+
         // Keep the plan string in sync — Stripe is source of truth for paid status.
         String priceId = firstPriceId(sub);
         String planFromPrice = planForPriceId(priceId);
@@ -364,6 +374,24 @@ public class BillingService {
             }
         } catch (Exception e) {
             log.debug("firstPriceId failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /** True for plans billed per seat (Stripe quantity = seats); false for flat plans. */
+    private boolean isPerSeat(String plan) {
+        return "team".equalsIgnoreCase(plan);
+    }
+
+    /** Paid seat count from the subscription's first item quantity, or null. */
+    private Long subscriptionSeats(Subscription sub) {
+        try {
+            if (sub != null && sub.getItems() != null && sub.getItems().getData() != null
+                    && !sub.getItems().getData().isEmpty()) {
+                return sub.getItems().getData().get(0).getQuantity();
+            }
+        } catch (Exception e) {
+            log.debug("subscriptionSeats failed: {}", e.getMessage());
         }
         return null;
     }

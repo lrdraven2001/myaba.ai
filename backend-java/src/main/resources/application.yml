@@ -156,7 +156,9 @@ usage:
     # their existing plan behaviour unchanged.
     free:       ${USAGE_LIMIT_FREE:20}
     solo:       ${USAGE_LIMIT_SOLO:200}
-    team:       ${USAGE_LIMIT_TEAM:2000}
+    # Team is billed per seat → this is the PER-SEAT cap; the effective org
+    # ceiling is team × paid seats (e.g. 500 × 5 = 2,500 for a 5-seat team).
+    team:       ${USAGE_LIMIT_TEAM:500}
     enterprise: ${USAGE_LIMIT_ENTERPRISE:-1}
 
 # ── EHR Integrations ──────────────────────────────────────────────────────

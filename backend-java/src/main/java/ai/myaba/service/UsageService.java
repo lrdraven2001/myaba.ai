@@ -58,8 +58,12 @@ public class UsageService {
     @Value("${usage.limits.solo:200}")
     private int soloLimit;
 
-    /** Monthly request limit for Team plan. */
-    @Value("${usage.limits.team:2000}")
+    /**
+     * Monthly request limit for the Team plan, <b>per seat</b>. The effective org
+     * cap is {@code teamLimit × paid seats} (see {@link #scaleForSeats}) — Team is
+     * billed per seat, so a 5-seat team gets 5× this, a 10-seat team 10×.
+     */
+    @Value("${usage.limits.team:500}")
     private int teamLimit;
 
     /**
@@ -136,8 +140,9 @@ public class UsageService {
             }
             int    planLimit  = limitForPlan(plan);
 
+            // Team is billed per seat → cap scales with paid seats (default 1).
+            int effectiveLimit = scaleForSeats(plan, planLimit, orgSnap);
             // Enterprise orgs may have a custom spending cap set by their admin
-            int effectiveLimit = planLimit;
             if ("enterprise".equalsIgnoreCase(plan)) {
                 Long override = orgSnap.getLong("usageLimitOverride");
                 if (override != null && override > 0) {
@@ -246,9 +251,10 @@ public class UsageService {
             int    planLimit   = limitForPlan(plan);
             boolean isEnterprise = "enterprise".equalsIgnoreCase(plan);
 
+            // Team cap scales with paid seats (see scaleForSeats).
+            int effectiveLimit = scaleForSeats(plan, planLimit, orgSnap);
             // Enterprise spending cap — admin-configurable via PUT /api/usage/limit
             Long customLimitOverride = orgSnap.exists() ? orgSnap.getLong("usageLimitOverride") : null;
-            int effectiveLimit = planLimit;
             if (isEnterprise && customLimitOverride != null && customLimitOverride > 0) {
                 effectiveLimit = customLimitOverride.intValue();
             }
@@ -385,6 +391,21 @@ public class UsageService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Effective monthly cap for a plan. Team is billed per seat, so its cap scales
+     * with paid seats — the {@code seats} field on the org doc (synced from the
+     * Stripe subscription quantity by {@link BillingService}), defaulting to 1 when
+     * unset. Unlimited plans ({@code planLimit < 0}) and non-Team plans are returned
+     * unchanged.
+     */
+    private int scaleForSeats(String plan, int planLimit,
+                              com.google.cloud.firestore.DocumentSnapshot orgSnap) {
+        if (planLimit < 0 || !"team".equalsIgnoreCase(plan)) return planLimit;
+        Long seats = orgSnap != null ? orgSnap.getLong("seats") : null;
+        long s = (seats != null && seats > 0) ? seats : 1L;
+        return (int) Math.min(Integer.MAX_VALUE, (long) planLimit * s);
+    }
 
     /** Current billing period as {@code YYYY-MM} in UTC. */
     private String currentPeriod() {
