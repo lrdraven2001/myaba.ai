@@ -2,10 +2,12 @@ package ai.myaba.security;
 
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.UserRole;
+import ai.myaba.service.TrustedDeviceService;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -59,10 +61,15 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     /** Injected as nullable — will be null when no Firebase credentials are configured. */
     private final com.google.firebase.FirebaseApp firebaseApp;
 
+    /** Trusted-device ("remember this device") verifier — relaxes the cap for known devices. */
+    private final TrustedDeviceService trustedDeviceService;
+
     public FirebaseAuthFilter(
             @org.springframework.beans.factory.annotation.Autowired(required = false)
-            com.google.firebase.FirebaseApp firebaseApp) {
+            com.google.firebase.FirebaseApp firebaseApp,
+            TrustedDeviceService trustedDeviceService) {
         this.firebaseApp = firebaseApp;
+        this.trustedDeviceService = trustedDeviceService;
     }
 
     private static final AppUser DEV_USER = AppUser.builder()
@@ -129,13 +136,25 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 long authTime = authTimeClaim instanceof Number n ? n.longValue() : 0L;
                 long ageSeconds = (System.currentTimeMillis() / 1000L) - authTime;
                 if (authTime > 0 && ageSeconds > (long) maxSessionHours * 3600L) {
-                    log.info("Session cap exceeded (age {}h > {}h) — forcing re-auth for uid={}",
-                            ageSeconds / 3600, maxSessionHours, decoded.getUid());
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType("application/json");
-                    response.getWriter().write(
-                            "{\"error\":\"Session expired. Please sign in again.\",\"code\":\"SESSION_EXPIRED\"}");
-                    return;
+                    // Device affinity: a device that previously completed a full MFA challenge
+                    // and holds a valid, unrevoked trusted-device token may continue past the
+                    // absolute cap (up to the trusted-device TTL) WITHOUT a fresh sign-in —
+                    // which would otherwise re-trigger the Firebase second factor. This never
+                    // weakens MFA (the factor was already proven) nor the inactivity logoff.
+                    boolean trusted = trustedDeviceService != null
+                            && trustedDeviceService.verify(
+                                    decoded.getUid(), readSessionCookie(request), request.getHeader("User-Agent"));
+                    if (!trusted) {
+                        log.info("Session cap exceeded (age {}h > {}h) — forcing re-auth for uid={}",
+                                ageSeconds / 3600, maxSessionHours, decoded.getUid());
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json");
+                        response.getWriter().write(
+                                "{\"error\":\"Session expired. Please sign in again.\",\"code\":\"SESSION_EXPIRED\"}");
+                        return;
+                    }
+                    log.debug("Session cap exceeded (age {}h) but device is trusted — allowing uid={}",
+                            ageSeconds / 3600, decoded.getUid());
                 }
             }
 
@@ -168,6 +187,16 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
         );
         SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    /** The trusted-device token rides in the __session cookie (the only one Hosting forwards). */
+    private static String readSessionCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) return null;
+        for (Cookie c : cookies) {
+            if ("__session".equals(c.getName())) return c.getValue();
+        }
+        return null;
     }
 
     private String str(Map<String, Object> claims, String key, String defaultValue) {

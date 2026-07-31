@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faLock, faEnvelope, faFlask, faUser, faEnvelopeOpen } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../lib/api';
 
 // Google "G" logo as a clean inline SVG — no extra package dependency
 function GoogleLogo() {
@@ -25,6 +26,7 @@ export default function LoginView({ invitePreview }: Props = {}) {
   const [mfaCode, setMfaCode]   = useState('');
   const [mfaError, setMfaError] = useState('');
   const [mfaBusy, setMfaBusy]   = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [mode, setMode]             = useState<'signin' | 'register'>(hasInvite ? 'register' : 'signin');
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
@@ -97,6 +99,12 @@ export default function LoginView({ invitePreview }: Props = {}) {
     setMfaBusy(true);
     try {
       await resolveMfaSignIn(mfaCode);
+      // The full second factor just completed. If the user opted in, register this
+      // device as trusted so the server can extend the session cap for it (best-effort;
+      // no-op when the server feature is disabled or policy forbids it).
+      if (rememberDevice) {
+        try { await api.trustedDevices.register(); } catch { /* non-fatal */ }
+      }
       // success — onAuthStateChanged signs the user in and unmounts LoginView
     } catch {
       setMfaError('Invalid code. Wait for the next code and try again.');
@@ -135,6 +143,10 @@ export default function LoginView({ invitePreview }: Props = {}) {
               {mfaError && (
                 <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: '#FFF1F1', border: '1px solid #FFC9C9', color: '#C0392B', fontSize: 13 }}>{mfaError}</div>
               )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: '#4A5A66', cursor: 'pointer', userSelect: 'none' }}>
+                <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} style={{ width: 15, height: 15, accentColor: '#1E88FF', cursor: 'pointer' }} />
+                Trust this device for 30 days
+              </label>
               <button type="submit" disabled={mfaBusy} style={{ width: '100%', marginTop: 14, padding: '12px 0', background: mfaBusy ? '#A8B4BF' : 'linear-gradient(135deg,#1E88FF,#1565C0)', border: 'none', borderRadius: 10, color: 'white', fontSize: 14, fontWeight: 700, cursor: mfaBusy ? 'not-allowed' : 'pointer' }}>
                 {mfaBusy ? 'Verifying…' : 'Verify & Sign In'}
               </button>

@@ -1138,4 +1138,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ query }),
     }),
+
+  // ── Trusted devices ("remember this device") ─────────────────────────────
+  // The token is set/sent as an httpOnly __session cookie by the server; the
+  // browser handles it transparently on same-origin /api calls.
+  trustedDevices: {
+    /** Trust the current device. Call ONLY right after a full MFA challenge completed. */
+    register: () =>
+      request<{ trusted: boolean; reason?: string; deviceId?: string; expiresAt?: number }>(
+        '/auth/trusted-devices',
+        { method: 'POST' },
+      ),
+    /** List this user's active trusted devices (the calling one is flagged `current`). */
+    list: () =>
+      request<Array<{
+        deviceId: string; label: string; createdAtEpochMs: number;
+        lastSeenAtEpochMs: number; expiresAtEpochMs: number; current: boolean;
+      }>>('/auth/trusted-devices'),
+    /** Revoke a single trusted device. */
+    revoke: (deviceId: string) =>
+      request<void>(`/auth/trusted-devices/${deviceId}`, { method: 'DELETE' }),
+    /** Revoke all trusted devices (e.g. after disabling MFA). */
+    revokeAll: () =>
+      request<void>('/auth/trusted-devices', { method: 'DELETE' }),
+  },
 };

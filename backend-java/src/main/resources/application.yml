@@ -165,6 +165,18 @@ stripe:
 # Server-enforced ceiling that complements the client-side inactivity auto-logoff.
 auth:
   max-session-hours: ${AUTH_MAX_SESSION_HOURS:12}
+  # ── Trusted devices ("remember this device") ────────────────────────────
+  # After a user completes a full MFA challenge on a device, that device can be
+  # issued a signed, revocable trusted-device token. While valid, the server lets
+  # the still-live Firebase session continue PAST the absolute session cap (up to
+  # `days`) instead of forcing a fresh sign-in that would re-trigger the second
+  # factor. It NEVER bypasses the Firebase second factor itself, and never affects
+  # the client inactivity auto-logoff. FAIL-SAFE OFF: the feature is disabled
+  # unless `secret` is set. Generate one with: openssl rand -base64 48
+  trusted-device:
+    secret:              ${TRUSTED_DEVICE_SECRET:}
+    days:                ${TRUSTED_DEVICE_DAYS:30}
+    mint-window-seconds: ${TRUSTED_DEVICE_MINT_WINDOW_SECONDS:300}
 
 # ── CORS ──────────────────────────────────────────────────────────────────
 cors:

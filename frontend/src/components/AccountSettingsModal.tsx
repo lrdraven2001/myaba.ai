@@ -225,6 +225,24 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
   }, [firebaseUser]);
   useEffect(() => { loadFactors(); }, [loadFactors]);
 
+  // Trusted devices ("remember this device") — see TrustedDeviceService (backend).
+  const [devices, setDevices] = useState<Array<{
+    deviceId: string; label: string; lastSeenAtEpochMs: number; expiresAtEpochMs: number; current: boolean;
+  }>>([]);
+  const loadDevices = useCallback(async () => {
+    try { setDevices(await api.trustedDevices.list()); } catch { setDevices([]); }
+  }, []);
+  useEffect(() => { loadDevices(); }, [loadDevices]);
+
+  const forgetDevice = async (id: string) => {
+    try { await api.trustedDevices.revoke(id); await loadDevices(); flash('Device removed — it will need a full sign-in (with 2FA) next time.'); }
+    catch (e: any) { flash(e?.message ?? 'Could not remove device.', true); }
+  };
+  const forgetAllDevices = async () => {
+    try { await api.trustedDevices.revokeAll(); await loadDevices(); flash('All trusted devices removed.'); }
+    catch (e: any) { flash(e?.message ?? 'Could not remove devices.', true); }
+  };
+
   const startTotp = async () => {
     setBusy(true);
     try {
@@ -252,6 +270,10 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
     try {
       await runSensitive(async () => { const { multiFactor } = await import('firebase/auth'); await multiFactor(firebaseUser).unenroll(f); });
       await loadFactors();
+      // Disabling MFA invalidates any trusted devices — the premise (a completed
+      // second factor) no longer holds. Best-effort; the server also refuses to mint
+      // without a second factor going forward.
+      try { await api.trustedDevices.revokeAll(); await loadDevices(); } catch { /* non-fatal */ }
       flash('Two-factor method removed.');
     } catch (e: any) { flash(e?.message ?? 'Could not remove.', true); }
   };
@@ -288,6 +310,28 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {devices.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Trusted devices</p>
+            <button onClick={forgetAllDevices} className="text-xs text-red-400 hover:text-red-600 font-medium">Forget all</button>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">These devices can keep an active session past the security cap without re-entering a code. Remove any you don&apos;t recognize.</p>
+          {devices.map((d) => (
+            <div key={d.deviceId} className="flex items-center justify-between py-1.5">
+              <span className="flex items-center gap-2 text-sm text-gray-700">
+                <FontAwesomeIcon icon={faMobileScreen} style={{ fontSize: 13, color: '#64748B' }} />
+                {d.label}
+                {d.current && <span className="text-xs text-emerald-600">· this device</span>}
+              </span>
+              <button onClick={() => forgetDevice(d.deviceId)} className="text-red-400 hover:text-red-600" title="Remove device">
+                <FontAwesomeIcon icon={faTrash} style={{ fontSize: 12 }} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </Section>
