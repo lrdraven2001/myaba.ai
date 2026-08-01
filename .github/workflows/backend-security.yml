@@ -43,7 +43,9 @@ concurrency:
 jobs:
   dependency-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The first keyless NVD sync is slow (throttled); the cache makes later runs
+    # fast. Adding the NVD_API_KEY secret is the real fix for sync speed.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v5
