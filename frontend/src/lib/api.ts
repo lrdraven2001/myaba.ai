@@ -487,6 +487,16 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ role }) },
     ),
 
+  /**
+   * Set a member's AI seat tier ("full" | "lite"). Admin-only. A lite seat is Flash-only and
+   * can't generate documents — orthogonal to the clinical role. See docs/ai-tiers.md.
+   */
+  changeMemberAiTier: (orgId: string, uid: string, tier: 'full' | 'lite') =>
+    request<{ uid: string; aiTier: string }>(
+      `/orgs/${orgId}/members/${uid}/ai-tier`,
+      { method: 'PUT', body: JSON.stringify({ tier }) },
+    ),
+
   /** List a project's members (owner + explicit members) with roles. */
   getProjectMembers: (projectId: string) =>
     request<{ id: string; role: string; name?: string; email?: string }[]>(`/projects/${projectId}/members`),

@@ -222,6 +222,13 @@ public class GenerateController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Document generation requires a clinical role"));
         }
+        // AI seat tier: document generation runs on the reasoning (Pro) model. A lite seat is
+        // Flash-only, so it's blocked here (never downgraded — a Flash clinical doc is poor).
+        if (!user.aiTier().allowsDocumentGeneration()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error", "Document generation needs a full AI seat — ask an admin to upgrade yours.",
+                    "code",  "LITE_TIER_NO_DOC_GEN"));
+        }
         // Gate: BAA must be signed before any PHI/clinical operations
         if (!orgService.isBaaAccepted(user.getOrgId())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -720,7 +727,9 @@ public class GenerateController {
         // higher-reasoning model. Plain, unattached chat stays on the fast tier.
         boolean clientAttached  = req.getClientId() != null && !req.getClientId().isBlank();
         boolean projectAttached = chatHasProject(user, req.getChatId());
-        boolean reasoning = clientAttached || projectAttached;
+        // AI seat tier: a lite seat is Flash-only, so it's never routed to the reasoning
+        // model — the chat is simply answered on the fast tier (downgraded, not blocked).
+        boolean reasoning = (clientAttached || projectAttached) && user.aiTier().allowsReasoningModel();
         List<ai.myaba.model.dto.AclxRequest.Source> toolSources = new ArrayList<>();
         String rawReply;
         try {

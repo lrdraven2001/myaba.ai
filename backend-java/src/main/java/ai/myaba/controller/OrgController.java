@@ -339,6 +339,34 @@ public class OrgController {
         }
     }
 
+    /**
+     * PUT /api/orgs/{orgId}/members/{uid}/ai-tier  Body: { tier: "full" | "lite" }
+     * Set a member's AI seat tier (orthogonal to role — see docs/ai-tiers.md). A lite seat is
+     * Flash-only and can't generate documents. ORG_ADMIN+ only.
+     */
+    @PutMapping("/api/orgs/{orgId}/members/{uid}/ai-tier")
+    public ResponseEntity<?> changeMemberAiTier(
+            @PathVariable String orgId,
+            @PathVariable String uid,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        try {
+            return ResponseEntity.ok(orgService.changeMemberAiTier(orgId, uid, body == null ? null : body.get("tier")));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Member not found"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("changeMemberAiTier failed org={} uid={}: {}", orgId, uid, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to change AI tier"));
+        }
+    }
+
     // ── Current user's own profile ───────────────────────────────────────────
 
     /** PUT /api/me/profile — update the signed-in user's display name (and sync email). */

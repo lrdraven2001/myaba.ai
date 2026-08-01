@@ -171,6 +171,7 @@ public class OrgService {
                 m.put("phiAccess",        false);
                 m.put("canManageClients", false);
             }
+            m.putIfAbsent("aiTier", "full"); // AI seat tier; pre-feature members default to full
         }
         return members;
     }
@@ -1302,6 +1303,7 @@ public class OrgService {
             member.put("role",        role);
             member.put("purpose",     purpose);
             member.put("active",      true);
+            member.put("aiTier",      "full");   // AI seat tier (full | lite); default full
             member.put("joinedAt",    TimestampUtil.now());
 
             db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
@@ -1350,11 +1352,61 @@ public class OrgService {
             // instead of knowing every possible role name (critical for custom org roles).
             // Resolver-derived so custom roles (and matrix overrides) get correct PHI access.
             claims.put("phiAccess", permissionService.resolveForRole(role, orgId).phiAccess());
+            // Preserve the AI seat tier across role re-mints (setCustomUserClaims REPLACES all
+            // claims, so a role change must not wipe aiTier). Default "full".
+            claims.put("aiTier", readExistingAiTier(uid));
             FirebaseAuth.getInstance().setCustomUserClaims(uid, claims);
         } catch (Exception e) {
             log.error("Failed to set custom claims for user {}: {}", uid, e.getMessage());
             throw new RuntimeException("Failed to update user role", e);
         }
+    }
+
+    /** The user's current aiTier custom claim, or "full" when absent/unreadable. */
+    private String readExistingAiTier(String uid) {
+        try {
+            Object t = FirebaseAuth.getInstance().getUser(uid).getCustomClaims().get("aiTier");
+            return t != null && "lite".equalsIgnoreCase(t.toString().trim()) ? "lite" : "full";
+        } catch (Exception e) {
+            return "full";
+        }
+    }
+
+    /**
+     * (AI tiers) Admin action: set a member's AI seat tier ("full" | "lite"). Re-mints just the
+     * aiTier claim (preserving role/orgId/phiAccess) and updates the member record. Orthogonal to
+     * role — see docs/ai-tiers.md. Effective on the member's next token refresh.
+     *
+     * @throws IllegalArgumentException invalid tier / blank uid
+     * @throws NoSuchElementException   member not found
+     */
+    public Map<String, Object> changeMemberAiTier(String orgId, String uid, String tier) throws Exception {
+        if (uid == null || uid.isBlank()) throw new IllegalArgumentException("Member uid is required");
+        String norm = tier == null ? "" : tier.trim().toLowerCase();
+        if (!norm.equals("full") && !norm.equals("lite"))
+            throw new IllegalArgumentException("tier must be 'full' or 'lite'");
+
+        if (devMode) {
+            boolean found = false;
+            for (Map<String, Object> m : devOrgMembers.getOrDefault(orgId, new ArrayList<>())) {
+                if (uid.equals(m.getOrDefault("id", m.get("uid")))) { m.put("aiTier", norm); found = true; }
+            }
+            if (!found) throw new NoSuchElementException("Member not found in this organization");
+            return Map.of("uid", uid, "aiTier", norm);
+        }
+
+        Firestore db = FirestoreClient.getFirestore();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.MEMBERS).document(uid);
+        if (!ref.get().get().exists()) throw new NoSuchElementException("Member not found in this organization");
+
+        // Re-mint claims preserving everything else; setCustomUserClaims replaces the whole map.
+        Map<String, Object> claims = new HashMap<>(FirebaseAuth.getInstance().getUser(uid).getCustomClaims());
+        claims.put("aiTier", norm);
+        FirebaseAuth.getInstance().setCustomUserClaims(uid, claims);
+        ref.update(Map.of("aiTier", norm, "updatedAt", TimestampUtil.now())).get();
+        log.info("Changed member AI tier: org={} uid={} -> {}", orgId, uid, norm);
+        return Map.of("uid", uid, "aiTier", norm);
     }
 
     private String defaultPurpose(String role) {

@@ -43,9 +43,19 @@ public class AppUser {
      */
     private Boolean phiAccess;
 
+    /**
+     * AI seat tier from the "aiTier" custom claim: "full" (default) | "lite".
+     * Orthogonal to role — governs which model the member can reach and whether
+     * document generation is available. Null/absent → full. See {@code docs/ai-tiers.md}.
+     */
+    private String aiTier;
+
     // ── Convenience role checks ───────────────────────────────────────────
 
     public boolean isClinical()  { return UserRole.isClinical(role); }
+
+    /** Resolved AI seat tier (default FULL). */
+    public ai.myaba.security.AiTier aiTier() { return ai.myaba.security.AiTier.fromClaim(aiTier); }
     public boolean isBcba()      { return UserRole.isBcba(role); }
     public boolean isAdmin()     { return Permissions.can(this, Capability.ADMIN_MANAGE); }
 

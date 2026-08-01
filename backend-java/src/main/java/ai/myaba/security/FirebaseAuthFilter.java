@@ -80,6 +80,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             .purpose("treatment")
             .orgId("dev-org-001")
             .supervisorId(null)
+            .aiTier("full")
             .build();
 
     /**
@@ -168,6 +169,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     .orgId(str(claims, "orgId", ""))
                     .supervisorId(str(claims, "supervisorId", null))
                     .phiAccess(bool(claims, "phiAccess"))
+                    .aiTier(str(claims, "aiTier", "full"))
                     .build();
 
             setAuthentication(user);

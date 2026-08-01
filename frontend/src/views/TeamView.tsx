@@ -22,6 +22,7 @@ interface TeamMember {
   role: string;
   active: boolean;
   supervisorId?: string;
+  aiTier?: 'full' | 'lite';   // AI seat tier (default full); orthogonal to role
 }
 
 
@@ -80,6 +81,7 @@ export default function TeamView() {
           email:       m.email,
           role:        m.role,
           active:      m.active,
+          aiTier:      (m as { aiTier?: 'full' | 'lite' }).aiTier ?? 'full',
         }));
         setMembers(mapped);
       })
@@ -568,6 +570,7 @@ function UserProfileTab({
   const [role, setRole]               = useState(member.role);
   const [active, setActive]           = useState(member.active);
   const [supervisorId, setSupervisorId] = useState(member.supervisorId ?? '');
+  const [aiTier, setAiTier]           = useState<'full' | 'lite'>(member.aiTier ?? 'full');
   const [saved, setSaved]             = useState(false);
   const [supSaving, setSupSaving]     = useState(false);
   const [roleError, setRoleError]     = useState('');
@@ -601,6 +604,16 @@ function UserProfileTab({
         return; // don't report success or persist the rest
       }
     }
+    // Persist AI seat tier if it changed (sanctioned admin action; re-mints the claim).
+    if (aiTier !== (member.aiTier ?? 'full')) {
+      try {
+        await api.changeMemberAiTier(orgId, member.id, aiTier);
+      } catch (e) {
+        setAiTier(member.aiTier ?? 'full');
+        setRoleError(e instanceof Error ? e.message : 'Could not change the AI seat tier.');
+        return;
+      }
+    }
     // Persist supervisor assignment if it changed
     if (role === 'RBT' && supervisorId !== (member.supervisorId ?? '')) {
       setSupSaving(true);
@@ -612,7 +625,7 @@ function UserProfileTab({
         setSupSaving(false);
       }
     }
-    onUpdate({ ...member, role, active, supervisorId: supervisorId || undefined });
+    onUpdate({ ...member, role, active, aiTier, supervisorId: supervisorId || undefined });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -689,6 +702,26 @@ function UserProfileTab({
               <p className="text-xs text-gray-400 mt-1">Super Admin role cannot be changed.</p>
             )}
             {roleError && <p className="text-xs text-red-500 mt-1">{roleError}</p>}
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              AI Seat Tier
+            </label>
+            <select
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+              value={aiTier}
+              onChange={(e) => { setAiTier(e.target.value as 'full' | 'lite'); setSaved(false); }}
+              disabled={member.role === 'ORG_SUPER_ADMIN'}
+            >
+              <option value="full">Full — all AI features (reasoning model + document generation)</option>
+              <option value="lite">Lite — fast model only, no document generation</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              {aiTier === 'lite'
+                ? 'Lite seats use the fast model for chat only and can’t generate documents — a lower-cost seat for light AI users.'
+                : 'Full seats can use the reasoning model and generate clinical documents.'}
+            </p>
           </div>
 
           <div className="flex items-center justify-between py-2 border-t border-gray-100">
