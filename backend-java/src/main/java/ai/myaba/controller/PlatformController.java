@@ -144,9 +144,10 @@ public class PlatformController {
     // ── Usage ─────────────────────────────────────────────────────────────────
 
     @GetMapping("/usage")
-    public ResponseEntity<?> getUsage(@AuthenticationPrincipal AppUser user) {
+    public ResponseEntity<?> getUsage(@AuthenticationPrincipal AppUser user,
+                                      @RequestParam(value = "month", required = false) String month) {
         if (!isSuperAdmin(user)) return forbidden();
-        return ResponseEntity.ok(platformService.getUsageSummary());
+        return ResponseEntity.ok(platformService.getUsageSummary(month));
     }
 
     // ── Health ────────────────────────────────────────────────────────────────

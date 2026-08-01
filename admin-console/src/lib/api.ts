@@ -73,6 +73,7 @@ export interface Tenant {
 
 export interface UsageSummary {
   month: string;
+  isCurrentMonth?: boolean;
   totalAiCalls: number;
   totalDocuments: number;
   totalChats: number;
@@ -205,7 +206,8 @@ export const api = {
 
   // ── Usage ────────────────────────────────────────────────────────────────
 
-  getUsage: () => request<UsageSummary>('/platform/usage'),
+  getUsage: (month?: string) =>
+    request<UsageSummary>(`/platform/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`),
 
   // ── Health ───────────────────────────────────────────────────────────────
 

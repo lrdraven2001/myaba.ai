@@ -357,22 +357,55 @@ public class PlatformService {
 
     // ── Usage ─────────────────────────────────────────────────────────────────
 
-    /** Returns per-org usage for the current month, plus platform totals. */
+    /** Per-org usage for the current month, plus platform totals. */
     public Map<String, Object> getUsageSummary() {
+        return getUsageSummary(null);
+    }
+
+    /**
+     * Per-org usage for a specific month ({@code period} = "YYYY-MM"; null/blank →
+     * current month), plus lifetime totals and platform-wide totals + MRR. The
+     * {@code aiCalls/documentCount/chatCount} fields reflect the SELECTED month;
+     * {@code lifetime*} are all-time sums (unaffected by the selected month).
+     */
+    public Map<String, Object> getUsageSummary(String period) {
+        String sel = (period == null || period.isBlank()) ? currentPeriod() : period;
+        boolean isCurrent = sel.equals(currentPeriod());
         List<Map<String, Object>> rows = new ArrayList<>();
         if (devMode) {
             rows.addAll(devUsage.values());
         } else {
+            Firestore db = FirestoreClient.getFirestore();
             for (Map<String, Object> t : getAllTenants()) {
+                String orgId = String.valueOf(t.get("id"));
+                long selCalls, selDocs, selChats;
+                if (isCurrent) {
+                    selCalls = longOr0(t.get("aiCalls"));       // already computed for the current month
+                    selDocs  = longOr0(t.get("documentCount"));
+                    selChats = longOr0(t.get("chatCount"));
+                } else {
+                    selCalls = selDocs = selChats = 0;
+                    try {
+                        var u = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                                .collection("usage").document(sel).get().get();
+                        if (u.exists()) {
+                            selCalls = longOr0(u.get("requestCount"));
+                            selDocs  = longOr0(u.get("documentCount"));
+                            selChats = longOr0(u.get("chatCount"));
+                        }
+                    } catch (Exception e) {
+                        log.warn("usage period read failed for {} {}: {}", orgId, sel, e.getMessage());
+                    }
+                }
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("orgId",              t.get("id"));
                 row.put("orgName",            t.get("name"));
                 row.put("plan",               t.get("plan"));
                 row.put("status",             t.get("status"));
                 row.put("memberCount",        t.get("memberCount"));
-                row.put("aiCalls",            t.get("aiCalls"));
-                row.put("documentCount",      t.get("documentCount"));
-                row.put("chatCount",          t.get("chatCount"));
+                row.put("aiCalls",            selCalls);
+                row.put("documentCount",      selDocs);
+                row.put("chatCount",          selChats);
                 row.put("lifetimeAiCalls",    t.get("lifetimeAiCalls"));
                 row.put("lifetimeDocuments",  t.get("lifetimeDocuments"));
                 row.put("lifetimeChats",      t.get("lifetimeChats"));
@@ -399,7 +432,8 @@ public class PlatformService {
         long payingCount = rows.stream().filter(r -> Boolean.TRUE.equals(r.get("paying"))).count();
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("month",             currentPeriod());
+        result.put("month",             sel);
+        result.put("isCurrentMonth",    isCurrent);
         result.put("totalAiCalls",      totalCalls);
         result.put("totalDocuments",    totalDocs);
         result.put("totalChats",        totalChats);
