@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.13</version>
+        <version>3.5.3</version>
         <relativePath/>
     </parent>
 
@@ -19,8 +19,46 @@
 
     <properties>
         <java.version>21</java.version>
-        <firebase-admin.version>9.3.0</firebase-admin.version>
+        <firebase-admin.version>9.9.0</firebase-admin.version>
+        <!-- Override Spring Boot 3.5.3's managed Tomcat (10.1.42) up to the latest
+             10.1.x patch — clears the embedded-Tomcat CVEs the OWASP scan flagged
+             (CVE-2026-43512, CVE-2026-41293, CVE-2025-55754, …). Same 10.1.x line,
+             so Spring Boot compatibility is unaffected. -->
+        <tomcat.version>10.1.54</tomcat.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Align the whole Google Cloud stack (storage, gRPC, netty, protobuf, gax)
+                 to one current, mutually-compatible set. This overrides the older
+                 netty/protobuf that firebase-admin + google-cloud-storage pulled in
+                 transitively, clearing their CVEs in a single coordinated bump. -->
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>26.83.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- openhtmltopdf 1.0.10 pulls pdfbox/fontbox/xmpbox 2.0.24 transitively;
+                 force the patched 2.0.x across all three (CVE-2026-23907, CVE-2026-33929). -->
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>2.0.36</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>fontbox</artifactId>
+                <version>2.0.36</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>xmpbox</artifactId>
+                <version>2.0.36</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Web -->
@@ -56,7 +94,7 @@
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
-            <version>5.3.0</version>
+            <version>5.5.1</version>
         </dependency>
 
         <!-- Bucket4j — in-process rate limiting (per-IP and per-user token buckets) -->
@@ -90,21 +128,18 @@
             <artifactId>openhtmltopdf-pdfbox</artifactId>
             <version>1.0.10</version>
         </dependency>
-        <!-- PDF text extraction for uploaded documents (version matches the
-             pdfbox that openhtmltopdf already pulls in transitively) -->
+        <!-- PDF text extraction for uploaded documents. Version managed above in
+             dependencyManagement (pdfbox/fontbox/xmpbox 2.0.36). -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
-            <version>2.0.24</version>
         </dependency>
 
         <!-- Google Cloud Storage — stores ORIGINAL uploaded files (extracted text
-             stays in Firestore). Version aligned with the google-cloud BOM that
-             firebase-admin already pulls in transitively. -->
+             stays in Firestore). Version managed by the libraries-bom import above. -->
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-storage</artifactId>
-            <version>2.40.1</version>
         </dependency>
 
         <!-- Stripe — subscription billing (Checkout + Billing Portal + webhooks).
