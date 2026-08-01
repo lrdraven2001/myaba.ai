@@ -6,6 +6,9 @@ import ai.myaba.util.FirestoreCollections;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.ClientRequest;
 import ai.myaba.model.dto.UserRole;
+import ai.myaba.security.Capability;
+import ai.myaba.security.EffectivePermissions;
+import ai.myaba.security.PermissionService;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.firebase.cloud.FirestoreClient;
@@ -43,6 +46,7 @@ import java.util.stream.Collectors;
 public class ClientService {
 
     private final AuthorizationService authorizationService;
+    private final PermissionService permissionService;
 
     @Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -280,6 +284,9 @@ public class ClientService {
                                       String supervisingBcbaId,
                                       List<String> rbtIds,
                                       List<String> viewerIds) throws Exception {
+        // Defense-in-depth: enforce slot eligibility server-side, independent of the UI.
+        validateAssigneeEligibility(orgId, treatingBcbaId, supervisorIds, supervisingBcbaId, rbtIds);
+
         Map<String, Object> updates = new HashMap<>();
         if (treatingBcbaId != null)    updates.put("treatingBcbaId", treatingBcbaId);
         if (supervisorIds != null)     updates.put("supervisorIds", supervisorIds);
@@ -307,6 +314,65 @@ public class ClientService {
         db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                 .collection(FirestoreCollections.CLIENTS).document(clientId)
                 .update(updates).get();
+    }
+
+    /**
+     * Reject caseload assignments whose target user's ROLE doesn't qualify for the slot —
+     * enforced regardless of what the UI offered (Option B rule, capability-based so it
+     * works for custom roles too):
+     * <ul>
+     *   <li>Supervisor roster ({@code supervisingBcbaId} + {@code supervisorIds}) → the
+     *       role must hold {@link Capability#CLIENT_MANAGE} (clients:'all').</li>
+     *   <li>Treating BCBA and behavior technicians ({@code rbtIds}) → the role must have
+     *       PHI access.</li>
+     *   <li>Viewers are read-only / non-clinical and are intentionally not restricted here.</li>
+     * </ul>
+     * Throws {@link IllegalArgumentException} (mapped to HTTP 422 by the controller) when a
+     * target isn't an active member or its role doesn't qualify. Skipped in dev mode.
+     */
+    private void validateAssigneeEligibility(String orgId, String treatingBcbaId,
+                                             List<String> supervisorIds, String supervisingBcbaId,
+                                             List<String> rbtIds) throws Exception {
+        if (devMode) return;
+        Map<String, String> roleByUid = loadMemberRoles(orgId);
+        requireEligible(orgId, roleByUid, treatingBcbaId,    false, "the treating BCBA");
+        requireEligible(orgId, roleByUid, supervisingBcbaId, true,  "a supervisor");
+        if (supervisorIds != null) {
+            for (String uid : supervisorIds) requireEligible(orgId, roleByUid, uid, true, "a supervisor");
+        }
+        if (rbtIds != null) {
+            for (String uid : rbtIds) requireEligible(orgId, roleByUid, uid, false, "a behavior technician");
+        }
+    }
+
+    /** @param requireManage true → slot needs CLIENT_MANAGE; false → slot needs PHI access. */
+    private void requireEligible(String orgId, Map<String, String> roleByUid, String uid,
+                                 boolean requireManage, String slot) {
+        if (uid == null || uid.isBlank()) return;
+        String role = roleByUid.get(uid);
+        if (role == null) {
+            throw new IllegalArgumentException(
+                    "Cannot assign a user who is not an active member of this organization.");
+        }
+        EffectivePermissions eff = permissionService.resolveForRole(role, orgId);
+        boolean ok = requireManage ? eff.can(Capability.CLIENT_MANAGE) : eff.phiAccess();
+        if (!ok) {
+            throw new IllegalArgumentException(requireManage
+                    ? "A user whose role can’t manage clients can’t be assigned as " + slot + "."
+                    : "A user whose role has no PHI access can’t be assigned as " + slot + ".");
+        }
+    }
+
+    /** uid → role for every member of the org (single read, reused across slot checks). */
+    private Map<String, String> loadMemberRoles(String orgId) throws Exception {
+        Firestore db = FirestoreClient.getFirestore();
+        Map<String, String> out = new HashMap<>();
+        for (QueryDocumentSnapshot d : db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.MEMBERS).get().get().getDocuments()) {
+            Object role = d.get("role");
+            out.put(d.getId(), role == null ? null : role.toString());
+        }
+        return out;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

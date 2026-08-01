@@ -9,8 +9,8 @@ import {
   faBoxArchive, faBoxOpen, faFileExport, faUpload, faDownload,
 } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faMicrosoft } from '@fortawesome/free-brands-svg-icons';
-import type { Client, PolicyDocument, Chat, DriveConnection } from '../types';
-import { canSupervise } from '../types';
+import type { Client, PolicyDocument, Chat, DriveConnection, UserRole } from '../types';
+import { canManageClients, isClinicalRole } from '../types';
 import ClientAuthorizationsPanel from '../components/ClientAuthorizationsPanel';
 import GenerateDocumentModal from '../components/GenerateDocumentModal';
 import DriveConnectWizard from '../components/drive/DriveConnectWizard';
@@ -1437,7 +1437,11 @@ function TreatmentTeamTab({
   orgId: string;
   onUpdate: (updated: Client) => void;
 }) {
-  type OrgMember = { id: string; displayName: string; email: string; role: string; active: boolean };
+  type OrgMember = {
+    id: string; displayName: string; email: string; role: string; active: boolean;
+    // Resolved role capabilities from the server (works for custom roles, not just built-ins).
+    phiAccess?: boolean; canManageClients?: boolean;
+  };
 
   const [members,        setMembers]        = useState<OrgMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
@@ -1460,8 +1464,14 @@ function TreatmentTeamTab({
       .finally(() => setLoadingMembers(false));
   }, [orgId]);
 
-  const supervisorOpts = members.filter((m) => canSupervise(m.role));
-  const rbtOptions     = members.filter((m) => ['RBT'].includes(m.role));
+  // Option B — gate the caseload pickers by RESOLVED capability (so custom-role users
+  // appear in the right slot), not a hardcoded built-in role list. Supervisor slot =
+  // can manage clients (CLIENT_MANAGE); Behavior-Technician slot = has PHI access.
+  // Falls back to a built-in role-name check if the server didn't stamp the flags.
+  const eligibleSupervisor = (m: OrgMember) => m.canManageClients ?? canManageClients(m.role as UserRole);
+  const eligibleTechnician = (m: OrgMember) => m.phiAccess ?? isClinicalRole(m.role as UserRole);
+  const supervisorOpts = members.filter(eligibleSupervisor);
+  const rbtOptions     = members.filter(eligibleTechnician);
 
   // Toggle a supervisor on/off the roster; if removed and was current, clear current
   const toggleSupervisor = (id: string) => {

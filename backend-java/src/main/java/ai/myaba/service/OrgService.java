@@ -143,18 +143,36 @@ public class OrgService {
      * Members are written there when they create or join an org via invite.
      */
     public List<Map<String, Object>> getOrgMembers(String orgId) throws Exception {
+        List<Map<String, Object>> members;
         if (devMode) {
-            return new ArrayList<>(devOrgMembers.getOrDefault(orgId, List.of()));
+            members = new ArrayList<>(devOrgMembers.getOrDefault(orgId, List.of()));
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            List<QueryDocumentSnapshot> docs = db
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection(FirestoreCollections.MEMBERS).get().get().getDocuments();
+            members = docs.stream().map(d -> {
+                Map<String, Object> m = new HashMap<>(d.getData());
+                m.put("id", d.getId()); // uid is the document ID
+                return m;
+            }).collect(Collectors.toList());
         }
-        Firestore db = FirestoreClient.getFirestore();
-        List<QueryDocumentSnapshot> docs = db
-                .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
-                .collection(FirestoreCollections.MEMBERS).get().get().getDocuments();
-        return docs.stream().map(d -> {
-            Map<String, Object> m = new HashMap<>(d.getData());
-            m.put("id", d.getId()); // uid is the document ID
-            return m;
-        }).collect(Collectors.toList());
+        // Surface each member's RESOLVED role capabilities so client-assignment pickers can
+        // gate by capability rather than a hardcoded built-in role-name list — this is what
+        // makes custom-role users assignable. phiAccess → Behavior-Technician slot eligibility;
+        // canManageClients (CLIENT_MANAGE / clients:'all') → Supervisor slot eligibility.
+        for (Map<String, Object> m : members) {
+            Object role = m.get("role");
+            try {
+                var eff = permissionService.resolveForRole(role == null ? null : role.toString(), orgId);
+                m.put("phiAccess",        eff.phiAccess());
+                m.put("canManageClients", eff.can(ai.myaba.security.Capability.CLIENT_MANAGE));
+            } catch (Exception e) {
+                m.put("phiAccess",        false);
+                m.put("canManageClients", false);
+            }
+        }
+        return members;
     }
 
     /**

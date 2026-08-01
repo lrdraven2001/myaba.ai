@@ -105,7 +105,9 @@ public class ClientController {
                                            @AuthenticationPrincipal AppUser user) {
         ResponseEntity<?> baaCheck = baaGate(user);
         if (baaCheck != null) return baaCheck;
-        if (!user.isClinical() && !user.isAdmin()) {
+        // Capability-based (not a built-in role-name check) so custom PHI-access roles can
+        // create clients and become the treating BCBA — consistent with the assignment rule.
+        if (!user.hasPhiAccess() && !user.isAdmin()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Only clinical staff or admins can create client records"));
         }
@@ -371,6 +373,10 @@ public class ClientController {
 
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (IllegalArgumentException e) {
+            // Slot-eligibility guard rejected an assignee (role doesn't qualify for the slot).
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(Map.of("error", e.getMessage(), "code", "INELIGIBLE_ASSIGNEE"));
         } catch (Exception e) {
             log.error("updateAuthorizations failed {}: {}", clientId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to update authorizations"));
