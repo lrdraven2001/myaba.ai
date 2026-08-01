@@ -44,6 +44,31 @@ public class PlatformService {
     @org.springframework.beans.factory.annotation.Autowired
     private AclxService aclxService;
 
+    // Billing summary + invoices for the per-org drill-in.
+    @org.springframework.beans.factory.annotation.Autowired
+    private BillingService billingService;
+
+    // Per-seat / plan monthly amounts (USD cents) — mirror BillingService so the
+    // admin MRR estimate matches what Stripe bills. -1 MRR means "custom" (enterprise).
+    private static final long FULL_SEAT_CENTS = 3500; // Team – Full ($35)
+    private static final long LITE_SEAT_CENTS = 1500; // Team – Lite ($15)
+    private static final long MIN_TEAM_CENTS  = 5000; // Team floor / Solo ($50)
+
+    /** Estimated monthly recurring revenue (USD cents) for a plan + seat mix. -1 = custom. */
+    private static long mrrCents(String plan, int fullSeats, int liteSeats) {
+        if (plan == null) return 0L;
+        return switch (plan) {
+            case "team"       -> Math.max(fullSeats * FULL_SEAT_CENTS + liteSeats * LITE_SEAT_CENTS, MIN_TEAM_CENTS);
+            case "solo"       -> MIN_TEAM_CENTS;
+            case "enterprise" -> -1L;   // custom contract — not estimable from seats
+            default           -> 0L;    // free / no plan
+        };
+    }
+
+    private static boolean isPaying(String subscriptionStatus) {
+        return "active".equals(subscriptionStatus) || "trialing".equals(subscriptionStatus);
+    }
+
     // ── In-memory stores (dev only) ───────────────────────────────────────────
 
     /** orgId → org summary map */
@@ -150,7 +175,17 @@ public class PlatformService {
             if (!snap.exists() || snap.getData() == null) {
                 throw new NoSuchElementException("Org not found: " + orgId);
             }
-            return asQueryRow(db, orgId, snap.getData());
+            Map<String, Object> row = asQueryRow(db, orgId, snap.getData());
+            // Drill-in extras: month-by-month usage, member roster, and the live
+            // billing summary (subscription + recent Stripe invoices).
+            row.put("usageHistory", usageHistory(db, orgId));
+            row.put("members",      memberList(db, orgId));
+            try {
+                row.put("billing", billingService.getBillingSummary(orgId));
+            } catch (Exception e) {
+                log.warn("getTenant: billing summary failed for {}: {}", orgId, e.getMessage());
+            }
+            return row;
         } catch (NoSuchElementException e) {
             throw e;
         } catch (Exception e) {
@@ -193,42 +228,101 @@ public class PlatformService {
         row.put("createdAt", data.getOrDefault("createdAt", ""));
         row.put("baaAccepted", Boolean.TRUE.equals(data.get("baaAccepted")));
 
-        // Members: count + resolve the admin's email for display.
+        // Members: count + admin email + AI seat breakdown (full vs lite) for MRR.
         String adminUid = String.valueOf(data.getOrDefault("adminUid", ""));
         String adminEmail = "";
-        int memberCount = 0;
+        int memberCount = 0, fullSeats = 0, liteSeats = 0;
         try {
             var members = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
                     .collection(FirestoreCollections.MEMBERS).get().get().getDocuments();
             memberCount = members.size();
             for (QueryDocumentSnapshot m : members) {
-                if (m.getId().equals(adminUid)) {
-                    adminEmail = String.valueOf(m.getData().getOrDefault("email", ""));
-                    break;
-                }
+                if (m.getId().equals(adminUid)) adminEmail = String.valueOf(m.getData().getOrDefault("email", ""));
+                if ("lite".equalsIgnoreCase(String.valueOf(m.getData().getOrDefault("aiTier", "full")))) liteSeats++;
+                else fullSeats++;
             }
         } catch (Exception e) {
             log.warn("tenantRow: member lookup failed for {}: {}", orgId, e.getMessage());
         }
         row.put("memberCount", memberCount);
         row.put("adminEmail",  adminEmail);
+        row.put("fullSeats",   fullSeats);
+        row.put("liteSeats",   liteSeats);
 
-        // Current-month usage counters (written by UsageService.recordRequest).
+        // Billing / payment status (written by BillingService from Stripe webhooks).
+        String plan = String.valueOf(data.getOrDefault("plan", "solo"));
+        String subStatus = data.get("subscriptionStatus") instanceof String s ? s : null;
+        row.put("subscriptionStatus", subStatus);      // active | trialing | past_due | canceled | null
+        row.put("paying",             isPaying(subStatus));
+        row.put("seats",              longOr0(data.get("seats")));
+        row.put("currentPeriodEnd",   data.get("currentPeriodEnd")); // Stripe epoch seconds, or null
+        row.put("mrrCents",           mrrCents(plan, fullSeats, liteSeats));
+
+        // Usage: current month + lifetime totals + most-recent active month.
+        // One read of the whole usage subcollection (admin-only screen, infrequent).
+        long curCalls = 0, curDocs = 0, curChats = 0, lifeCalls = 0, lifeDocs = 0, lifeChats = 0;
+        String lastActive = "";
         try {
-            var usage = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
-                    .collection("usage").document(currentPeriod()).get().get();
-            row.put("aiCalls",       usage.exists() ? longOr0(usage.get("requestCount"))  : 0L);
-            row.put("documentCount", usage.exists() ? longOr0(usage.get("documentCount")) : 0L);
-            row.put("chatCount",     usage.exists() ? longOr0(usage.get("chatCount"))     : 0L);
+            String cur = currentPeriod();
+            var periods = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection("usage").get().get().getDocuments();
+            for (QueryDocumentSnapshot p : periods) {
+                long c = longOr0(p.get("requestCount")), d = longOr0(p.get("documentCount")), ch = longOr0(p.get("chatCount"));
+                lifeCalls += c; lifeDocs += d; lifeChats += ch;
+                if (p.getId().equals(cur)) { curCalls = c; curDocs = d; curChats = ch; }
+                if ((c > 0 || d > 0 || ch > 0) && p.getId().compareTo(lastActive) > 0) lastActive = p.getId();
+            }
         } catch (Exception e) {
             log.warn("tenantRow: usage lookup failed for {}: {}", orgId, e.getMessage());
-            row.put("aiCalls", 0L); row.put("documentCount", 0L); row.put("chatCount", 0L);
         }
+        row.put("aiCalls", curCalls);            row.put("documentCount", curDocs);       row.put("chatCount", curChats);
+        row.put("lifetimeAiCalls", lifeCalls);   row.put("lifetimeDocuments", lifeDocs);   row.put("lifetimeChats", lifeChats);
+        row.put("lastActive", lastActive);       // "YYYY-MM" of most recent activity, or "" if never
         return row;
     }
 
     private static long longOr0(Object v) {
         return v instanceof Number n ? n.longValue() : 0L;
+    }
+
+    /** Month-by-month usage for the drill-in, newest first. */
+    private List<Map<String, Object>> usageHistory(Firestore db, String orgId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try {
+            for (QueryDocumentSnapshot p : db.collection(FirestoreCollections.ORGANIZATIONS)
+                    .document(orgId).collection("usage").get().get().getDocuments()) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("period",        p.getId());
+                m.put("aiCalls",       longOr0(p.get("requestCount")));
+                m.put("documentCount", longOr0(p.get("documentCount")));
+                m.put("chatCount",     longOr0(p.get("chatCount")));
+                out.add(m);
+            }
+            out.sort((a, b) -> String.valueOf(b.get("period")).compareTo(String.valueOf(a.get("period"))));
+        } catch (Exception e) {
+            log.warn("usageHistory failed for {}: {}", orgId, e.getMessage());
+        }
+        return out;
+    }
+
+    /** Member roster for the drill-in: email, role, AI seat tier. */
+    private List<Map<String, Object>> memberList(Firestore db, String orgId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try {
+            for (QueryDocumentSnapshot m : db.collection(FirestoreCollections.ORGANIZATIONS)
+                    .document(orgId).collection(FirestoreCollections.MEMBERS).get().get().getDocuments()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("uid",         m.getId());
+                row.put("email",       m.getData().getOrDefault("email", ""));
+                row.put("displayName", m.getData().getOrDefault("displayName", ""));
+                row.put("role",        m.getData().getOrDefault("role", ""));
+                row.put("aiTier",      m.getData().getOrDefault("aiTier", "full"));
+                out.add(row);
+            }
+        } catch (Exception e) {
+            log.warn("memberList failed for {}: {}", orgId, e.getMessage());
+        }
+        return out;
     }
 
     // ── Platform config ───────────────────────────────────────────────────────
@@ -271,14 +365,21 @@ public class PlatformService {
         } else {
             for (Map<String, Object> t : getAllTenants()) {
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("orgId",         t.get("id"));
-                row.put("orgName",       t.get("name"));
-                row.put("plan",          t.get("plan"));
-                row.put("status",        t.get("status"));
-                row.put("memberCount",   t.get("memberCount"));
-                row.put("aiCalls",       t.get("aiCalls"));
-                row.put("documentCount", t.get("documentCount"));
-                row.put("chatCount",     t.get("chatCount"));
+                row.put("orgId",              t.get("id"));
+                row.put("orgName",            t.get("name"));
+                row.put("plan",               t.get("plan"));
+                row.put("status",             t.get("status"));
+                row.put("memberCount",        t.get("memberCount"));
+                row.put("aiCalls",            t.get("aiCalls"));
+                row.put("documentCount",      t.get("documentCount"));
+                row.put("chatCount",          t.get("chatCount"));
+                row.put("lifetimeAiCalls",    t.get("lifetimeAiCalls"));
+                row.put("lifetimeDocuments",  t.get("lifetimeDocuments"));
+                row.put("lifetimeChats",      t.get("lifetimeChats"));
+                row.put("lastActive",         t.get("lastActive"));
+                row.put("subscriptionStatus", t.get("subscriptionStatus"));
+                row.put("paying",             t.get("paying"));
+                row.put("mrrCents",           t.get("mrrCents"));
                 rows.add(row);
             }
         }
@@ -287,14 +388,28 @@ public class PlatformService {
         long totalCalls = rows.stream().mapToLong(r -> longOr0(r.get("aiCalls"))).sum();
         long totalDocs  = rows.stream().mapToLong(r -> longOr0(r.get("documentCount"))).sum();
         long totalChats = rows.stream().mapToLong(r -> longOr0(r.get("chatCount"))).sum();
+        long lifeCalls  = rows.stream().mapToLong(r -> longOr0(r.get("lifetimeAiCalls"))).sum();
+        long lifeDocs   = rows.stream().mapToLong(r -> longOr0(r.get("lifetimeDocuments"))).sum();
+        long lifeChats  = rows.stream().mapToLong(r -> longOr0(r.get("lifetimeChats"))).sum();
+        // Platform MRR counts only actually-paying orgs; enterprise (-1, custom) is excluded.
+        long totalMrr   = rows.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("paying")))
+                .mapToLong(r -> Math.max(0, longOr0(r.get("mrrCents"))))
+                .sum();
+        long payingCount = rows.stream().filter(r -> Boolean.TRUE.equals(r.get("paying"))).count();
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("month",          currentPeriod());
-        result.put("totalAiCalls",   totalCalls);
-        result.put("totalDocuments", totalDocs);
-        result.put("totalChats",     totalChats);
-        result.put("orgCount",       rows.size());
-        result.put("rows",           rows);
+        result.put("month",             currentPeriod());
+        result.put("totalAiCalls",      totalCalls);
+        result.put("totalDocuments",    totalDocs);
+        result.put("totalChats",        totalChats);
+        result.put("lifetimeAiCalls",   lifeCalls);
+        result.put("lifetimeDocuments", lifeDocs);
+        result.put("lifetimeChats",     lifeChats);
+        result.put("totalMrrCents",     totalMrr);
+        result.put("payingOrgCount",    payingCount);
+        result.put("orgCount",          rows.size());
+        result.put("rows",              rows);
         return result;
     }
 
