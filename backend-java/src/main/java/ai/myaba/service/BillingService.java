@@ -210,6 +210,12 @@ public class BillingService {
     public Map<String, Object> getBillingSummary(String orgId) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("stripeConfigured", isEnabled());
+        // Always-present contract fields. The UI reads `invoices` unconditionally, so the
+        // error path below MUST NOT return a body without it (that returned HTTP 200 with a
+        // shape the frontend then crashed on). These are overwritten on the happy path.
+        out.put("hasSubscription", false);
+        out.put("entitled",        true);
+        out.put("invoices",        new ArrayList<>());
         try {
             Map<String, Object> org = orgService.getOrg(orgId);
             String plan       = org != null ? (String) org.get("plan") : null;

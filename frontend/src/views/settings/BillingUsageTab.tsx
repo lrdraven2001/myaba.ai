@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faDownload, faStar, faCircleInfo, faUsers, faFileLines,
   faComments, faBolt, faCreditCard, faPlus, faLock,
   faGem, faBell, faSlidersH, faCircleQuestion, faChartColumn,
+  faSpinner, faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { api } from '../../lib/api';
@@ -34,17 +35,40 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingMsg, setBillingMsg]   = useState<string | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    api.getUsage().then(setUsage).catch(() => {});
-    api.getUsageHistory(12).then((r) => setHistory(r.history ?? [])).catch(() => {});
-    api.getBillingSummary().then(setBilling).catch(() => {});
-    if (orgId) api.getOrgMembers(orgId).then((m) => setMembers(Array.isArray(m) ? m.length : 0)).catch(() => {});
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(false);
+    // Usage + billing are the two that matter for the screen; history/members are
+    // best-effort. A failure of usage OR billing surfaces a retryable error banner
+    // instead of a silently blank screen.
+    const tasks: Promise<unknown>[] = [
+      api.getUsage().then(setUsage).catch(() => { setLoadError(true); }),
+      api.getBillingSummary().then(setBilling).catch(() => { setLoadError(true); }),
+      api.getUsageHistory(12).then((r) => setHistory(r.history ?? [])).catch(() => {}),
+      orgId
+        ? api.getOrgMembers(orgId).then((m) => setMembers(Array.isArray(m) ? m.length : 0)).catch(() => {})
+        : Promise.resolve(),
+    ];
+    Promise.allSettled(tasks).finally(() => setLoading(false));
   }, [orgId]);
 
+  useEffect(() => { load(); }, [load]);
+
   const stripeReady   = billing?.stripeConfigured ?? false;
-  const hasSub        = billing?.hasSubscription ?? false;
   const subStatus     = billing?.subscriptionStatus ?? usage?.subscriptionStatus;
+  // A subscription exists if Stripe synced an id, a renewal date, OR any real status —
+  // all of which are only ever set from a live Stripe subscription. This is more robust
+  // than requiring `hasSubscription` (the stripeSubscriptionId field) alone, which can
+  // lag if a webhook is delayed, and keeps the subscribed view from collapsing to
+  // "No active subscription" for a genuine subscriber.
+  const hasSub        = (billing?.hasSubscription ?? false) || !!billing?.currentPeriodEnd || !!subStatus;
+  // Never trust the server to always include the invoices array — the summary endpoint
+  // returns HTTP 200 with an error-shaped body (no `invoices`) on any server-side error.
+  const invoices      = billing?.invoices ?? [];
+  const hadLoadError  = loadError || !!billing?.error;
 
   // Manage Plan / Add Payment Method → Billing Portal when subscribed, else Checkout.
   const manageBilling = async (planForCheckout?: string) => {
@@ -64,7 +88,7 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
     }
   };
 
-  const plan        = usage?.plan ?? '';
+  const plan        = usage?.plan ?? billing?.plan ?? '';
   const planLabel   = PLAN_LABEL[plan] ?? (plan || '—');
   const effLimit    = usage?.effectiveLimit ?? -1;
   const unlimited   = usage?.unlimited || effLimit < 0;
@@ -116,6 +140,19 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
     a.click(); URL.revokeObjectURL(url);
   };
 
+  // First load, nothing yet → show a spinner rather than a screen full of "—" placeholders
+  // (which read as "empty/broken" even while data is still in flight).
+  if (loading && !usage && !billing) {
+    return (
+      <div className="max-w-6xl">
+        <SectionHeading title="Billing & Usage" description="View your plan, usage, invoices, and payment methods." />
+        <div className="flex items-center justify-center gap-3 py-24 text-gray-400">
+          <FontAwesomeIcon icon={faSpinner} spin /> Loading your billing details…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl space-y-6">
       <SectionHeading
@@ -123,6 +160,18 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
         description="View your plan, usage, invoices, and payment methods."
         action={<SecondaryButton icon={faDownload} onClick={downloadReport}>Download Usage Report</SecondaryButton>}
       />
+
+      {hadLoadError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between gap-4">
+          <span className="flex items-center gap-2 text-sm text-amber-800">
+            <FontAwesomeIcon icon={faTriangleExclamation} />
+            We couldn’t load some billing details. The information below may be incomplete.
+          </span>
+          <button onClick={load} disabled={loading} className="text-sm font-semibold text-amber-900 hover:underline disabled:opacity-50 shrink-0">
+            {loading ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
 
       {/* Top row: Plan · Usage · Estimated */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -218,9 +267,9 @@ export default function BillingUsageTab({ orgId, isAdmin }: { orgId: string; isA
       {/* Invoices · Payment method */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SettingsCard title="Recent Invoices">
-          {billing && billing.invoices.length > 0 ? (
+          {invoices.length > 0 ? (
             <div className="px-5 sm:px-6 pb-5 pt-1 divide-y divide-gray-100">
-              {billing.invoices.map((inv) => (
+              {invoices.map((inv) => (
                 <div key={inv.id} className="flex items-center justify-between py-2.5">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-800 truncate">
