@@ -474,7 +474,7 @@ function ProjectDetailView({
     <div className="flex-1 flex flex-col overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3 flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3 shrink-0">
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mr-1"
@@ -500,7 +500,7 @@ function ProjectDetailView({
           {editingTitle ? (
             <input
               ref={titleRef}
-              className="text-base font-semibold text-gray-900 border-b-2 border-teal-500 bg-transparent outline-none w-full max-w-xs"
+              className="text-base font-semibold text-gray-900 border-b-2 border-teal-500 bg-transparent outline-hidden w-full max-w-xs"
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
               onBlur={saveTitle}
@@ -550,7 +550,7 @@ function ProjectDetailView({
       </div>
 
       {/* ── Tabs ── */}
-      <div className="bg-white border-b border-gray-200 px-6 flex gap-6 flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-6 flex gap-6 shrink-0">
         {([
           ['overview',  'Overview',  null],
           ['documents', 'Documents', knowledgeDocs.length],
@@ -579,7 +579,7 @@ function ProjectDetailView({
               <h3 className="text-base font-bold text-gray-900 mb-4">Project details</h3>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Project title</label>
               <input
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
                 onBlur={saveTitle}
@@ -587,7 +587,7 @@ function ProjectDetailView({
               />
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Project description</label>
               <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 rows={3}
                 value={draftDesc}
                 onChange={(e) => { setDraftDesc(e.target.value); setDescDirty(true); }}
@@ -640,7 +640,7 @@ function ProjectDetailView({
               <h3 className="text-base font-bold text-gray-900">Project instructions</h3>
               <p className="text-sm text-gray-500 mb-3">Applied to conversations created within this project.</p>
               <textarea
-                className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg p-3 resize-none focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 rows={4}
                 placeholder="e.g. Focus on measurable behavior targets and evidence-based strategies…"
                 value={instructions}
@@ -1052,7 +1052,7 @@ function ProjectAccessModal({
                   <select
                     value={role}
                     onChange={(e) => handleChangeRole(uid, e.target.value as 'editor' | 'viewer')}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-teal-500 shrink-0"
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 focus:outline-hidden focus:ring-2 focus:ring-teal-500 shrink-0"
                     aria-label="Member access level"
                   >
                     <option value="viewer">Can view</option>
@@ -1077,7 +1077,7 @@ function ProjectAccessModal({
             {canManage && availableToAdd.length > 0 && (
               <div className="mt-3 flex gap-2">
                 <select
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 min-w-0"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500 min-w-0"
                   value={addUserId}
                   onChange={(e) => setAddUserId(e.target.value)}
                 >
@@ -1089,7 +1089,7 @@ function ProjectAccessModal({
                   ))}
                 </select>
                 <select
-                  className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 shrink-0"
+                  className="border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500 shrink-0"
                   value={addRole}
                   onChange={(e) => setAddRole(e.target.value as 'editor' | 'viewer')}
                 >
@@ -1177,7 +1177,7 @@ function CreateProjectModal({
             </label>
             <input
               autoFocus
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500"
               placeholder="e.g. Q3 Caseload Review"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -1189,7 +1189,7 @@ function CreateProjectModal({
               Description
             </label>
             <input
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500"
               placeholder="Optional — what is this project for?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -1212,7 +1212,7 @@ function CreateProjectModal({
               </p>
             </div>
             <div
-              className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0"
+              className="w-5 h-5 rounded-sm border-2 flex items-center justify-center shrink-0"
               style={{ borderColor: containsPhi ? '#d97706' : '#d1d5db', background: containsPhi ? '#d97706' : 'white' }}
             >
               {containsPhi && <FontAwesomeIcon icon={faCheck} style={{ fontSize: 10, color: 'white' }} />}
@@ -1275,7 +1275,7 @@ function DocDetailModal({ doc, onClose, onPatch }: {
             <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
               <FontAwesomeIcon icon={meta.icon} style={{ color: meta.color }} /> {meta.label}
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 break-words">{doc.title}</h3>
+            <h3 className="text-lg font-semibold text-gray-900 wrap-break-word">{doc.title}</h3>
             <div className="mt-2 text-xs text-gray-500 space-y-0.5">
               {doc.sourceFilename && <div>File: <span className="text-gray-700 break-all">{doc.sourceFilename}</span></div>}
               <div>Added {added}{doc.createdBy ? ` by ${doc.createdBy}` : ''}</div>
@@ -1290,7 +1290,7 @@ function DocDetailModal({ doc, onClose, onPatch }: {
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Description</div>
             <textarea
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-hidden focus:ring-2 focus:ring-teal-500"
               rows={2}
               placeholder="Add a short description of this document…"
               value={draftDesc}
@@ -1322,7 +1322,7 @@ function DocDetailModal({ doc, onClose, onPatch }: {
           {/* Extracted content */}
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Extracted content</div>
-            <pre className="whitespace-pre-wrap break-words text-sm text-gray-700" style={{ fontFamily: 'inherit' }}>
+            <pre className="whitespace-pre-wrap wrap-break-word text-sm text-gray-700" style={{ fontFamily: 'inherit' }}>
               {doc.textContent?.trim() || '(No extracted text for this document.)'}
             </pre>
           </div>
@@ -1471,7 +1471,7 @@ function AddKnowledgeDocModal({
             </label>
             <input
               autoFocus
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500"
               placeholder="e.g. Staff Training Guide"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -1507,7 +1507,7 @@ function AddKnowledgeDocModal({
             <input ref={fileRef} type="file" multiple accept=".txt,.md,.docx,.pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.gif" className="hidden" onChange={handleFile} />
             {fileError && <p className="text-xs text-red-500 mb-1.5">{fileError}</p>}
             <textarea
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500 resize-none"
               rows={10}
               placeholder="Paste or type document content here…"
               value={content}

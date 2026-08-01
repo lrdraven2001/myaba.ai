@@ -227,8 +227,8 @@ export default function AdminView() {
                   <p className="text-amber-700 leading-relaxed">
                     Gemini runs on <strong>Vertex AI</strong> and authenticates with the runtime
                     service account via <strong>Application Default Credentials</strong> — there is
-                    no API key to set. The SA needs <code className="bg-amber-100 px-1 rounded">roles/aiplatform.user</code>.
-                    Locally, run <code className="bg-amber-100 px-1 rounded">gcloud auth application-default login</code> once.
+                    no API key to set. The SA needs <code className="bg-amber-100 px-1 rounded-sm">roles/aiplatform.user</code>.
+                    Locally, run <code className="bg-amber-100 px-1 rounded-sm">gcloud auth application-default login</code> once.
                   </p>
                 </div>
 
@@ -243,7 +243,7 @@ export default function AdminView() {
                         value={apiKeyVal}
                         onChange={(e) => setApiKeyVal(e.target.value)}
                         placeholder="(none — Gemini uses ADC)"
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                         style={{ paddingRight: 36 }}
                       />
                       <button
@@ -279,7 +279,7 @@ export default function AdminView() {
               <div className="px-6 py-4">
                 <h2 className="font-semibold text-gray-900">Model Settings</h2>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  Stored in org settings and override <code className="text-xs bg-gray-100 px-1 rounded">application.yml</code> defaults at runtime.
+                  Stored in org settings and override <code className="text-xs bg-gray-100 px-1 rounded-sm">application.yml</code> defaults at runtime.
                 </p>
               </div>
               <div className="px-6 py-4 space-y-4">
@@ -288,7 +288,7 @@ export default function AdminView() {
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                   >
                     <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite  (fast — chat + light docs)</option>
                     <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview  (reasoning — signable clinical docs)</option>
@@ -304,7 +304,7 @@ export default function AdminView() {
                     step={256}
                     value={maxTokens}
                     onChange={(e) => setMaxTokens(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                   />
                   <p className="text-xs text-gray-400 mt-1">
                     Default: 4000. Clinical documents may need up to 8000 for full BIPs/FBAs.
@@ -361,7 +361,7 @@ export default function AdminView() {
                       style={{ background: dlpEnabled ? '#3F9B2F' : '#D1D5DB' }}
                     />
                     <div
-                      className="absolute top-1 rounded-full bg-white transition-transform shadow"
+                      className="absolute top-1 rounded-full bg-white transition-transform shadow-sm"
                       style={{ width: 16, height: 16, left: dlpEnabled ? 22 : 4, transitionProperty: 'left' }}
                     />
                   </div>
@@ -377,11 +377,11 @@ export default function AdminView() {
                   <div className="rounded-lg p-4 text-sm" style={{ background: '#E8F4F8', borderLeft: '4px solid #1E88FF' }}>
                     <p className="font-medium text-blue-800 mb-1">Authentication</p>
                     <p className="text-blue-700 leading-relaxed">
-                      <strong>Local dev:</strong> set <code className="bg-blue-100 px-1 rounded">GOOGLE_APPLICATION_CREDENTIALS</code> to
+                      <strong>Local dev:</strong> set <code className="bg-blue-100 px-1 rounded-sm">GOOGLE_APPLICATION_CREDENTIALS</code> to
                       your service account JSON key path.
                       <br />
                       <strong>Cloud Run:</strong> attach a service account with the{' '}
-                      <code className="bg-blue-100 px-1 rounded">roles/dlp.user</code> role — no key file needed
+                      <code className="bg-blue-100 px-1 rounded-sm">roles/dlp.user</code> role — no key file needed
                       (Workload Identity). The API key field below is for dev/testing only.
                     </p>
                   </div>
@@ -394,7 +394,7 @@ export default function AdminView() {
                         value={gcpProjectId}
                         onChange={(e) => setGcpProjectId(e.target.value)}
                         placeholder="my-gcp-project-123"
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                       />
                     </div>
                     <div>
@@ -402,7 +402,7 @@ export default function AdminView() {
                       <select
                         value={gcpLocation}
                         onChange={(e) => setGcpLocation(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                       >
                         <option value="global">global (default)</option>
                         <option value="us">us (data residency: US)</option>
@@ -423,7 +423,7 @@ export default function AdminView() {
                         value={dlpApiKey}
                         onChange={(e) => setDlpApiKey(e.target.value)}
                         placeholder="AIza..."
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                         style={{ paddingRight: 36 }}
                       />
                       <button
@@ -444,7 +444,7 @@ export default function AdminView() {
                   <select
                     value={dlpLikelihood}
                     onChange={(e) => setDlpLikelihood(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                   >
                     <option value="VERY_UNLIKELY">Very Unlikely (flag everything)</option>
                     <option value="UNLIKELY">Unlikely</option>
@@ -453,7 +453,7 @@ export default function AdminView() {
                     <option value="VERY_LIKELY">Very Likely (least sensitive)</option>
                   </select>
                   <p className="text-xs text-gray-400 mt-1">
-                    Maps to the DLP API <code className="bg-gray-100 px-1 rounded">minLikelihood</code> parameter.
+                    Maps to the DLP API <code className="bg-gray-100 px-1 rounded-sm">minLikelihood</code> parameter.
                   </p>
                 </div>
 
@@ -655,7 +655,7 @@ export default function AdminView() {
                             <p className="text-sm font-medium text-gray-800">
                               {e.eventType?.replace('_', ' ').toLowerCase()}
                               {e.synthesis && (
-                                <span className="ml-2 text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                                <span className="ml-2 text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-sm">
                                   synthesis
                                 </span>
                               )}
@@ -664,7 +664,7 @@ export default function AdminView() {
                           </div>
                           <div className="text-right shrink-0">
                             {e.sensitivity && (
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded"
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-sm"
                                 style={{
                                   background: e.sensitivity === 'HIGH' ? '#fee2e2' : '#FEF9C3',
                                   color:      e.sensitivity === 'HIGH' ? '#991B1B' : '#854D0E',

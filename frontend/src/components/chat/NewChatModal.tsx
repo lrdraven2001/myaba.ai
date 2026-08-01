@@ -212,7 +212,7 @@ export default function NewChatModal({ clients, onClose, onCreate, initialProjec
           </label>
           <input
             type="text"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-teal-500"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:border-teal-500"
             placeholder={`e.g. ${autoTitle(scope, clients.find((c) => c.id === selectedClientId)?.preferredName, selectedProject?.title)}`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -232,7 +232,7 @@ export default function NewChatModal({ clients, onClose, onCreate, initialProjec
             Attach Policies
             {selectedPolicyIds.length > 0 && (
               <span
-                className="ml-1 px-1.5 py-0.5 rounded text-white text-xs font-bold"
+                className="ml-1 px-1.5 py-0.5 rounded-sm text-white text-xs font-bold"
                 style={{ background: '#2a5f6f' }}
               >
                 {selectedPolicyIds.length}

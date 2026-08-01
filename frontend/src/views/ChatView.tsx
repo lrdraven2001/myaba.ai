@@ -34,7 +34,7 @@ function MarkdownContent({ text }: { text: string }) {
           if (p.startsWith('*') && p.endsWith('*'))
             return <em key={j}>{p.slice(1, -1)}</em>;
           if (p.startsWith('`') && p.endsWith('`'))
-            return <code key={j} className="bg-gray-100 text-teal-700 rounded px-1 text-xs font-mono">{p.slice(1, -1)}</code>;
+            return <code key={j} className="bg-gray-100 text-teal-700 rounded-sm px-1 text-xs font-mono">{p.slice(1, -1)}</code>;
           return p;
         })}
       </span>
@@ -849,7 +849,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           {/* BAA not yet signed — clinical features locked for this user's org */}
           {clinicalChatLocked && (
             <div
-              className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0"
+              className="flex items-center gap-2 px-4 py-2.5 shrink-0"
               style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d' }}
             >
               <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: '#d97706', flexShrink: 0 }} />
@@ -863,7 +863,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
 
           {!userHasPhiAccess && (
             <div
-              className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0"
+              className="flex items-center gap-2 px-4 py-2.5 shrink-0"
               style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa' }}
             >
               <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: '#b45309', flexShrink: 0 }} />
@@ -876,7 +876,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           )}
 
           {/* Chat header */}
-          <div className="border-b border-gray-200 bg-white px-4 md:px-6 py-3 flex items-center gap-3 flex-wrap flex-shrink-0">
+          <div className="border-b border-gray-200 bg-white px-4 md:px-6 py-3 flex items-center gap-3 flex-wrap shrink-0">
             {/* Back to chat list (mobile master-detail) */}
             {isMobile && (
               <button
@@ -949,7 +949,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
             {editingTitle ? (
               <input
                 ref={titleInputRef}
-                className="text-sm font-semibold text-gray-700 border border-gray-300 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="text-sm font-semibold text-gray-700 border border-gray-300 rounded-lg px-2 py-0.5 focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 style={{ minWidth: 160, maxWidth: 320 }}
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
@@ -1026,7 +1026,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                     >
                       <div
                         className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                          msg.role === 'user' ? 'text-white' : 'bg-white text-gray-800 border border-gray-200 shadow-sm'
+                          msg.role === 'user' ? 'text-white' : 'bg-white text-gray-800 border border-gray-200 shadow-xs'
                         }`}
                         style={msg.role === 'user' ? { background: '#2a5f6f' } : {}}
                       >
@@ -1230,7 +1230,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
               >
                 {/* Attach */}
                 <button
-                  className="text-gray-400 hover:text-teal-600 transition-colors mb-1 flex-shrink-0"
+                  className="text-gray-400 hover:text-teal-600 transition-colors mb-1 shrink-0"
                   title="Attach templates or client files"
                   onClick={() => setShowFileAttach(true)}
                 >
@@ -1240,7 +1240,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                 {/* Multi-line textarea */}
                 <textarea
                   ref={textareaRef}
-                  className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
+                  className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-hidden leading-relaxed"
                   placeholder="Ask anything  —  Shift+Enter for new line"
                   rows={1}
                   value={input}
@@ -1257,7 +1257,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                     onClick={stopGeneration}
                     title="Stop generating"
                     aria-label="Stop generating"
-                    className="flex-shrink-0 mb-0.5 transition-all"
+                    className="shrink-0 mb-0.5 transition-all"
                     style={{ color: '#E5484D', cursor: 'pointer' }}
                   >
                     <FontAwesomeIcon icon={faStopCircle} style={{ fontSize: 28 }} />
@@ -1267,7 +1267,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                     onClick={sendMessage}
                     disabled={!input.trim() || !activeChatId}
                     title="Send (Ctrl+Enter)"
-                    className="flex-shrink-0 mb-0.5 transition-all"
+                    className="shrink-0 mb-0.5 transition-all"
                     style={{
                       color: input.trim() && activeChatId ? '#3F9B2F' : '#C8D8C8',
                       cursor: input.trim() && activeChatId ? 'pointer' : 'default',
@@ -1449,7 +1449,7 @@ function ChatLandingPage({ onNewChat, hasPhiAccess }: { onNewChat: () => void; h
       </button>
       <p className="text-xs mb-12" style={{ color: '#A8B4BF' }}>
         or press <kbd
-          className="px-1.5 py-0.5 rounded text-xs font-mono"
+          className="px-1.5 py-0.5 rounded-sm text-xs font-mono"
           style={{ background: '#E8F0F4', color: '#6B7B88', border: '1px solid #DCE7EE' }}
         >{shortcut}</kbd>
       </p>
@@ -1720,7 +1720,7 @@ function SaveAsTemplateModal({
             </label>
             <input
               type="text"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               placeholder="e.g. 5-Day Morning Schedule"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -1734,7 +1734,7 @@ function SaveAsTemplateModal({
               Category
             </label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
@@ -1757,7 +1757,7 @@ function SaveAsTemplateModal({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               disabled={deidentifying}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:bg-gray-50 disabled:text-gray-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-teal-600 disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
 

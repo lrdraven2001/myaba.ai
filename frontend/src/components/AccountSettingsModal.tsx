@@ -299,7 +299,7 @@ function MfaSection({ firebaseUser, flash, refreshUser, runSensitive }: any) {
             <img src={totp.qr} alt="2FA QR" style={{ width: 132, height: 132 }} />
             <div className="flex-1">
               <p className="text-xs text-gray-400 mb-1">Or enter this key manually:</p>
-              <code className="text-xs break-all bg-gray-50 px-2 py-1 rounded block mb-3">{totp.key}</code>
+              <code className="text-xs break-all bg-gray-50 px-2 py-1 rounded-sm block mb-3">{totp.key}</code>
               <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={6}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm tracking-widest text-center mb-2" />
               <div className="flex gap-2">
@@ -387,4 +387,4 @@ function Row({ icon, iconColor, label, sub, children }: any) {
     </div>
   );
 }
-const inp = 'flex-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200';
+const inp = 'flex-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200';

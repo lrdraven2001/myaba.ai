@@ -192,7 +192,7 @@ function Step1Select({
         </label>
         <input
           type="url"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
           placeholder={placeholder}
           value={state.driveUrl}
           onChange={(e) => onChange({ ...state, driveUrl: e.target.value })}
@@ -206,7 +206,7 @@ function Step1Select({
         </label>
         <input
           type="text"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
           placeholder="e.g. HIPAA Policy Manual"
           value={state.displayName}
           onChange={(e) => onChange({ ...state, displayName: e.target.value })}
@@ -484,7 +484,7 @@ function Step3Permissions({
             <div className="flex gap-2">
               <input
                 type="email"
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                 placeholder="user@example.com"
                 value={state.emailInput}
                 onChange={(e) => onChange({ ...state, emailInput: e.target.value })}
@@ -547,7 +547,7 @@ function Step3Permissions({
               <FontAwesomeIcon icon={faSpinner} className="animate-spin text-gray-400" />
             ) : (
               <select
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                 value={state.clientId}
                 onChange={(e) => handleClientSelect(e.target.value)}
               >

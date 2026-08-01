@@ -132,7 +132,7 @@ export default function PoliciesView({ embedded = false }: { embedded?: boolean 
           placeholder="Search resources…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600 w-56"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600 w-56"
         />
         <div className="flex gap-1.5 flex-wrap">
           <FilterChip label="All" active={filterCat === 'all'} onClick={() => setFilterCat('all')} />
@@ -394,7 +394,7 @@ function PolicyFormModal({
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Category</label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               value={category}
               onChange={(e) => setCategory(e.target.value as PolicyCategory)}
             >
@@ -422,7 +422,7 @@ function PolicyFormModal({
               rows={8}
               value={textContent}
               onChange={(e) => setTextContent(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600 font-mono"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600 font-mono"
               placeholder="Paste or type document text here…"
             />
           </div>
@@ -477,7 +477,7 @@ function FieldInput({ label, value, onChange, placeholder }: { label: string; va
       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
       <input
         type="text"
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

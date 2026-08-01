@@ -360,7 +360,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-400"
                   placeholder="e.g. Sunrise ABA Therapy"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
@@ -475,7 +475,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-400"
                   placeholder="e.g. Jane Smith"
                   value={signerName}
                   onChange={(e) => setSignerName(e.target.value)}
@@ -488,7 +488,7 @@ export default function OnboardingView({ onComplete }: Props) {
                 </label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-400"
                   placeholder="e.g. Clinical Director, BCBA-D"
                   value={signerTitle}
                   onChange={(e) => setSignerTitle(e.target.value)}
@@ -558,7 +558,7 @@ export default function OnboardingView({ onComplete }: Props) {
                   Role to invite
                 </label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-400"
                   value={inviteRole}
                   onChange={(e) => { setInviteRole(e.target.value as UserRole); setInviteUrl(''); }}
                 >
@@ -588,7 +588,7 @@ export default function OnboardingView({ onComplete }: Props) {
                     <input
                       readOnly
                       value={inviteUrl}
-                      className="flex-1 text-xs text-gray-700 bg-transparent border-none outline-none truncate"
+                      className="flex-1 text-xs text-gray-700 bg-transparent border-none outline-hidden truncate"
                     />
                     <button
                       onClick={handleCopy}

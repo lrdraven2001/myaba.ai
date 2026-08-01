@@ -368,16 +368,16 @@ export default function FileAttachModal({ onClose, onAttach, alreadyAttached, pr
                       type="checkbox"
                       checked={selectedIds.has(d.id)}
                       onChange={() => toggle(d.id)}
-                      className="w-4 h-4 rounded"
+                      className="w-4 h-4 rounded-sm"
                       style={{ accentColor: '#2a5f6f' }}
                     />
-                    <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm flex-shrink-0" />
+                    <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm shrink-0" />
                     <span className="flex-1 text-sm text-gray-700 truncate">{d.title}</span>
                     {d.hasOriginal && projectId && (
                       <button
                         type="button"
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.openProjectKnowledgeOriginal(projectId, d.id).catch(() => {}); }}
-                        className="text-gray-400 hover:text-teal-600 transition-colors flex-shrink-0"
+                        className="text-gray-400 hover:text-teal-600 transition-colors shrink-0"
                         title="Download original file"
                       >
                         <FontAwesomeIcon icon={faDownload} className="text-sm" />
@@ -500,13 +500,13 @@ function TemplateRow({
         type="checkbox"
         checked={checked}
         onChange={onToggle}
-        className="w-4 h-4 rounded"
+        className="w-4 h-4 rounded-sm"
         style={{ accentColor: '#2a5f6f' }}
       />
-      <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm flex-shrink-0" />
+      <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm shrink-0" />
       <span className="flex-1 text-sm text-gray-700">{template.title}</span>
       <span
-        className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+        className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
         style={{ background: colors.bg, color: colors.text }}
       >
         {template.category.replace(/_/g, ' ')}
@@ -531,24 +531,24 @@ function ClientFileRow({
         type="checkbox"
         checked={checked}
         onChange={onToggle}
-        className="w-4 h-4 rounded"
+        className="w-4 h-4 rounded-sm"
         style={{ accentColor: '#2a5f6f' }}
       />
-      <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm flex-shrink-0" />
+      <FontAwesomeIcon icon={faFileAlt} className="text-gray-400 text-sm shrink-0" />
       <span className="flex-1 text-sm text-gray-700">{file.title}</span>
       {file.hasOriginal && (
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); api.openClientDocumentOriginal(file.clientId, file.id).catch(() => {}); }}
-          className="text-gray-400 hover:text-teal-600 transition-colors flex-shrink-0"
+          className="text-gray-400 hover:text-teal-600 transition-colors shrink-0"
           title="Download original file"
         >
           <FontAwesomeIcon icon={faDownload} className="text-sm" />
         </button>
       )}
-      <span className="text-xs text-gray-400 flex-shrink-0">{file.uploadedAt}</span>
+      <span className="text-xs text-gray-400 shrink-0">{file.uploadedAt}</span>
       <span
-        className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+        className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
         style={{ background: colors.bg, color: colors.text }}
       >
         {file.category.replace(/_/g, ' ')}

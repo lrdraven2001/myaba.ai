@@ -82,7 +82,7 @@ export default function IdleTimeout() {
   const mm = Math.floor(remaining / 60);
   const ss = (remaining % 60).toString().padStart(2, '0');
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40" role="alertdialog" aria-modal="true">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40" role="alertdialog" aria-modal="true">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
         <h2 className="text-lg font-semibold text-gray-900">Are you still there?</h2>
         <p className="text-sm text-gray-600 mt-2">

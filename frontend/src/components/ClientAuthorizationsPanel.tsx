@@ -245,7 +245,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
             <select
               value={addType}
               onChange={(e) => setAddType(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
             >
               <option value="">Select type...</option>
               {HIPAA_AUTH_TYPES.map((t) => (
@@ -294,7 +294,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
                 value={addExpiry}
                 min={new Date().toISOString().slice(0, 10)}
                 onChange={(e) => setAddExpiry(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               />
             </div>
             <div>
@@ -306,7 +306,7 @@ export default function ClientAuthorizationsPanel({ clientId, clientDiagnosis = 
                 value={addEvidence}
                 onChange={(e) => setAddEvidence(e.target.value)}
                 placeholder="IRB filing ID, consent form ref..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               />
             </div>
           </div>
@@ -387,12 +387,12 @@ function AuthorizationCard({
         </div>
         <div className="flex flex-wrap gap-1 mb-1">
           {record.scope.length === 0 && (
-            <span className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-500 italic">
+            <span className="text-xs px-2 py-0.5 rounded-sm bg-white border border-gray-200 text-gray-500 italic">
               All treatment categories
             </span>
           )}
           {record.scope.map((s) => (
-            <span key={s} className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600">
+            <span key={s} className="text-xs px-2 py-0.5 rounded-sm bg-white border border-gray-200 text-gray-600">
               {s}
             </span>
           ))}

@@ -341,7 +341,7 @@ export default function TeamView() {
                   Role
                 </label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                   value={inviteRole}
                   onChange={(e) => { setInviteRole(e.target.value); setInviteUrl(''); setInviteError(''); }}
                   disabled={!!inviteUrl}
@@ -361,7 +361,7 @@ export default function TeamView() {
                 <input
                   type="email"
                   placeholder="name@example.com"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                 />
@@ -377,7 +377,7 @@ export default function TeamView() {
                     <input
                       readOnly
                       value={inviteUrl}
-                      className="flex-1 text-xs text-gray-700 bg-transparent border-none outline-none truncate font-mono"
+                      className="flex-1 text-xs text-gray-700 bg-transparent border-none outline-hidden truncate font-mono"
                     />
                     <button
                       onClick={handleCopyInvite}
@@ -679,7 +679,7 @@ function UserProfileTab({
               Role
             </label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-orange-300"
               value={role}
               onChange={(e) => handleRoleChange(e.target.value)}
               disabled={member.role === 'ORG_SUPER_ADMIN'}
@@ -709,7 +709,7 @@ function UserProfileTab({
               AI Seat Tier
             </label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-orange-300"
               value={aiTier}
               onChange={(e) => { setAiTier(e.target.value as 'full' | 'lite'); setSaved(false); }}
               disabled={member.role === 'ORG_SUPER_ADMIN'}
@@ -773,7 +773,7 @@ function UserProfileTab({
                 </p>
               ) : (
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-orange-300"
                   value={supervisorId}
                   onChange={(e) => { setSupervisorId(e.target.value); setSaved(false); }}
                 >

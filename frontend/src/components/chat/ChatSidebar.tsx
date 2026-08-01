@@ -198,7 +198,7 @@ export default function ChatSidebar({
             readOnly={!searching}
             onChange={(e) => { setSearching(true); setQuery(e.target.value); }}
             placeholder={searching ? 'Search chats…' : 'New chat…'}
-            className={`flex-1 bg-transparent text-sm outline-none min-w-0 ${searching ? '' : 'pointer-events-none'}`}
+            className={`flex-1 bg-transparent text-sm outline-hidden min-w-0 ${searching ? '' : 'pointer-events-none'}`}
             style={{ color: '#1E3347' }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') closeSearch();
@@ -478,7 +478,7 @@ function ChatRow({ chat, preview, isActive, onClick, onDelete }: {
             {chat.title || 'Untitled Chat'}
           </p>
           {(() => { const s = chatScope(chat); return (
-            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0"
+            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-sm shrink-0"
               style={{ background: `${s.color}1A`, color: s.color }}>{s.label}</span>
           ); })()}
         </div>
@@ -490,7 +490,7 @@ function ChatRow({ chat, preview, isActive, onClick, onDelete }: {
       {/* Delete button — appears on hover */}
       {onDelete && hovered && (
         <button
-          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-sm transition-colors"
           style={{ color: '#9ca3af' }}
           onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = '#fee2e2'; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.background = 'transparent'; }}

@@ -153,14 +153,14 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search rules…"
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-600"
             />
           </div>
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as typeof scope)}
             aria-label="Scope filter"
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+            className="text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-600"
           >
             <option value="all">Scope: All</option>
             <option value="allowed">Allowed</option>
@@ -232,7 +232,7 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
 // ── Communication Style card ───────────────────────────────────────────────
 const TONE_OPTIONS   = ['', 'Concise', 'Detailed', 'Warm', 'Clinical / formal', 'Plain-language'];
 const LENGTH_OPTIONS = ['', 'Brief', 'Standard', 'Thorough'];
-const selCls = 'text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-600';
+const selCls = 'text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-600';
 
 function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [p, setP] = useState<StyleProfile>({});
@@ -387,7 +387,7 @@ function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: bo
                   onChange={(e) => setNewTerm(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm(); } }}
                   placeholder="e.g. Use 'learner' rather than 'patient'"
-                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                 />
                 <SecondaryButton icon={faPlus} onClick={addTerm}>Add</SecondaryButton>
               </div>
@@ -403,7 +403,7 @@ function CommunicationStyleCard({ orgId, isAdmin }: { orgId: string; isAdmin: bo
             disabled={!isAdmin}
             rows={3}
             placeholder="Any other instructions on how you want the AI to communicate (e.g. avoid jargon; lead with the recommendation)."
-            className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600 resize-none"
+            className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600 resize-none"
           />
         </div>
 
@@ -451,7 +451,7 @@ function AddRuleModal({ orgId, onClose, onAdded }: { orgId: string; onClose: () 
           <textarea
             value={desc} onChange={(e) => setDesc(e.target.value)} rows={3}
             placeholder="Describe what this rule allows or restricts (e.g. Never provide ABA therapy scripts)"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
           />
         </div>
         <div className="mt-5 flex justify-end gap-2">

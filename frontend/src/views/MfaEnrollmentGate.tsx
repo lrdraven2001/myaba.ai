@@ -53,7 +53,7 @@ export default function MfaEnrollmentGate() {
 
   return (
     <div className="h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xs border border-gray-100 p-8">
         <div className="text-center">
           <div className="mx-auto mb-4 flex items-center justify-center rounded-full" style={{ width: 52, height: 52, background: '#e8f0f2' }}>
             <FontAwesomeIcon icon={faShieldHalved} style={{ color: '#2a5f6f', fontSize: 22 }} />
@@ -86,7 +86,7 @@ export default function MfaEnrollmentGate() {
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 inputMode="numeric" autoFocus placeholder="000000" aria-label="Authenticator code"
-                className="w-full text-center tracking-[0.3em] text-xl font-bold py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
+                className="w-full text-center tracking-[0.3em] text-xl font-bold py-2.5 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               />
               {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
               <button

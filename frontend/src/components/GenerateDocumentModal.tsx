@@ -187,7 +187,7 @@ export default function GenerateDocumentModal({
                 <select
                   value={docType}
                   onChange={(e) => setDocType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200 bg-white"
                 >
                   {visibleDocTypes.map((t) => (
                     <option key={t.value} value={t.value}>
@@ -220,7 +220,7 @@ export default function GenerateDocumentModal({
                   onChange={(e) => setContext(e.target.value)}
                   placeholder="Add session details, goals addressed, client behaviour notes, or other context to include in the document…"
                   rows={4}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200 resize-none"
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   Do not include SSNs, insurance IDs, or other non-clinical identifiers.
@@ -343,7 +343,7 @@ export default function GenerateDocumentModal({
                           <p className="text-xs font-medium text-gray-500 mb-2">Redacted positions</p>
                           <div className="flex flex-wrap gap-2">
                             {result.redactionMetadata.map((m, i) => (
-                              <span key={i} className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">
+                              <span key={i} className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-sm">
                                 {m.category} · pos {m.position}
                               </span>
                             ))}

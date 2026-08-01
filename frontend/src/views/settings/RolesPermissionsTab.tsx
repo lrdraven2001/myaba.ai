@@ -238,7 +238,7 @@ export default function RolesPermissionsTab({ orgId, isAdmin }: { orgId: string;
 
       {/* Save bar */}
       {dirty && (
-        <div className="sticky bottom-0 mt-6 -mx-8 px-8 py-3 bg-white/90 backdrop-blur border-t border-gray-200 flex items-center gap-3">
+        <div className="sticky bottom-0 mt-6 -mx-8 px-8 py-3 bg-white/90 backdrop-blur-sm border-t border-gray-200 flex items-center gap-3">
           <PrimaryButton onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</PrimaryButton>
           <SecondaryButton onClick={() => { setDirty(false); api.getRoleConfig(orgId).then((c) => setConfig({ roles: c.roles ?? {}, customRoles: c.customRoles ?? [], idpRoleMappings: c.idpRoleMappings ?? [] })).catch(() => {}); }}>Cancel</SecondaryButton>
           <span className="text-xs text-gray-400">Permission changes are saved to your organization. Cross-app enforcement is a follow-on.</span>

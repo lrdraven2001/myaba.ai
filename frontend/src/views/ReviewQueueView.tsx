@@ -860,7 +860,7 @@ export function OrgPolicyTab({ orgId }: { orgId: string }) {
               rows={3}
               value={addDesc}
               onChange={(e) => { setAddDesc(e.target.value); setAddError(''); }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
               placeholder={addType === 'ALLOW'
                 ? 'e.g. Progress session data without direct client name references is approved for clinical notes.'
                 : 'e.g. Social security numbers must never appear in any AI output.'}
@@ -1093,7 +1093,7 @@ function ReviewCard({
                   rows={3}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                   placeholder="Explain your decision and note any policy adjustments recommended..."
                 />
               </div>
@@ -1182,7 +1182,7 @@ function ReviewCard({
                       type="text"
                       value={promoteSlug}
                       onChange={(e) => setPromoteSlug(slugify(e.target.value))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                     />
                   </div>
 
@@ -1192,7 +1192,7 @@ function ReviewCard({
                       rows={2}
                       value={promoteDesc}
                       onChange={(e) => setPromoteDesc(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                     />
                   </div>
 
@@ -1470,7 +1470,7 @@ function ChatSessionItem({
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs font-semibold text-gray-800 truncate">{session.userName}</span>
           <span
-            className="text-xs px-1.5 py-0 rounded font-medium shrink-0 leading-5"
+            className="text-xs px-1.5 py-0 rounded-sm font-medium shrink-0 leading-5"
             style={{ background: roleChip.bg, color: roleChip.text }}
           >
             {CHAT_ROLE_LABELS[session.userRole] ?? session.userRole}
@@ -1495,7 +1495,7 @@ function ChatSessionItem({
             const meta = ACLX_LABEL_META[lbl];
             if (!meta) return null;
             return (
-              <span key={lbl} className="text-xs px-1.5 rounded font-semibold leading-5"
+              <span key={lbl} className="text-xs px-1.5 rounded-sm font-semibold leading-5"
                 style={{ background: meta.bg, color: meta.text }}>
                 {meta.label}
               </span>

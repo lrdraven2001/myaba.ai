@@ -399,8 +399,8 @@ function UsageTrend({ history }: { history: UsageHistoryEntry[] }) {
       </div>
       {/* Legend */}
       <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#7C3AED' }} /> Documents</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#3F9B2F' }} /> Chats</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-xs" style={{ background: '#7C3AED' }} /> Documents</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-xs" style={{ background: '#3F9B2F' }} /> Chats</span>
       </div>
     </div>
   );

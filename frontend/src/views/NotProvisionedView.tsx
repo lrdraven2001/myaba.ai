@@ -13,7 +13,7 @@ export default function NotProvisionedView() {
   return (
     <div className="h-screen overflow-y-auto bg-gray-50">
      <div className="min-h-full flex items-center justify-center px-4 py-8">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xs border border-gray-100 p-8 text-center">
         <div
           className="mx-auto mb-5 flex items-center justify-center rounded-full"
           style={{ width: 56, height: 56, background: '#e8f0f2' }}

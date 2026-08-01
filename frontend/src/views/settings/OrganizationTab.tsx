@@ -117,7 +117,7 @@ export default function OrganizationTab({
                     value={nameDraft}
                     onChange={(e) => setNameDraft(e.target.value)}
                     autoFocus
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                   />
                 : <div className="text-sm font-semibold text-gray-900">{org?.name ?? '—'}</div>}
             </div>
@@ -141,14 +141,14 @@ export default function OrganizationTab({
                       onChange={(e) => setCityDraft(e.target.value)}
                       placeholder="City"
                       aria-label="City"
-                      className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                     />
                     <input
                       value={stateDraft}
                       onChange={(e) => setStateDraft(e.target.value)}
                       placeholder="State"
                       aria-label="State"
-                      className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600"
                     />
                   </div>
                 : <div className="text-sm font-semibold text-gray-900">
@@ -347,8 +347,8 @@ function SignModal({
         <h3 className="text-lg font-semibold text-gray-900">Sign {label}</h3>
         <p className="text-sm text-gray-500 mt-1">Enter the signer's name and title to record acceptance.</p>
         <div className="mt-4 space-y-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Signer full name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600" />
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Signer title (e.g. Owner, BCBA)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Signer full name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Signer title (e.g. Owner, BCBA)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-600" />
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>

@@ -292,7 +292,7 @@ function EhrCard({
                   value={fields[f.key] ?? ''}
                   onChange={(e) => setFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
                   placeholder={f.placeholder}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
               </div>
             ))}
@@ -328,7 +328,7 @@ function EhrCard({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search by client name…"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-teal-500"
             />
             <button
               onClick={handleSearch}
@@ -356,7 +356,7 @@ function EhrCard({
                       {r.diagnosisDescriptions?.length ? ` · ${r.diagnosisDescriptions[0]}` : ''}
                     </p>
                   </div>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-sm">
                     ID: {r.ehrId}
                   </span>
                 </div>

@@ -379,7 +379,7 @@ function ResourceManager({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={`Search ${meta.title.toLowerCase()}…`}
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200 bg-white"
               />
             </div>
             {tab === 'library' && (
@@ -410,7 +410,7 @@ function ResourceManager({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-gray-800 truncate">{c.label}</span>
-                    <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: '#EEF2F6', color: '#52616B' }}>{c.count}</span>
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded-sm" style={{ background: '#EEF2F6', color: '#52616B' }}>{c.count}</span>
                   </div>
                   <p className="text-xs text-gray-400 truncate">{c.sub}</p>
                 </div>
@@ -513,7 +513,7 @@ function FilterSelect({ label, value, onChange, options }: {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="appearance-none pl-3 pr-8 py-2 rounded-lg border border-gray-200 text-sm bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        className="appearance-none pl-3 pr-8 py-2 rounded-lg border border-gray-200 text-sm bg-white text-gray-600 focus:outline-hidden focus:ring-2 focus:ring-blue-200"
       >
         <option value="">{label}: All</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -584,7 +584,7 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-800 truncate">{r.title}</span>
                         {tab === 'templates' && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={isCustom ? { background: '#E6F4FF', color: '#1E88FF' } : { background: '#F3EEFE', color: '#7C3AED' }}>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm" style={isCustom ? { background: '#E6F4FF', color: '#1E88FF' } : { background: '#F3EEFE', color: '#7C3AED' }}>
                             {isCustom ? 'Custom' : 'Customized'}
                           </span>
                         )}
@@ -626,7 +626,7 @@ function ResourceTable({ tab, rows, members, selectedId, onSelect, onArchive, on
                         const openUp = rect.bottom + MENU_H > window.innerHeight - 8;
                         setMenu({ id: r.id, x: rect.right, y: openUp ? rect.top - MENU_H : rect.bottom + 4 });
                       }}
-                      className="w-7 h-7 rounded hover:bg-gray-100 text-gray-400"
+                      className="w-7 h-7 rounded-sm hover:bg-gray-100 text-gray-400"
                     >
                       <FontAwesomeIcon icon={faEllipsisH} style={{ fontSize: 13 }} />
                     </button>
@@ -764,8 +764,8 @@ function DetailsPanel({ tab, resource, starter, members, isAdmin, onClose, onEdi
           </div>
           <div className="min-w-0">
             <p className="font-semibold text-gray-900 leading-tight">{title}</p>
-            {starter && !starter.customized && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: '#F0F4F8', color: '#8CA4B5' }}>Default · myABA</span>}
-            {r?.shared && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: '#E6F4EA', color: '#1E7E34' }}>Shared</span>}
+            {starter && !starter.customized && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm mt-1 inline-block" style={{ background: '#F0F4F8', color: '#8CA4B5' }}>Default · myABA</span>}
+            {r?.shared && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm mt-1 inline-block" style={{ background: '#E6F4EA', color: '#1E7E34' }}>Shared</span>}
           </div>
         </div>
         {(r?.description) && <p className="text-sm text-gray-500 mb-4">{r.description}</p>}
@@ -1038,7 +1038,7 @@ function ResourceFormModal({ tab, editing, presetDoc, custom, onClose, onSaved }
   );
 }
 
-const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200';
+const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-200';
 function Field({ label, req, children }: { label: string; req?: boolean; children: React.ReactNode }) {
   return (
     <div>

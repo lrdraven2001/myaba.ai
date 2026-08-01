@@ -93,7 +93,7 @@ export default function SearchModal({ onClose, onNavigate }: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter') runSearch(query); }}
             placeholder="Search chats, projects, clients, resources…"
             aria-label="Search query"
-            className="flex-1 text-base text-gray-800 placeholder-gray-400 bg-transparent focus:outline-none"
+            className="flex-1 text-base text-gray-800 placeholder-gray-400 bg-transparent focus:outline-hidden"
           />
           <button
             onClick={onClose}
@@ -116,7 +116,7 @@ export default function SearchModal({ onClose, onNavigate }: Props) {
 
           {!loading && !result && !error && (
             <p className="text-sm text-gray-400 text-center py-10">
-              Type a search term and press <kbd className="px-1.5 py-0.5 rounded border border-gray-300 text-xs">Enter</kbd>.
+              Type a search term and press <kbd className="px-1.5 py-0.5 rounded-sm border border-gray-300 text-xs">Enter</kbd>.
               Results are limited to what you’re permitted to see.
             </p>
           )}

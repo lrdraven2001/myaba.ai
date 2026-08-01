@@ -91,7 +91,7 @@ export function Toggle({
       style={{ width: 44, height: 24, background: checked ? '#16a34a' : '#cbd5e1' }}
     >
       <span
-        className="inline-block bg-white rounded-full shadow transition-transform"
+        className="inline-block bg-white rounded-full shadow-sm transition-transform"
         style={{ width: 18, height: 18, transform: `translateX(${checked ? 23 : 3}px)` }}
       />
     </button>
@@ -121,7 +121,7 @@ export function SelectPill({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="appearance-none text-[13px] font-medium rounded-lg pl-3 pr-8 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="appearance-none text-[13px] font-medium rounded-lg pl-3 pr-8 py-1.5 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
         style={{ background: tones.bg, border: `1px solid ${tones.border}`, color: tones.text }}
       >
         {options.map((o) => (
