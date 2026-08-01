@@ -307,16 +307,69 @@ public class ProjectService {
     // ── Knowledge docs ────────────────────────────────────────────────────
 
     public List<Map<String, Object>> getKnowledgeDocs(AppUser user, String projectId) throws Exception {
-        getProject(user, projectId); // auth check
+        Map<String, Object> project = getProject(user, projectId); // auth check + owner lookup
+        List<Map<String, Object>> docs;
         if (devMode) {
-            return new ArrayList<>(devKnowledgeDocs.getOrDefault(projectId, List.of()));
+            docs = new ArrayList<>(devKnowledgeDocs.getOrDefault(projectId, List.of()));
+        } else {
+            Firestore db = FirestoreClient.getFirestore();
+            var snaps = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                          .collection(FirestoreCollections.PROJECTS).document(projectId)
+                          .collection("knowledgeDocs")
+                          .orderBy("createdAt").get().get().getDocuments();
+            docs = toList(snaps);
         }
-        Firestore db = FirestoreClient.getFirestore();
-        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
-                     .collection(FirestoreCollections.PROJECTS).document(projectId)
-                     .collection("knowledgeDocs")
-                     .orderBy("createdAt").get().get().getDocuments();
-        return toList(docs);
+
+        // "Uploaded by" fallback for docs that never captured an uploader (legacy
+        // pasted/extracted docs): show the project owner, then the org owner.
+        boolean anyBlank = docs.stream().anyMatch(d -> {
+            Object cb = d.get("createdBy");
+            return cb == null || String.valueOf(cb).isBlank();
+        });
+        if (anyBlank) {
+            String fallback = resolveUploaderFallback(user.getOrgId(), project);
+            if (!fallback.isBlank()) {
+                for (Map<String, Object> doc : docs) {
+                    Object cb = doc.get("createdBy");
+                    if (cb == null || String.valueOf(cb).isBlank()) doc.put("createdBy", fallback);
+                }
+            }
+        }
+        return docs;
+    }
+
+    /**
+     * Resolve the display name to show for a blank "Uploaded by": the project
+     * owner first, then the organization owner. Returns "" if neither resolves.
+     */
+    private String resolveUploaderFallback(String orgId, Map<String, Object> project) {
+        Map<String, String> nameByUid = new HashMap<>();
+        try {
+            for (Map<String, Object> m : orgService.getOrgMembers(orgId)) {
+                Object dn = m.getOrDefault("displayName", m.get("email"));
+                if (dn != null && !String.valueOf(dn).isBlank())
+                    nameByUid.put(String.valueOf(m.get("id")), String.valueOf(dn));
+            }
+        } catch (Exception e) {
+            log.warn("resolveUploaderFallback: org member resolution failed for {}: {}", orgId, e.getMessage());
+        }
+
+        String projectOwnerId = (String) project.get("ownerId");
+        if (projectOwnerId != null) {
+            String name = nameByUid.get(projectOwnerId);
+            if (name != null && !name.isBlank()) return name;
+        }
+        try {
+            Map<String, Object> org = orgService.getOrg(orgId);
+            String orgOwnerUid = org != null ? (String) org.get("adminUid") : null;
+            if (orgOwnerUid != null) {
+                String name = nameByUid.get(orgOwnerUid);
+                if (name != null && !name.isBlank()) return name;
+            }
+        } catch (Exception e) {
+            log.warn("resolveUploaderFallback: org owner resolution failed for {}: {}", orgId, e.getMessage());
+        }
+        return "";
     }
 
     /**
