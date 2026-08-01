@@ -509,10 +509,11 @@ function ProjectDetailView({
           ) : (
             <button
               onClick={() => setEditingTitle(true)}
-              className="flex items-center gap-1.5 text-base font-semibold text-gray-900 hover:text-teal-700 transition-colors"
+              title={project.title}
+              className="flex items-center gap-1.5 max-w-full min-w-0 text-base font-semibold text-gray-900 hover:text-teal-700 transition-colors"
             >
-              {project.title}
-              <FontAwesomeIcon icon={faPencilAlt} className="text-gray-300 hover:text-teal-500" style={{ fontSize: 11 }} />
+              <span className="truncate">{project.title}</span>
+              <FontAwesomeIcon icon={faPencilAlt} className="shrink-0 text-gray-300 hover:text-teal-500" style={{ fontSize: 11 }} />
             </button>
           )}
         </div>
