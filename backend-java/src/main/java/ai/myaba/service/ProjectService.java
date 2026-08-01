@@ -343,29 +343,16 @@ public class ProjectService {
      * owner first, then the organization owner. Returns "" if neither resolves.
      */
     private String resolveUploaderFallback(String orgId, Map<String, Object> project) {
-        Map<String, String> nameByUid = new HashMap<>();
-        try {
-            for (Map<String, Object> m : orgService.getOrgMembers(orgId)) {
-                Object dn = m.getOrDefault("displayName", m.get("email"));
-                if (dn != null && !String.valueOf(dn).isBlank())
-                    nameByUid.put(String.valueOf(m.get("id")), String.valueOf(dn));
-            }
-        } catch (Exception e) {
-            log.warn("resolveUploaderFallback: org member resolution failed for {}: {}", orgId, e.getMessage());
-        }
-
-        String projectOwnerId = (String) project.get("ownerId");
-        if (projectOwnerId != null) {
-            String name = nameByUid.get(projectOwnerId);
-            if (name != null && !name.isBlank()) return name;
-        }
+        // Project owner first, then the org owner — two point member reads instead
+        // of listing + permission-resolving the entire org membership. getOrg() is
+        // cached, so the org-owner lookup is effectively free.
+        String name = orgService.getMemberName(orgId, (String) project.get("ownerId"));
+        if (!name.isBlank()) return name;
         try {
             Map<String, Object> org = orgService.getOrg(orgId);
             String orgOwnerUid = org != null ? (String) org.get("adminUid") : null;
-            if (orgOwnerUid != null) {
-                String name = nameByUid.get(orgOwnerUid);
-                if (name != null && !name.isBlank()) return name;
-            }
+            name = orgService.getMemberName(orgId, orgOwnerUid);
+            if (!name.isBlank()) return name;
         } catch (Exception e) {
             log.warn("resolveUploaderFallback: org owner resolution failed for {}: {}", orgId, e.getMessage());
         }
@@ -654,13 +641,24 @@ public class ProjectService {
 
             if (!docs.isEmpty()) {
                 sb.append("## Project Knowledge\n");
-                for (Map<String, Object> doc : docs) {
-                    String title   = (String) doc.getOrDefault("title",       "Document");
-                    String content = (String) doc.getOrDefault("textContent", "");
-                    if (content != null && !content.isBlank()) {
-                        sb.append("### ").append(title).append("\n")
-                          .append(content.trim()).append("\n\n");
+                // Bound the concatenated knowledge text so a project with many/large
+                // docs can't balloon the system prompt on every request (latency +
+                // token cost). Always include at least the first doc, then stop once
+                // the budget is exceeded. ~200k chars ≈ 50k tokens.
+                final int PROJECT_KNOWLEDGE_CHAR_BUDGET = 200_000;
+                int used = 0;
+                for (int i = 0; i < docs.size(); i++) {
+                    String content = (String) docs.get(i).getOrDefault("textContent", "");
+                    if (content == null || content.isBlank()) continue;
+                    String trimmed = content.trim();
+                    if (used > 0 && used + trimmed.length() > PROJECT_KNOWLEDGE_CHAR_BUDGET) {
+                        sb.append("_(Additional project documents omitted to stay within the context budget.)_\n\n");
+                        break;
                     }
+                    String title = (String) docs.get(i).getOrDefault("title", "Document");
+                    sb.append("### ").append(title).append("\n")
+                      .append(trimmed).append("\n\n");
+                    used += trimmed.length();
                 }
             }
 

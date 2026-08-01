@@ -166,6 +166,37 @@ public class OrgService {
     }
 
     /**
+     * Display name (falling back to email) for a single member, or "" if unknown.
+     * One point read of {@code organizations/{orgId}/members/{uid}} — for callers
+     * that need one or two specific members and shouldn't list the whole org.
+     */
+    public String getMemberName(String orgId, String uid) {
+        if (orgId == null || uid == null || uid.isBlank()) return "";
+        try {
+            if (devMode) {
+                for (Map<String, Object> m : devOrgMembers.getOrDefault(orgId, List.of())) {
+                    if (uid.equals(m.get("uid")) || uid.equals(m.get("id"))) {
+                        Object dn = m.getOrDefault("displayName", m.get("email"));
+                        return dn != null ? String.valueOf(dn) : "";
+                    }
+                }
+                return "";
+            }
+            var snap = FirestoreClient.getFirestore()
+                    .collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection(FirestoreCollections.MEMBERS).document(uid).get().get();
+            if (!snap.exists()) return "";
+            Object dn = snap.get("displayName");
+            if (dn != null && !String.valueOf(dn).isBlank()) return String.valueOf(dn);
+            Object em = snap.get("email");
+            return em != null ? String.valueOf(em) : "";
+        } catch (Exception e) {
+            log.warn("getMemberName failed for org {} uid {}: {}", orgId, uid, e.getMessage());
+            return "";
+        }
+    }
+
+    /**
      * Returns the list of member records for the given org.
      * Dev mode: returns the seeded stub members.
      * Production: reads the {@code organizations/{orgId}/members} subcollection.

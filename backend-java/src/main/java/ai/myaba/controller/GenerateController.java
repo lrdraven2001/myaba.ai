@@ -153,17 +153,6 @@ public class GenerateController {
      * a cited web summary) read as unsupported claims and the reply escalates as a
      * possible hallucination.
      */
-    /** True when the chat is attached to a project (drives reasoning-tier routing). */
-    private boolean chatHasProject(AppUser user, String chatId) {
-        if (chatId == null || chatId.isBlank()) return false;
-        try {
-            Object pid = chatService.getChat(user, chatId).get("projectId");
-            return pid != null && !String.valueOf(pid).isBlank();
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
                            boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut) {
         List<Map<String, Object>> tools = new ArrayList<>();
@@ -722,15 +711,26 @@ public class GenerateController {
         }
         messages.add(Map.of("role", "user", "content", withContextDocs(req.getMessage(), effectiveContextDocs)));
 
+        // Fetch the chat record once (nullable) and reuse it for both the system
+        // prompt (project + policy layers) and the reasoning-tier decision below —
+        // previously it was read from Firestore twice per request.
+        Map<String, Object> chat = null;
+        if (req.getChatId() != null && !req.getChatId().isBlank()) {
+            try { chat = chatService.getChat(user, req.getChatId()); }
+            catch (Exception e) { log.warn("Could not load chat {}: {}", req.getChatId(), e.getMessage()); }
+        }
+
         // Build policy-augmented system prompt (includes base clinical identity + client context)
-        String systemPrompt = buildChatSystemPrompt(req, user, clientsById);
+        String systemPrompt = buildChatSystemPrompt(req, user, clientsById, chat);
 
         // Reasoning-tier routing: client-attached chats produce clinical content
         // about a specific client, and project-attached chats synthesize project
         // knowledge (e.g. comprehensive meeting notes) — both warrant the
         // higher-reasoning model. Plain, unattached chat stays on the fast tier.
         boolean clientAttached  = req.getClientId() != null && !req.getClientId().isBlank();
-        boolean projectAttached = chatHasProject(user, req.getChatId());
+        boolean projectAttached = chat != null
+                && chat.get("projectId") != null
+                && !String.valueOf(chat.get("projectId")).isBlank();
         // AI seat tier: a lite seat is Flash-only, so it's never routed to the reasoning
         // model — the chat is simply answered on the fast tier (downgraded, not blocked).
         boolean reasoning = (clientAttached || projectAttached) && user.aiTier().allowsReasoningModel();
@@ -1298,7 +1298,8 @@ public class GenerateController {
      *   3. Policy RAG context — if chat has policyIds
      */
     private String buildChatSystemPrompt(ChatRequest req, AppUser user,
-                                          Map<String, Map<String, Object>> clientsById) {
+                                          Map<String, Map<String, Object>> clientsById,
+                                          Map<String, Object> chat) {
         StringBuilder sb = new StringBuilder();
 
         // ── Layer 0: base ABA clinical identity (always present) ─────────────────
@@ -1358,11 +1359,9 @@ public class GenerateController {
             }
         }
 
-        // Layers 2–3 require the chat record
-        if (req.getChatId() != null && !req.getChatId().isBlank()) {
+        // Layers 2–3 require the chat record (fetched once by the caller)
+        if (chat != null) {
             try {
-                Map<String, Object> chat = chatService.getChat(user, req.getChatId());
-
                 // ── Layer 2: project instructions + knowledge ─────────────────────
                 String projectId = (String) chat.get("projectId");
                 if (projectId != null && !projectId.isBlank()) {

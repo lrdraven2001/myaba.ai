@@ -26,6 +26,14 @@ public class LlmHttpSupport {
     private final ObjectMapper mapper;
 
     /**
+     * Scoped ADC credential, resolved once and reused. Building it re-resolves
+     * Application Default Credentials (file / metadata-server lookups) each time,
+     * so caching it avoids that work on every LLM call; token rotation is still
+     * handled per-call by {@link GoogleCredentials#refreshIfExpired()}.
+     */
+    private volatile GoogleCredentials scopedCredentials;
+
+    /**
      * Build the Vertex AI hostname for the given region.
      *
      * <p>The global endpoint uses a region-less hostname
@@ -48,12 +56,21 @@ public class LlmHttpSupport {
      * dependency of {@code firebase-admin} — no extra pom.xml entry needed.
      */
     public String googleAccessToken() throws IOException {
-        GoogleCredentials credentials = GoogleCredentials
-                .getApplicationDefault()
-                .createScoped(Collections.singletonList(
-                        "https://www.googleapis.com/auth/cloud-platform"));
-        credentials.refreshIfExpired();
-        return credentials.getAccessToken().getTokenValue();
+        GoogleCredentials creds = scopedCredentials;
+        if (creds == null) {
+            synchronized (this) {
+                creds = scopedCredentials;
+                if (creds == null) {
+                    creds = GoogleCredentials
+                            .getApplicationDefault()
+                            .createScoped(Collections.singletonList(
+                                    "https://www.googleapis.com/auth/cloud-platform"));
+                    scopedCredentials = creds;
+                }
+            }
+        }
+        creds.refreshIfExpired(); // thread-safe; rotates the token when near expiry
+        return creds.getAccessToken().getTokenValue();
     }
 
     /**
