@@ -49,6 +49,20 @@ public class PolicyService {
 
     private final Map<String, Map<String, Object>> devPolicies = new LinkedHashMap<>();
 
+    // Cache of an org's full ACTIVE policy set. getResources/getResourcesByPurpose
+    // run this collection query 2-3x per generate request (templates context, RAG
+    // grounding, custom-template loop); cache it with a short TTL and filter
+    // purpose/client/bucket in memory. Invalidated on any policy write. Prod only.
+    private static final long POLICY_CACHE_TTL_MS = 30_000;
+    private record CachedPolicies(List<Map<String, Object>> policies, long ts) {}
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedPolicies> policyCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Drop an org's cached active-policy set (call after any policy write). */
+    public void invalidatePolicies(String orgId) {
+        if (orgId != null) policyCache.remove(orgId);
+    }
+
     /** Injected lazily to avoid circular dependency with PolicyRagService. */
     private PolicyRagService policyRagService;
 
@@ -232,17 +246,33 @@ public class PolicyService {
                 })
                 .collect(Collectors.toList());
         }
-        Firestore db = FirestoreClient.getFirestore();
-        var base = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).collection(FirestoreCollections.POLICIES)
-                .whereEqualTo("isActive", true);
-        var query = (purpose != null)
-                ? base.whereArrayContains("purposes", purpose)
-                : base;
-        List<Map<String, Object>> all = toList(query.get().get().getDocuments());
-        if (clientId == null || clientId.isBlank()) return all;
-        return all.stream()
-            .filter(p -> p.get("clientId") == null || clientId.equals(p.get("clientId")))
+        // Filter the cached full active set in memory (purpose + client) — same
+        // semantics as the previous whereArrayContains/clientId query.
+        return allActivePolicies(orgId).stream()
+            .filter(p -> {
+                if (purpose == null) return true;
+                Object raw = p.get("purposes");
+                return (raw instanceof List) && ((List<?>) raw).contains(purpose);
+            })
+            .filter(p -> {
+                if (clientId == null || clientId.isBlank()) return true;
+                Object cid = p.get("clientId");
+                return cid == null || clientId.equals(cid);
+            })
             .collect(Collectors.toList());
+    }
+
+    /** All active policies for an org, cached with a short TTL (prod). */
+    private List<Map<String, Object>> allActivePolicies(String orgId) throws Exception {
+        long now = System.currentTimeMillis();
+        CachedPolicies c = policyCache.get(orgId);
+        if (c != null && now - c.ts() < POLICY_CACHE_TTL_MS) return c.policies();
+        Firestore db = FirestoreClient.getFirestore();
+        List<Map<String, Object>> all = toList(db.collection(FirestoreCollections.ORGANIZATIONS)
+                .document(orgId).collection(FirestoreCollections.POLICIES)
+                .whereEqualTo("isActive", true).get().get().getDocuments());
+        policyCache.put(orgId, new CachedPolicies(all, now));
+        return all;
     }
 
     /** Fetch a single policy by ID. All org members can read active policies. */
@@ -297,6 +327,7 @@ public class PolicyService {
         Firestore db = FirestoreClient.getFirestore();
         var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection(FirestoreCollections.POLICIES).add(data).get();
+        invalidatePolicies(user.getOrgId());
         indexForRag(user.getOrgId(), ref.getId(), (String) data.get("title"),
                     (String) data.get("textContent"));
         return ref.getId();
@@ -344,6 +375,7 @@ public class PolicyService {
         Firestore db = FirestoreClient.getFirestore();
         db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection(FirestoreCollections.POLICIES).document(policyId).update(updates).get();
+        invalidatePolicies(user.getOrgId());
         if (updates.containsKey("textContent")) {
             // Re-fetch merged title for RAG
             Map<String, Object> merged = fetchPolicy(user.getOrgId(), policyId);
@@ -364,6 +396,7 @@ public class PolicyService {
         Firestore db = FirestoreClient.getFirestore();
         db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
                 .collection(FirestoreCollections.POLICIES).document(policyId).delete().get();
+        invalidatePolicies(user.getOrgId());
         if (policyRagService != null) policyRagService.removePolicy(user.getOrgId(), policyId);
     }
 

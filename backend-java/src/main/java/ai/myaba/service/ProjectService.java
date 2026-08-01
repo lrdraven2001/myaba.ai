@@ -506,7 +506,7 @@ public class ProjectService {
      * in GCS and extract text into {@code textContent}. Mirrors the client-document
      * pipeline. Called cross-bean so the {@code @Async} proxy applies.
      */
-    @org.springframework.scheduling.annotation.Async
+    @org.springframework.scheduling.annotation.Async("extractionExecutor")
     public void finalizeKnowledgeUpload(String orgId, String projectId, String docId,
                                         String filename, String contentType, byte[] bytes) {
         if (devMode) return;

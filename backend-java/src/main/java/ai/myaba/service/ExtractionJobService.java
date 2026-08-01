@@ -76,7 +76,7 @@ public class ExtractionJobService {
      * Run extraction in the background and write the result into the job. Called
      * cross-bean (from the controller) so the {@code @Async} proxy applies.
      */
-    @Async
+    @Async("extractionExecutor")
     public void runExtraction(String orgId, String jobId, String filename, byte[] bytes) {
         Map<String, Object> update = new HashMap<>();
         try {

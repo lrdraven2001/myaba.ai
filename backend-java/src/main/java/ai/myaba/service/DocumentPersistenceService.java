@@ -237,7 +237,7 @@ public class DocumentPersistenceService {
      * and fill in the placeholder created by {@link #createUploadPlaceholder}.
      * Called cross-bean so the {@code @Async} proxy applies.
      */
-    @Async
+    @Async("extractionExecutor")
     public void finalizeUpload(String orgId, String clientId, String docId,
                                String filename, String contentType, byte[] bytes) {
         if (devMode) return;
