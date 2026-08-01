@@ -12,26 +12,48 @@ spring:
       enabled: true
       max-file-size: 25MB
       max-request-size: 26MB
-  # ── Email (invitations) — SMTP via any provider (SendGrid, SES, Mailgun, Gmail).
+  # ── Email (invitations) — SMTP. Default/target provider: Gmail / Google Workspace.
   # Leave MAIL_HOST unset → email is DISABLED and invite endpoints report
-  # "not configured" (never a silent no-op). For SendGrid: host=smtp.sendgrid.net,
-  # username=apikey, password=<the API key>.
+  # "not configured" (never a silent no-op). Spring only creates the JavaMailSender
+  # bean when spring.mail.host is set, so these extra properties are inert until then.
+  #
+  # Gmail / Google Workspace: a dedicated mailbox + a 16-char App Password
+  # (2-Step Verification must be ON for that mailbox to mint one):
+  #   MAIL_HOST=smtp.gmail.com  MAIL_PORT=587           (STARTTLS — the default)
+  #   MAIL_USERNAME=invites@<your-domain>  MAIL_PASSWORD=<app password>
+  # Port 465 (implicit SSL) also works — set MAIL_PORT=465 and MAIL_SMTP_STARTTLS=false
+  # (and MAIL_SMTP_STARTTLS_REQUIRED=false); 587/STARTTLS is the recommended default and
+  # is fine from Cloud Run (GCP blocks outbound port 25 but permits 465/587).
+  # Other providers still work (SendGrid: host=smtp.sendgrid.net, username=apikey,
+  # password=<API key>).
   mail:
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
+    default-encoding: UTF-8
     properties:
       mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
       mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+      # Refuse to fall back to an unencrypted session (Gmail supports STARTTLS on 587).
+      mail.smtp.starttls.required: ${MAIL_SMTP_STARTTLS_REQUIRED:true}
+      mail.smtp.ssl.protocols: TLSv1.2 TLSv1.3
+      # Timeouts (ms) so a stalled SMTP dial can't tie up a Cloud Run request thread.
+      mail.smtp.connectiontimeout: ${MAIL_SMTP_CONNECTION_TIMEOUT:10000}
+      mail.smtp.timeout:           ${MAIL_SMTP_READ_TIMEOUT:10000}
+      mail.smtp.writetimeout:      ${MAIL_SMTP_WRITE_TIMEOUT:10000}
 
 # App-level settings (single top-level `app:` block — duplicate keys break the
 # Spring Boot YAML loader). Outbound-invite email identity + public app URL.
 app:
   # From address / display name for outbound invitation emails.
+  # `from` defaults to the authenticated mailbox (MAIL_USERNAME) so mail sends AS the
+  # dedicated invites mailbox without extra config. NOTE (Gmail): the From is rewritten
+  # to the authenticated account UNLESS this address is a verified "Send mail as" alias
+  # on that mailbox — set MAIL_FROM only if you've configured send-as for it.
   mail:
-    from:      ${MAIL_FROM:no-reply@myaba.ai}
-    from-name: ${MAIL_FROM_NAME:myABA.ai}
+    from:      ${MAIL_FROM:${MAIL_USERNAME:no-reply@myaba.ai}}
+    from-name: ${MAIL_FROM_NAME:myABA}
   # Public URL of the customer app — used to build invite links and the SSO
   # callback. MUST be set in production (deploy/cloud-run-api.yaml sets
   # APP_BASE_URL=https://app.myaba.ai) or invites point at localhost.
