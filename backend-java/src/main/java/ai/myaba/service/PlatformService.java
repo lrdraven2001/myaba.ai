@@ -48,6 +48,23 @@ public class PlatformService {
     @org.springframework.beans.factory.annotation.Autowired
     private BillingService billingService;
 
+    // Custom-role labels for the member roster (drill-in shows friendly names).
+    @org.springframework.beans.factory.annotation.Autowired
+    private RoleConfigService roleConfigService;
+
+    /** Built-in role key → human label (mirrors the app's ROLE_LABELS). */
+    private static final Map<String, String> BUILTIN_ROLE_LABELS = Map.ofEntries(
+            Map.entry("ORG_SUPER_ADMIN",   "Practice Administrator"),
+            Map.entry("ORG_ADMIN",         "Practice Administrator"),
+            Map.entry("CLINICAL_DIRECTOR", "Clinical Director"),
+            Map.entry("SUPERVISING_BCBA",  "Clinical Supervisor"),
+            Map.entry("TREATING_BCBA",     "Treating BCBA"),
+            Map.entry("BCBA_STUDENT",      "BCBA Student"),
+            Map.entry("RBT",               "Behavior Technician"),
+            Map.entry("GENERAL_STAFF",     "General Staff"),
+            Map.entry("SCHEDULING_ADMIN",  "Scheduling Admin"),
+            Map.entry("BILLING_ADMIN",     "Billing Admin"));
+
     // Per-seat / plan monthly amounts (USD cents) — mirror BillingService so the
     // admin MRR estimate matches what Stripe bills. -1 MRR means "custom" (enterprise).
     private static final long FULL_SEAT_CENTS = 3500; // Team – Full ($35)
@@ -305,17 +322,20 @@ public class PlatformService {
         return out;
     }
 
-    /** Member roster for the drill-in: email, role, AI seat tier. */
+    /** Member roster for the drill-in: email, role (friendly label), AI seat tier. */
     private List<Map<String, Object>> memberList(Firestore db, String orgId) {
         List<Map<String, Object>> out = new ArrayList<>();
+        Map<String, String> customLabels = customRoleLabels(orgId);
         try {
             for (QueryDocumentSnapshot m : db.collection(FirestoreCollections.ORGANIZATIONS)
                     .document(orgId).collection(FirestoreCollections.MEMBERS).get().get().getDocuments()) {
+                String roleKey = String.valueOf(m.getData().getOrDefault("role", ""));
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("uid",         m.getId());
                 row.put("email",       m.getData().getOrDefault("email", ""));
                 row.put("displayName", m.getData().getOrDefault("displayName", ""));
-                row.put("role",        m.getData().getOrDefault("role", ""));
+                row.put("role",        roleLabel(roleKey, customLabels)); // human label
+                row.put("roleKey",     roleKey);                          // raw key (for reference)
                 row.put("aiTier",      m.getData().getOrDefault("aiTier", "full"));
                 out.add(row);
             }
@@ -323,6 +343,48 @@ public class PlatformService {
             log.warn("memberList failed for {}: {}", orgId, e.getMessage());
         }
         return out;
+    }
+
+    /** key → label for the org's custom roles (from RoleConfig). */
+    @SuppressWarnings("unchecked")
+    private Map<String, String> customRoleLabels(String orgId) {
+        Map<String, String> out = new HashMap<>();
+        try {
+            Object raw = roleConfigService.getConfig(orgId).get("customRoles");
+            if (raw instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof Map<?, ?> cr) {
+                        Object k = ((Map<String, Object>) cr).get("key");
+                        Object l = ((Map<String, Object>) cr).get("label");
+                        if (k != null && l != null && !String.valueOf(l).isBlank())
+                            out.put(String.valueOf(k), String.valueOf(l));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("customRoleLabels failed for {}: {}", orgId, e.getMessage());
+        }
+        return out;
+    }
+
+    /** Resolve a role key to a human label: built-in → custom-role label → prettified key. */
+    private static String roleLabel(String role, Map<String, String> customLabels) {
+        if (role == null || role.isBlank()) return "—";
+        String b = BUILTIN_ROLE_LABELS.get(role);
+        if (b != null) return b;
+        String c = customLabels.get(role);
+        if (c != null && !c.isBlank()) return c;
+        // Fallback: "custom_administrative_hr_5wy7" → "Administrative Hr"
+        String s = role.startsWith("custom_") ? role.substring(7) : role;
+        s = s.replaceAll("_[a-z0-9]{4,8}$", "").replace('_', ' ').trim();
+        if (s.isBlank()) return role;
+        StringBuilder sb = new StringBuilder();
+        for (String p : s.split("\\s+")) {
+            if (p.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
+        }
+        return sb.toString();
     }
 
     // ── Platform config ───────────────────────────────────────────────────────
