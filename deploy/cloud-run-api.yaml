@@ -158,6 +158,29 @@ spec:
             # (application.yml). Add STRIPE_CHECKOUT_SUCCESS_URL / _CANCEL_URL /
             # STRIPE_PORTAL_RETURN_URL here only to override those defaults.
 
+            # ── SMTP email (org / team invitations) ──────────────────────────
+            # Google Workspace SMTP. MAIL_PASSWORD is a Google APP PASSWORD (16
+            # chars; requires 2-Step Verification on register@myaba.ai) stored in
+            # the mail-password Secret Manager secret — a normal account password
+            # is REJECTED by Gmail SMTP. The secret must exist before this file is
+            # pushed (a missing secretKeyRef fails `services replace`). Lives here,
+            # not a hand-set env var, so CI's `services replace` doesn't wipe it.
+            # EmailService disables itself if MAIL_HOST is unset (invites then fall
+            # back to "copy the link" instead of sending).
+            - name: MAIL_HOST
+              value: "smtp.gmail.com"
+            - name: MAIL_PORT
+              value: "587"
+            - name: MAIL_USERNAME
+              value: "register@myaba.ai"
+            - name: MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mail-password
+                  key: latest
+            - name: APP_MAIL_FROM
+              value: "register@myaba.ai"
+
             # NOTE: FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST are
             # intentionally ABSENT — their presence would route to the emulator.
           resources:
