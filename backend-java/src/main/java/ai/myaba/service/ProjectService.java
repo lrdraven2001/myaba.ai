@@ -324,7 +324,8 @@ public class ProjectService {
      * Returns the new document's ID.
      */
     public String addKnowledgeDoc(AppUser user, String projectId,
-                                   String title, String textContent) throws Exception {
+                                   String title, String textContent,
+                                   String sourceFilename, boolean containsPhi) throws Exception {
         Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
         if (!canEditProject(user, project))
             throw new SecurityException("Cannot add knowledge to project: " + projectId);
@@ -334,8 +335,10 @@ public class ProjectService {
         doc.put("projectId",   projectId);
         doc.put("title",       title);
         doc.put("textContent", textContent != null ? textContent : "");
-        doc.put("description", "");     // per-document description (editable in the UI)
-        doc.put("containsPhi", false);  // per-document PHI flag (independent of the project flag)
+        doc.put("description", "");            // per-document description (editable in the UI)
+        doc.put("containsPhi", containsPhi);   // per-document PHI flag (independent of the project flag)
+        if (sourceFilename != null && !sourceFilename.isBlank())
+            doc.put("sourceFilename", sourceFilename);
         doc.put("createdAt",   now);
 
         if (devMode) {

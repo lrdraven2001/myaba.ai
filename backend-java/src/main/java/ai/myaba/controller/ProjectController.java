@@ -129,20 +129,22 @@ public class ProjectController {
 
     /**
      * POST /api/projects/{projectId}/knowledge
-     * Body: { title, textContent }
+     * Body: { title, textContent, sourceFilename?, containsPhi? }
      * Adds a knowledge document to the project.
      */
     @PostMapping("/{projectId}/knowledge")
     public ResponseEntity<Map<String, Object>> addKnowledge(
             @AuthenticationPrincipal AppUser user,
             @PathVariable String projectId,
-            @RequestBody Map<String, String> body) throws Exception {
-        String title = body.get("title");
-        String textContent = body.getOrDefault("textContent", "");
+            @RequestBody Map<String, Object> body) throws Exception {
+        String title = body.get("title") != null ? String.valueOf(body.get("title")) : null;
+        String textContent = body.get("textContent") != null ? String.valueOf(body.get("textContent")) : "";
+        String sourceFilename = body.get("sourceFilename") != null ? String.valueOf(body.get("sourceFilename")) : null;
+        boolean containsPhi = Boolean.TRUE.equals(body.get("containsPhi"));
         if (title == null || title.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "title is required"));
         }
-        String docId = projectService.addKnowledgeDoc(user, projectId, title, textContent);
+        String docId = projectService.addKnowledgeDoc(user, projectId, title, textContent, sourceFilename, containsPhi);
         return ResponseEntity.ok(Map.of("docId", docId));
     }
 

@@ -439,10 +439,15 @@ export const api = {
     request<ProjectKnowledgeDoc[]>(`/projects/${projectId}/knowledge`),
 
   /** Add a knowledge document to a project. Returns { docId }. */
-  addProjectKnowledge: (projectId: string, title: string, textContent: string) =>
+  addProjectKnowledge: (
+    projectId: string,
+    title: string,
+    textContent: string,
+    meta?: { sourceFilename?: string; containsPhi?: boolean },
+  ) =>
     request<{ docId: string }>(`/projects/${projectId}/knowledge`, {
       method: 'POST',
-      body: JSON.stringify({ title, textContent }),
+      body: JSON.stringify({ title, textContent, ...meta }),
     }),
 
   /** Update a knowledge document's editable metadata (description + per-document PHI flag). */
