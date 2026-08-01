@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faFolderOpen, faSpinner, faTimes, faTrash,
-  faLightbulb, faCommentDots, faFileAlt, faPencilAlt,
-  faCheck, faShieldAlt, faUsers, faChevronDown, faChevronRight,
-  faArrowLeft, faExclamationTriangle, faUpload, faBookOpen,
+  faCommentDots, faFileAlt, faPencilAlt,
+  faCheck, faShieldAlt, faUsers, faChevronRight,
+  faArrowLeft, faExclamationTriangle, faUpload,
+  faFileWord, faFileExcel, faFilePdf, faFileLines,
 } from '@fortawesome/free-solid-svg-icons';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faGoogleDrive } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
 import { importDriveFile, isPickerConfigured } from '../lib/googlePicker';
@@ -365,7 +367,6 @@ function ProjectDetailView({
   const [instructions, setInstructions]   = useState(project.instructions ?? '');
   const [instructionsDirty, setInstructionsDirty] = useState(false);
   const [savingInstr, setSavingInstr]     = useState(false);
-  const [showInstr, setShowInstr]         = useState(true);
   const [knowledgeDocs, setKnowledgeDocs] = useState<ProjectKnowledgeDoc[]>([]);
   const [loadingDocs, setLoadingDocs]     = useState(true);
   const [viewDoc, setViewDoc]             = useState<ProjectKnowledgeDoc | null>(null);
@@ -376,7 +377,32 @@ function ProjectDetailView({
   const [startingChat, setStartingChat]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showAccess, setShowAccess]       = useState(false);
+  const [activeTab, setActiveTab]         = useState<'overview' | 'documents' | 'members' | 'chats'>('overview');
+  const [draftDesc, setDraftDesc]         = useState(project.description ?? '');
+  const [descDirty, setDescDirty]         = useState(false);
+  const [savingDesc, setSavingDesc]       = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+
+  const memberCount = Object.keys(project.members ?? {}).length;
+
+  const saveDesc = async () => {
+    setSavingDesc(true);
+    try { await api.updateProject(project.id, { description: draftDesc }); onUpdated({ ...project, description: draftDesc }); setDescDirty(false); }
+    catch { /* keep */ } finally { setSavingDesc(false); }
+  };
+  const setPhi = async (next: boolean) => {
+    onUpdated({ ...project, containsPhi: next });
+    await api.updateProject(project.id, { containsPhi: next }).catch(() => onUpdated({ ...project, containsPhi: !next }));
+  };
+  const setDocDefault = async (val: 'ask' | 'always' | 'never') => {
+    onUpdated({ ...project, documentPhiDefault: val });
+    await api.updateProject(project.id, { documentPhiDefault: val }).catch(() => {});
+  };
+  const patchDoc = async (docId: string, patch: { description?: string; containsPhi?: boolean }) => {
+    setKnowledgeDocs((prev) => prev.map((d) => d.id === docId ? { ...d, ...patch } : d));
+    setViewDoc((v) => v && v.id === docId ? { ...v, ...patch } : v);
+    await api.updateProjectKnowledge(project.id, docId, patch).catch(() => {});
+  };
 
   useEffect(() => {
     setLoadingDocs(true);
@@ -522,187 +548,260 @@ function ProjectDetailView({
         </div>
       </div>
 
-      {/* ── Body: chat history + sidebar ── */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* ── Tabs ── */}
+      <div className="bg-white border-b border-gray-200 px-6 flex gap-6 flex-shrink-0">
+        {([
+          ['overview',  'Overview',  null],
+          ['documents', 'Documents', knowledgeDocs.length],
+          ['members',   'Members',   memberCount],
+          ['chats',     'Chats',     null],
+        ] as const).map(([id, label, count]) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`relative py-3 text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${activeTab === id ? 'text-teal-700' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            {label}
+            {count != null && <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{count}</span>}
+            {activeTab === id && <span className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full" style={{ background: '#2a5f6f' }} />}
+          </button>
+        ))}
+      </div>
 
-        {/* Left: chat history — fills the space up to the knowledge sidebar */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="w-full">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              Chats in this project
-            </p>
+      {/* ── Tab content ── */}
+      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
 
-            {loadingChats ? (
-              <div className="flex items-center gap-2 text-gray-300 text-sm">
-                <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
-                Loading…
+        {activeTab === 'overview' && (
+          <div className="max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Project details */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h3 className="text-base font-bold text-gray-900 mb-4">Project details</h3>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Project title</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              />
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Project description</label>
+              <textarea
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+                rows={3}
+                value={draftDesc}
+                onChange={(e) => { setDraftDesc(e.target.value); setDescDirty(true); }}
+                placeholder="What is this project for?"
+              />
+              {descDirty && (
+                <button onClick={saveDesc} disabled={savingDesc} className="mt-2 px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-60" style={{ background: '#2a5f6f' }}>
+                  {savingDesc ? 'Saving…' : 'Save description'}
+                </button>
+              )}
+              <div className="mt-5 grid grid-cols-2 gap-4 text-xs border-t border-gray-100 pt-4">
+                <div><div className="text-gray-400">Created</div><div className="text-gray-700 mt-0.5">{relativeDate(project.createdAt)}</div></div>
+                <div><div className="text-gray-400">Last updated</div><div className="text-gray-700 mt-0.5">{relativeDate(project.updatedAt)}</div></div>
               </div>
-            ) : projectChats.length === 0 ? (
-              <div
-                className="flex flex-col items-center gap-3 py-10 rounded-xl border border-dashed border-gray-200 cursor-pointer hover:border-teal-300 transition-colors"
-                onClick={handleStartChat}
-              >
-                <FontAwesomeIcon icon={faCommentDots} style={{ fontSize: 24, color: '#cbd5e1' }} />
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-500">No chats yet</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Start a new chat to begin working in this project</p>
+            </div>
+
+            {/* Project configuration */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h3 className="text-base font-bold text-gray-900 mb-4">Project configuration</h3>
+              <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
+                <div className="min-w-0">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={project.containsPhi} onChange={(e) => setPhi(e.target.checked)} className="w-4 h-4 accent-teal-600" />
+                    <span className="text-sm font-semibold text-gray-900">PHI project</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">This project may contain protected health information. Enhanced access controls and auditing apply.</p>
                 </div>
+                {project.containsPhi && (
+                  <span className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-700 shrink-0">
+                    <FontAwesomeIcon icon={faShieldAlt} style={{ fontSize: 10 }} /> PHI protections enabled
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setActiveTab('members')} className="w-full flex items-center justify-between py-3.5 border-b border-gray-100 text-left hover:bg-gray-50 -mx-2 px-2 rounded-lg">
+                <div><div className="text-sm font-medium text-gray-900">Member access</div><div className="text-xs text-gray-500">Manage who can access this project.</div></div>
+                <span className="text-sm text-gray-500 shrink-0 flex items-center gap-1">{memberCount} members <FontAwesomeIcon icon={faChevronRight} style={{ fontSize: 10 }} /></span>
+              </button>
+              <div className="flex items-center justify-between py-3.5">
+                <div><div className="text-sm font-medium text-gray-900">Document defaults</div><div className="text-xs text-gray-500">PHI behavior for new uploads.</div></div>
+                <select value={project.documentPhiDefault ?? 'ask'} onChange={(e) => setDocDefault(e.target.value as 'ask' | 'always' | 'never')} className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white">
+                  <option value="ask">Ask each upload</option>
+                  <option value="always">Always PHI</option>
+                  <option value="never">Never PHI</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Project instructions (full width) */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 lg:col-span-2">
+              <h3 className="text-base font-bold text-gray-900">Project instructions</h3>
+              <p className="text-sm text-gray-500 mb-3">Applied to conversations created within this project.</p>
+              <textarea
+                className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+                rows={4}
+                placeholder="e.g. Focus on measurable behavior targets and evidence-based strategies…"
+                value={instructions}
+                onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
+              />
+              {instructionsDirty && (
+                <button onClick={saveInstructions} disabled={savingInstr} className="mt-2 px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-60" style={{ background: '#2a5f6f' }}>
+                  {savingInstr ? 'Saving…' : 'Save instructions'}
+                </button>
+              )}
+            </div>
+
+            {/* Recent documents */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-gray-900">Recent documents</h3>
+                <button onClick={() => setActiveTab('documents')} className="text-sm font-semibold text-teal-700 hover:underline">View all</button>
+              </div>
+              {knowledgeDocs.length === 0 ? <p className="text-sm text-gray-400">No documents yet.</p> : (
+                <div className="space-y-2">
+                  {knowledgeDocs.slice(0, 4).map((doc) => { const m = fileMeta(doc); return (
+                    <button key={doc.id} onClick={() => { setActiveTab('documents'); setViewDoc(doc); }} className="w-full flex items-center gap-2.5 text-left hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-lg">
+                      <FontAwesomeIcon icon={m.icon} style={{ color: m.color, fontSize: 14 }} />
+                      <span className="flex-1 min-w-0 text-sm text-gray-700 truncate">{doc.title}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{relativeDate(doc.createdAt)}</span>
+                    </button>
+                  ); })}
+                </div>
+              )}
+            </div>
+
+            {/* Your recent chats */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-gray-900">Your recent chats</h3>
+                <button onClick={() => setActiveTab('chats')} className="text-sm font-semibold text-teal-700 hover:underline">View all</button>
+              </div>
+              {projectChats.length === 0 ? <p className="text-sm text-gray-400">No chats yet.</p> : (
+                <div className="space-y-2">
+                  {projectChats.slice(0, 4).map((chat) => (
+                    <button key={chat.id} onClick={() => onNavigateToChat(chat.id)} className="w-full flex items-center gap-2.5 text-left hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-lg">
+                      <FontAwesomeIcon icon={faCommentDots} style={{ color: '#94a3b8', fontSize: 14 }} />
+                      <span className="flex-1 min-w-0 text-sm text-gray-700 truncate">{chat.title}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{relativeDate(chat.updatedAt ?? chat.createdAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'documents' && (
+          <div className="max-w-6xl">
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => setShowAddDoc(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: '#2a5f6f' }}>
+                <FontAwesomeIcon icon={faPlus} style={{ fontSize: 12 }} /> Add documents
+              </button>
+              <span className="text-xs text-gray-400">{knowledgeDocs.length} document{knowledgeDocs.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                      <th className="font-semibold px-5 py-3">Title</th>
+                      <th className="font-semibold px-3 py-3">Filename</th>
+                      <th className="font-semibold px-3 py-3">Uploaded</th>
+                      <th className="font-semibold px-3 py-3">Uploaded by</th>
+                      <th className="font-semibold px-3 py-3">Content type</th>
+                      <th className="font-semibold px-3 py-3">PHI</th>
+                      <th className="font-semibold px-5 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {loadingDocs ? (
+                      <tr><td colSpan={7} className="px-5 py-10 text-center text-gray-300"><FontAwesomeIcon icon={faSpinner} className="animate-spin" /></td></tr>
+                    ) : knowledgeDocs.length === 0 ? (
+                      <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-400">No documents yet. Add reference material for this project.</td></tr>
+                    ) : knowledgeDocs.map((doc) => { const m = fileMeta(doc); return (
+                      <tr key={doc.id} onClick={() => setViewDoc(doc)} className="hover:bg-gray-50 cursor-pointer">
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <FontAwesomeIcon icon={m.icon} style={{ color: m.color, fontSize: 15 }} />
+                            <span className="font-medium text-gray-800 truncate max-w-xs">{doc.title}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3.5 text-gray-500"><span className="block truncate max-w-[180px]">{doc.sourceFilename ?? '—'}</span></td>
+                        <td className="px-3 py-3.5 text-gray-500 text-xs whitespace-nowrap">{relativeDate(doc.createdAt)}</td>
+                        <td className="px-3 py-3.5 text-gray-500"><span className="block truncate max-w-[120px]">{doc.createdBy || '—'}</span></td>
+                        <td className="px-3 py-3.5 text-gray-500 whitespace-nowrap">{m.label}</td>
+                        <td className="px-3 py-3.5">
+                          {doc.containsPhi
+                            ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">PHI</span>
+                            : <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">No</span>}
+                        </td>
+                        <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => handleDeleteDoc(doc.id)} disabled={deletingDocId === doc.id} className="text-gray-300 hover:text-red-500 w-8 h-8" title="Delete document">
+                            {deletingDocId === doc.id ? <FontAwesomeIcon icon={faSpinner} className="animate-spin" style={{ fontSize: 12 }} /> : <FontAwesomeIcon icon={faTrash} style={{ fontSize: 12 }} />}
+                          </button>
+                        </td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'members' && (
+          <div className="max-w-3xl bg-white rounded-2xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-bold text-gray-900">Members</h3>
+              <button onClick={() => setShowAccess(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-sm font-semibold" style={{ background: '#2a5f6f' }}>
+                <FontAwesomeIcon icon={faUsers} style={{ fontSize: 12 }} /> Manage access
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">{memberCount} member{memberCount !== 1 ? 's' : ''} with access to this project. Use “Manage access” to add people or change their role.</p>
+          </div>
+        )}
+
+        {activeTab === 'chats' && (
+          <div className="max-w-3xl">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-gray-500">Chats you’ve created in this project.</p>
+              <button onClick={handleStartChat} disabled={startingChat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-sm font-semibold disabled:opacity-60" style={{ background: '#2a5f6f' }}>
+                {startingChat ? <FontAwesomeIcon icon={faSpinner} className="animate-spin" /> : <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />} New chat
+              </button>
+            </div>
+            {loadingChats ? (
+              <div className="flex items-center gap-2 text-gray-300 text-sm"><FontAwesomeIcon icon={faSpinner} className="animate-spin" /> Loading…</div>
+            ) : projectChats.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-10 rounded-xl border border-dashed border-gray-200 cursor-pointer hover:border-teal-300" onClick={handleStartChat}>
+                <FontAwesomeIcon icon={faCommentDots} style={{ fontSize: 24, color: '#cbd5e1' }} />
+                <div className="text-center"><p className="text-sm font-medium text-gray-500">No chats yet</p><p className="text-xs text-gray-400 mt-0.5">Start a new chat to begin working in this project</p></div>
               </div>
             ) : (
               <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white overflow-hidden">
                 {projectChats.map((chat) => (
-                  <button
-                    key={chat.id}
-                    onClick={() => onNavigateToChat(chat.id)}
-                    className="w-full text-left px-5 py-3.5 hover:bg-gray-50 transition-colors flex items-center gap-3"
-                  >
+                  <button key={chat.id} onClick={() => onNavigateToChat(chat.id)} className="w-full text-left px-5 py-3.5 hover:bg-gray-50 flex items-center gap-3">
                     <FontAwesomeIcon icon={faCommentDots} style={{ fontSize: 14, color: '#94a3b8' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{chat.title}</p>
-                    </div>
-                    <span className="text-xs text-gray-400 shrink-0">
-                      {relativeDate(chat.updatedAt ?? chat.createdAt)}
-                    </span>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-800 truncate">{chat.title}</p></div>
+                    <span className="text-xs text-gray-400 shrink-0">{relativeDate(chat.updatedAt ?? chat.createdAt)}</span>
                   </button>
                 ))}
               </div>
             )}
-
-            {projectChats.length > 0 && (
-              <button
-                onClick={handleStartChat}
-                disabled={startingChat}
-                className="mt-4 flex items-center gap-2 text-sm font-medium text-teal-700 hover:text-teal-900 transition-colors disabled:opacity-50"
-              >
-                <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
-                Start new chat
-              </button>
-            )}
           </div>
-        </div>
-
-        {/* Right sidebar: instructions + knowledge */}
-        <div
-          className="flex flex-col overflow-y-auto border-l border-gray-200 bg-white"
-          style={{ width: 300, flexShrink: 0 }}
-        >
-          {/* Instructions */}
-          <div className="border-b border-gray-100">
-            <button
-              onClick={() => setShowInstr((v) => !v)}
-              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <FontAwesomeIcon icon={faLightbulb} style={{ fontSize: 13, color: '#f59e0b' }} />
-                Instructions
-              </div>
-              <div className="flex items-center gap-2">
-                {!instructions && <span className="text-xs text-gray-400">None set</span>}
-                <FontAwesomeIcon
-                  icon={showInstr ? faChevronDown : faChevronRight}
-                  style={{ fontSize: 11, color: '#9ca3af' }}
-                />
-              </div>
-            </button>
-            {showInstr && (
-              <div className="px-5 pb-4">
-                <textarea
-                  className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  rows={5}
-                  placeholder="e.g. You are assisting a BCBA team reviewing Q3 caseloads. Focus on measurable behavior targets and evidence-based strategies…"
-                  value={instructions}
-                  onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
-                />
-                <p className="text-xs text-gray-400 mt-1.5">
-                  These instructions are injected into every model conversation in this project.
-                </p>
-                {instructionsDirty && (
-                  <button
-                    onClick={saveInstructions}
-                    disabled={savingInstr}
-                    className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-60"
-                    style={{ background: '#2a5f6f' }}
-                  >
-                    {savingInstr
-                      ? <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
-                      : <FontAwesomeIcon icon={faCheck} />}
-                    Save
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Knowledge docs */}
-          <div>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <FontAwesomeIcon icon={faBookOpen} style={{ fontSize: 13, color: '#0ea5e9' }} />
-                Knowledge
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">
-                  {loadingDocs ? '…' : `${knowledgeDocs.length} doc${knowledgeDocs.length !== 1 ? 's' : ''}`}
-                </span>
-                <button
-                  onClick={() => setShowAddDoc(true)}
-                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1"
-                >
-                  <FontAwesomeIcon icon={faPlus} style={{ fontSize: 9 }} />
-                  Add
-                </button>
-              </div>
-            </div>
-            <div className="px-3 py-2 max-h-72 overflow-y-auto">
-              {loadingDocs ? (
-                <div className="flex items-center gap-2 px-2 py-3 text-gray-300 text-sm">
-                  <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
-                </div>
-              ) : knowledgeDocs.length === 0 ? (
-                <div className="text-center py-6">
-                  <p className="text-xs text-gray-400">No documents yet</p>
-                  <p className="text-xs text-gray-300 mt-0.5">Add policy excerpts or reference guides</p>
-                </div>
-              ) : (
-                knowledgeDocs.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-50 group"
-                  >
-                    <FontAwesomeIcon icon={faFileAlt} style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }} />
-                    <button
-                      onClick={() => setViewDoc(doc)}
-                      title="View document details"
-                      className="flex-1 min-w-0 text-left text-sm text-gray-700 truncate hover:text-teal-700 hover:underline"
-                    >
-                      {doc.title}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteDoc(doc.id)}
-                      disabled={deletingDocId === doc.id}
-                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all"
-                    >
-                      {deletingDocId === doc.id
-                        ? <FontAwesomeIcon icon={faSpinner} className="animate-spin" style={{ fontSize: 11 }} />
-                        : <FontAwesomeIcon icon={faTimes} style={{ fontSize: 11 }} />}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Modals */}
       {showAddDoc && (
         <AddKnowledgeDocModal
           projectId={project.id}
+          phiDefault={project.documentPhiDefault ?? 'ask'}
           onClose={() => setShowAddDoc(false)}
           onAdded={(doc) => { setKnowledgeDocs((prev) => [...prev, doc]); setShowAddDoc(false); }}
         />
       )}
-      {viewDoc && <DocDetailModal doc={viewDoc} onClose={() => setViewDoc(null)} />}
+      {viewDoc && <DocDetailModal doc={viewDoc} onClose={() => setViewDoc(null)} onPatch={patchDoc} />}
       {confirmDelete && (
         <ConfirmDeleteModal
           title={project.title}
@@ -1141,10 +1240,28 @@ function CreateProjectModal({
   );
 }
 
+// File-type metadata (icon + label + color) derived from a doc's filename/title.
+function fileMeta(doc: { sourceFilename?: string; title?: string }): { icon: IconDefinition; label: string; color: string } {
+  const name = (doc.sourceFilename || doc.title || '').toLowerCase();
+  const ext = name.slice(name.lastIndexOf('.') + 1);
+  if (ext === 'docx' || ext === 'doc')                  return { icon: faFileWord,  label: 'Word document', color: '#2563eb' };
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return { icon: faFileExcel, label: 'Spreadsheet',   color: '#16a34a' };
+  if (ext === 'pdf')                                     return { icon: faFilePdf,   label: 'PDF document',  color: '#dc2626' };
+  if (ext === 'txt' || ext === 'md')                    return { icon: faFileLines, label: 'Text file',     color: '#64748b' };
+  return { icon: faFileAlt, label: 'Document', color: '#64748b' };
+}
+
 // ── Knowledge doc detail modal ────────────────────────────────────────────────
 
-function DocDetailModal({ doc, onClose }: { doc: ProjectKnowledgeDoc; onClose: () => void }) {
+function DocDetailModal({ doc, onClose, onPatch }: {
+  doc: ProjectKnowledgeDoc;
+  onClose: () => void;
+  onPatch: (docId: string, patch: { description?: string; containsPhi?: boolean }) => void;
+}) {
   const added = (() => { const d = new Date(doc.createdAt); return isNaN(d.getTime()) ? doc.createdAt : d.toLocaleString(); })();
+  const meta = fileMeta(doc);
+  const [draftDesc, setDraftDesc] = useState(doc.description ?? '');
+  const [descDirty, setDescDirty] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(15,35,45,0.45)' }} onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Document details"
@@ -1153,23 +1270,59 @@ function DocDetailModal({ doc, onClose }: { doc: ProjectKnowledgeDoc; onClose: (
         <div className="flex items-start justify-between gap-4 p-6 border-b border-gray-100">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-              <FontAwesomeIcon icon={faFileAlt} /> Knowledge document
+              <FontAwesomeIcon icon={meta.icon} style={{ color: meta.color }} /> {meta.label}
             </div>
             <h3 className="text-lg font-semibold text-gray-900 break-words">{doc.title}</h3>
             <div className="mt-2 text-xs text-gray-500 space-y-0.5">
               {doc.sourceFilename && <div>File: <span className="text-gray-700 break-all">{doc.sourceFilename}</span></div>}
-              <div>Added {added}</div>
+              <div>Added {added}{doc.createdBy ? ` by ${doc.createdBy}` : ''}</div>
             </div>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 shrink-0">
             <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Extracted content</div>
-          <pre className="whitespace-pre-wrap break-words text-sm text-gray-700" style={{ fontFamily: 'inherit' }}>
-            {doc.textContent?.trim() || '(No extracted text for this document.)'}
-          </pre>
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Description */}
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Description</div>
+            <textarea
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-500"
+              rows={2}
+              placeholder="Add a short description of this document…"
+              value={draftDesc}
+              onChange={(e) => { setDraftDesc(e.target.value); setDescDirty(true); }}
+            />
+            {descDirty && (
+              <button
+                onClick={() => { onPatch(doc.id, { description: draftDesc }); setDescDirty(false); }}
+                className="mt-2 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
+                style={{ background: '#2a5f6f' }}
+              >
+                Save description
+              </button>
+            )}
+          </div>
+
+          {/* PHI flag */}
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-gray-200 p-4">
+            <div className="min-w-0">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!doc.containsPhi} onChange={(e) => onPatch(doc.id, { containsPhi: e.target.checked })} className="w-4 h-4 accent-red-600" />
+                <span className="text-sm font-semibold text-gray-900">Contains PHI</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1">Mark this document as containing protected health information, independent of the project setting.</p>
+            </div>
+            {doc.containsPhi && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 shrink-0">PHI</span>}
+          </div>
+
+          {/* Extracted content */}
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Extracted content</div>
+            <pre className="whitespace-pre-wrap break-words text-sm text-gray-700" style={{ fontFamily: 'inherit' }}>
+              {doc.textContent?.trim() || '(No extracted text for this document.)'}
+            </pre>
+          </div>
         </div>
       </div>
     </div>
@@ -1179,14 +1332,17 @@ function DocDetailModal({ doc, onClose }: { doc: ProjectKnowledgeDoc; onClose: (
 // ── Add knowledge doc modal ───────────────────────────────────────────────────
 
 function AddKnowledgeDocModal({
-  projectId, onClose, onAdded,
+  projectId, phiDefault, onClose, onAdded,
 }: {
   projectId: string;
+  phiDefault: 'ask' | 'always' | 'never';
   onClose: () => void;
   onAdded: (doc: ProjectKnowledgeDoc) => void;
 }) {
   const [title, setTitle]     = useState('');
   const [content, setContent] = useState('');
+  const [sourceName, setSourceName] = useState('');  // filename when content came from an upload / Drive import
+  const [markPhi, setMarkPhi] = useState(phiDefault === 'always');
   const [saving, setSaving]   = useState(false);
   const [reading, setReading] = useState(false);
   const [readProgress, setReadProgress] = useState('');
@@ -1206,6 +1362,7 @@ function AddKnowledgeDocModal({
       const text = picked.text ?? (picked.file ? (await api.extractAttachment(picked.file)).text : '');
       if (!text.trim()) { setFileError(`No readable text found in “${picked.name}”.`); return; }
       setContent(text);
+      setSourceName(picked.name);
     } catch (err) {
       setFileError(err instanceof Error ? err.message : 'Could not import from Google Drive.');
     } finally {
@@ -1237,6 +1394,7 @@ function AddKnowledgeDocModal({
         const text = await extractFile(file);
         if (!text.trim()) { setFileError(`No readable text found in “${file.name}”.`); return; }
         setContent(text);
+        setSourceName(file.name);
       } catch (err) {
         setFileError(err instanceof Error ? err.message : 'Could not read the file.');
       } finally {
@@ -1255,10 +1413,10 @@ function AddKnowledgeDocModal({
       try {
         const text = await extractFile(file);
         if (!text.trim()) { failures.push(`${file.name}: no readable text`); continue; }
-        const { docId } = await api.addProjectKnowledge(projectId, docTitle, text.trim());
+        const { docId } = await api.addProjectKnowledge(projectId, docTitle, text.trim(), { sourceFilename: file.name, containsPhi: markPhi });
         added.push({
-          id: docId, title: docTitle, textContent: text.trim(),
-          createdAt: new Date().toISOString(), createdBy: '',
+          id: docId, title: docTitle, sourceFilename: file.name, textContent: text.trim(),
+          containsPhi: markPhi, createdAt: new Date().toISOString(), createdBy: '',
         });
       } catch (err) {
         failures.push(`${file.name}: ${err instanceof Error ? err.message : 'failed'}`);
@@ -1276,11 +1434,16 @@ function AddKnowledgeDocModal({
     if (!title.trim() || !content.trim() || saving) return;
     setSaving(true);
     try {
-      const { docId } = await api.addProjectKnowledge(projectId, title.trim(), content.trim());
+      const { docId } = await api.addProjectKnowledge(projectId, title.trim(), content.trim(), {
+        sourceFilename: sourceName || undefined,
+        containsPhi: markPhi,
+      });
       onAdded({
         id: docId,
         title: title.trim(),
+        sourceFilename: sourceName || undefined,
         textContent: content.trim(),
+        containsPhi: markPhi,
         createdAt: new Date().toISOString(),
         createdBy: '',
       });
@@ -1349,6 +1512,20 @@ function AddKnowledgeDocModal({
             />
             <p className="text-xs text-gray-400 mt-1.5">The model will reference this document in every chat in this project.</p>
           </div>
+
+          <label className="flex items-start gap-2.5 rounded-xl border border-gray-200 p-3 cursor-pointer">
+            <input type="checkbox" checked={markPhi} onChange={(e) => setMarkPhi(e.target.checked)} className="w-4 h-4 mt-0.5 accent-red-600" />
+            <span className="min-w-0">
+              <span className="text-sm font-medium text-gray-900">Contains PHI</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                {phiDefault === 'always'
+                  ? 'This project marks new documents as PHI by default.'
+                  : phiDefault === 'never'
+                    ? 'This project treats new documents as non-PHI by default.'
+                    : 'Mark this document if it contains protected health information.'}
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="flex gap-2 mt-5">
