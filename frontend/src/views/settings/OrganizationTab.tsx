@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBuilding, faCopy, faCheck, faShieldHeart, faFileSignature,
-  faDownload, faShieldHalved, faKey, faRightToBracket, faClock, faChevronRight, faLock,
+  faDownload, faShieldHalved, faKey, faRightToBracket, faClock, faChevronRight,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { Org, AgreementStatus } from '../../types';
@@ -178,17 +178,6 @@ export default function OrganizationTab({
             </div>
           </div>
           <div className="divide-y divide-gray-100">
-            <SettingRow
-              icon={faFileSignature}
-              title="AI Output Governance (ACLX)"
-              description="Always on. ACLX labels and governs every AI-generated output for HIPAA compliance and cannot be turned off."
-              control={
-                <span className="flex items-center gap-1.5">
-                  <FontAwesomeIcon icon={faLock} className="text-green-600" style={{ fontSize: 11 }} />
-                  <Badge tone="green">Always on</Badge>
-                </span>
-              }
-            />
             <SettingRow
               icon={faFileSignature}
               title="Data Loss Prevention (DLP)"
