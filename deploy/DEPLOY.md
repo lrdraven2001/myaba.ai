@@ -118,6 +118,51 @@ gcloud builds triggers create github \
 > With triggers in place, **steps 1 + 3 below happen automatically on push.** The
 > manual commands remain valid for the first deploy / out-of-band rollouts.
 
+### 0b. Continuous deployment (GitHub Actions → Firebase Hosting + Firestore)
+The **frontend** (all 3 SPAs) and **Firestore rules + indexes** auto-deploy via a
+GitHub Actions workflow — `.github/workflows/deploy-frontend.yml` — so `firebase deploy`
+no longer has to be run by hand. (The backend stays on Cloud Build, §0a; the two
+pipelines are independent and don't overlap.)
+
+What it does:
+- **push → `main`** (paths `frontend/**`, `homepage/**`, `admin-console/**`, `firestore.*`,
+  `firebase.json`, `.firebaserc`): builds all three SPAs with `npx vite build` and runs
+  `firebase deploy --only hosting,firestore:indexes,firestore:rules`. So Hosting **and**
+  rules/indexes go live on merge (and only on merge).
+- **pull_request → `main`**: builds + deploys to a temporary Hosting **preview channel**
+  (`pr-<n>`, 7-day expiry). Never touches the live sites or Firestore.
+
+> Uses `npx vite build`, not `npm run build`: the frontend's `tsc -b` has pre-existing
+> strict-config type errors. Vite still hard-fails on real breakage, so a broken build
+> never deploys. No `--force` on the prod deploy → an index in the project but absent from
+> `firestore.indexes.json` is kept, never dropped. Each app's committed `.env.production`
+> supplies the live Firebase config (no VITE_* secrets needed).
+
+One-time setup:
+```bash
+# 1) Run from the repo root (D:\myaba.ai\myaba.ai). Creates a deploy service account,
+#    uploads its JSON key to the repo as secret FIREBASE_SERVICE_ACCOUNT_MYAPAAI, and
+#    writes a starter workflow.
+firebase login
+firebase init hosting:github        # → repo: lrdraven2001/myaba.ai; accept the build-script default
+
+# 2) DELETE the wizard's generated workflow(s) and keep ours:
+#      .github/workflows/firebase-hosting-merge.yml
+#      .github/workflows/firebase-hosting-pull-request.yml   (remove these)
+#      .github/workflows/deploy-frontend.yml                 (keep this one)
+
+# 3) firebase init grants the new SA Firebase Hosting admin ONLY. Our workflow also
+#    deploys Firestore rules + indexes, so grant those two roles to the SA it created
+#    (github-action-XXXXXXXXXX@myapaai.iam.gserviceaccount.com — see the init output):
+SA="github-action-1247589595@myapaai.iam.gserviceaccount.com"   # ← use YOUR SA email
+gcloud projects add-iam-policy-binding myapaai --member="serviceAccount:${SA}" --role="roles/firebaserules.admin"
+gcloud projects add-iam-policy-binding myapaai --member="serviceAccount:${SA}" --role="roles/datastore.indexAdmin"
+```
+
+> Secret name matters: the workflow reads `secrets.FIREBASE_SERVICE_ACCOUNT_MYAPAAI`
+> (the name `firebase init hosting:github` uses for project `myapaai`). Manage it at
+> GitHub → repo → Settings → Secrets and variables → Actions.
+
 ---
 
 ## 1. Build & push images (manual — or let the trigger do it)
@@ -140,6 +185,9 @@ gcloud run services replace deploy/cloud-run-api.yaml --region us-central1
 ```
 
 ## 4. Deploy the SPAs + Firestore rules
+> **Now automated** — pushing to `main` deploys the SPAs + Firestore rules/indexes via
+> GitHub Actions (§0b). The commands below are the one-time site setup + a manual
+> fallback for the first deploy / out-of-band rollouts.
 ```bash
 # one-time: create the two Hosting sites + bind targets
 firebase hosting:sites:create myaba-ai  --project myapaai

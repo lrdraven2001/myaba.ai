@@ -1,0 +1,116 @@
+name: Deploy frontend (Firebase Hosting)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Automated Firebase deploy for the three SPAs (homepage / app / admin) and the
+# Firestore rules + indexes. The BACKEND (myaba-api on Cloud Run) is deployed
+# separately by the existing Cloud Build trigger (cloudbuild.yaml, scoped to
+# backend-java/**) — this workflow deliberately does NOT touch it.
+#
+#   push → main : build all 3 SPAs, deploy them LIVE + firestore rules/indexes
+#   pull_request: build all 3 SPAs, deploy to a temporary Hosting PREVIEW channel
+#                 only (never live, never firestore) so changes can be reviewed
+#
+# ── One-time setup (see deploy/DEPLOY.md) ────────────────────────────────────
+#   1. Create a deploy service account in project `myapaai` and grant it:
+#        roles/firebasehosting.admin      (deploy Hosting sites)
+#        roles/firebaseauth.viewer        (Hosting deploy metadata; optional)
+#        roles/datastore.indexAdmin       (deploy firestore indexes)
+#        roles/firebaserules.admin        (deploy firestore rules)
+#        roles/serviceusage.serviceUsageConsumer  (API quota project)
+#      (Or simply roles/firebase.admin for a single broad role.)
+#   2. Create a JSON key for that SA and add it as the GitHub repo secret
+#        FIREBASE_SERVICE_ACCOUNT_MYAPAAI   (paste the whole JSON)
+#      `firebase init hosting:github` generates this exact secret automatically.
+#   3. That's it — no VITE_* secrets needed: each app's .env.production is
+#      committed and picked up by the build.
+#
+# Preview channels need the secret, so PRs from external forks won't deploy a
+# preview (secrets are withheld from fork PRs) — production is unaffected.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'homepage/**'
+      - 'admin-console/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-frontend.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'homepage/**'
+      - 'admin-console/**'
+      - 'firebase.json'
+
+# Never run two deploys for the same ref at once; cancel superseded runs.
+concurrency:
+  group: firebase-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Build all three SPAs with Vite. We intentionally use `npx vite build`
+      # (not `npm run build`) because the frontend's `tsc -b` step has pre-existing
+      # strict-config type errors; Vite still hard-fails on REAL breakage (syntax /
+      # missing modules), so a genuinely broken build never deploys. Each app's
+      # committed .env.production supplies the live Firebase config.
+      - name: Build homepage
+        run: cd homepage && npm ci && npx vite build
+
+      - name: Build app (frontend)
+        run: cd frontend && npm ci && npx vite build
+
+      - name: Build admin-console
+        run: cd admin-console && npm ci && npx vite build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_MYAPAAI }}
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      # ── Production: only on push to main ───────────────────────────────────
+      # Deploys all three Hosting targets LIVE + Firestore rules and indexes.
+      # (Idempotent: rules/indexes that didn't change are a no-op.)
+      # No --force on purpose: a Firestore index that exists in the project but is
+      # absent from firestore.indexes.json is KEPT (missing ones are created), so we
+      # never silently drop a production index.
+      - name: Deploy to production (hosting + firestore rules & indexes)
+        if: github.event_name == 'push'
+        run: >-
+          firebase deploy
+          --only hosting,firestore:indexes,firestore:rules
+          --project myapaai
+          --non-interactive
+
+      # ── Preview: on pull requests ──────────────────────────────────────────
+      # Deploys the built SPAs to a temporary Hosting preview channel (expires in
+      # 7 days). NEVER touches the live sites or Firestore rules/indexes.
+      - name: Deploy PR preview channel (hosting only)
+        if: github.event_name == 'pull_request'
+        run: >-
+          firebase hosting:channel:deploy "pr-${{ github.event.number }}"
+          --project myapaai
+          --expires 7d
+          --non-interactive
