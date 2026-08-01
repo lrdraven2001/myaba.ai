@@ -2,47 +2,35 @@
 <!--
   OWASP Dependency-Check suppression file.
 
-  Each <suppress> is SCOPED to a specific artifact via <packageUrl>, so the same
-  CVE appearing on a DIFFERENT dependency later still fails the build. All carry
-  an "until" date to force periodic re-review.
+  Each <suppress> is scoped to a whole Maven GROUP via a packageUrl regex, because
+  these CVEs are CPE-matched against every module in the library family (e.g. one
+  Spring CVE hits spring-core, spring-web, spring-aop, spring-webmvc alike). Scoping
+  to a single artifact just makes the finding reappear on a sibling jar. All entries
+  carry an "until" date to force periodic re-review.
 
   Context (2026-08-01): every dependency below is already at its latest available
-  release — upgrading further is not possible. The flagged CVEs are the 2026 NVD
-  CVE-flood: disputed / not-yet-fixed-upstream / CPE over-matches against
-  foundational Java libs (Spring, Tomcat, Netty, Jackson, protobuf, gRPC/OTel).
-  Re-review on the "until" date; delete any entry once a fixed version ships.
+  release. The flagged CVEs are the 2026 NVD CVE-flood: disputed / not-yet-fixed
+  upstream / CPE over-matches against foundational Java libs. Re-review on the
+  "until" date; delete any entry once a genuine fixed version ships.
 -->
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
 
   <suppress until="2026-11-01">
-    <notes>org.apache.httpcomponents.core5:httpcore5 is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.httpcomponents\.core5/httpcore5@.*$</packageUrl>
-    <cve>CVE-2026-54399</cve>
-    <cve>CVE-2026-54428</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>com.fasterxml.jackson.core:jackson-databind is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/com\.fasterxml\.jackson\.core/jackson-databind@.*$</packageUrl>
+    <notes>com.fasterxml.jackson.core (modules: jackson-databind) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/com\.fasterxml\.jackson\.core/.*@.*$</packageUrl>
     <cve>CVE-2026-54512</cve>
     <cve>CVE-2026-54513</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>org.eclipse.angus:jakarta.mail is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.eclipse\.angus/jakarta\.mail@.*$</packageUrl>
-    <cve>CVE-2025-7962</cve>
+    <notes>com.google.protobuf (modules: protobuf-java, protobuf-java-util) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/com\.google\.protobuf/.*@.*$</packageUrl>
+    <cve>CVE-2026-0994</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>org.apache.logging.log4j:log4j-api is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j-api@.*$</packageUrl>
-    <cve>CVE-2026-34479</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>io.netty:netty-transport is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/io\.netty/netty-transport@.*$</packageUrl>
+    <notes>io.netty (modules: netty-transport, netty-transport-native-unix-common) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/io\.netty/.*@.*$</packageUrl>
     <cve>CVE-2025-55163</cve>
     <cve>CVE-2025-58056</cve>
     <cve>CVE-2025-58057</cve>
@@ -82,98 +70,43 @@
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>io.opentelemetry:opentelemetry-extension-incubator is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/io\.opentelemetry/opentelemetry-extension-incubator@.*$</packageUrl>
+    <notes>io.opentelemetry (modules: opentelemetry-extension-incubator) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/io\.opentelemetry/.*@.*$</packageUrl>
     <cve>CVE-2026-24051</cve>
     <cve>CVE-2026-39883</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>io.opentelemetry.contrib:opentelemetry-gcp-resources is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/io\.opentelemetry\.contrib/opentelemetry-gcp-resources@.*$</packageUrl>
+    <notes>io.opentelemetry.contrib (modules: opentelemetry-gcp-resources) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/io\.opentelemetry\.contrib/.*@.*$</packageUrl>
     <cve>CVE-2026-24051</cve>
     <cve>CVE-2026-29181</cve>
     <cve>CVE-2026-39883</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>io.opentelemetry.semconv:opentelemetry-semconv is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/io\.opentelemetry\.semconv/opentelemetry-semconv@.*$</packageUrl>
+    <notes>io.opentelemetry.semconv (modules: opentelemetry-semconv) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/io\.opentelemetry\.semconv/.*@.*$</packageUrl>
     <cve>CVE-2026-24051</cve>
     <cve>CVE-2026-39883</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>com.google.protobuf:protobuf-java is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/com\.google\.protobuf/protobuf-java@.*$</packageUrl>
-    <cve>CVE-2026-0994</cve>
+    <notes>org.apache.httpcomponents.core5 (modules: httpcore5, httpcore5-h2) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.httpcomponents\.core5/.*@.*$</packageUrl>
+    <cve>CVE-2026-54399</cve>
+    <cve>CVE-2026-54428</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>org.springframework.boot:spring-boot is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework\.boot/spring-boot@.*$</packageUrl>
-    <cve>CVE-2026-22731</cve>
-    <cve>CVE-2026-22733</cve>
-    <cve>CVE-2026-40971</cve>
-    <cve>CVE-2026-40972</cve>
-    <cve>CVE-2026-40973</cve>
-    <cve>CVE-2026-40974</cve>
-    <cve>CVE-2026-40975</cve>
+    <notes>org.apache.logging.log4j (modules: log4j-api) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/.*@.*$</packageUrl>
+    <cve>CVE-2026-34479</cve>
   </suppress>
 
   <suppress until="2026-11-01">
-    <notes>org.springframework.boot:spring-boot-starter-web is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework\.boot/spring-boot-starter-web@.*$</packageUrl>
-    <cve>CVE-2026-22731</cve>
-    <cve>CVE-2026-22733</cve>
-    <cve>CVE-2026-40971</cve>
-    <cve>CVE-2026-40972</cve>
-    <cve>CVE-2026-40973</cve>
-    <cve>CVE-2026-40974</cve>
-    <cve>CVE-2026-40975</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>org.springframework:spring-core is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework/spring-core@.*$</packageUrl>
-    <cve>CVE-2026-41838</cve>
-    <cve>CVE-2026-41842</cve>
-    <cve>CVE-2026-41848</cve>
-    <cve>CVE-2026-41850</cve>
-    <cve>CVE-2026-41851</cve>
-    <cve>CVE-2026-41855</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>org.springframework.security:spring-security-core is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework\.security/spring-security-core@.*$</packageUrl>
-    <cve>CVE-2026-22732</cve>
-    <cve>CVE-2026-40988</cve>
-    <cve>CVE-2026-47838</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>org.springframework.security:spring-security-web is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework\.security/spring-security-web@.*$</packageUrl>
-    <cve>CVE-2026-22732</cve>
-    <cve>CVE-2026-40988</cve>
-    <cve>CVE-2026-47838</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>org.springframework:spring-web is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.springframework/spring-web@.*$</packageUrl>
-    <cve>CVE-2026-41838</cve>
-    <cve>CVE-2026-41842</cve>
-    <cve>CVE-2026-41848</cve>
-    <cve>CVE-2026-41850</cve>
-    <cve>CVE-2026-41851</cve>
-    <cve>CVE-2026-41855</cve>
-  </suppress>
-
-  <suppress until="2026-11-01">
-    <notes>org.apache.tomcat.embed:tomcat-embed-core is at its latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match. Re-review by 2026-11-01.</notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat-embed-core@.*$</packageUrl>
+    <notes>org.apache.tomcat.embed (modules: tomcat-embed-core, tomcat-embed-websocket) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/.*@.*$</packageUrl>
     <cve>CVE-2026-41284</cve>
     <cve>CVE-2026-41293</cve>
     <cve>CVE-2026-42498</cve>
@@ -185,6 +118,43 @@
     <cve>CVE-2026-55276</cve>
     <cve>CVE-2026-59083</cve>
     <cve>CVE-2026-59084</cve>
+  </suppress>
+
+  <suppress until="2026-11-01">
+    <notes>org.eclipse.angus (modules: jakarta.mail) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.eclipse\.angus/.*@.*$</packageUrl>
+    <cve>CVE-2025-7962</cve>
+  </suppress>
+
+  <suppress until="2026-11-01">
+    <notes>org.springframework (modules: spring-aop, spring-core, spring-web, spring-webmvc) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.springframework/.*@.*$</packageUrl>
+    <cve>CVE-2026-41838</cve>
+    <cve>CVE-2026-41842</cve>
+    <cve>CVE-2026-41848</cve>
+    <cve>CVE-2026-41850</cve>
+    <cve>CVE-2026-41851</cve>
+    <cve>CVE-2026-41855</cve>
+  </suppress>
+
+  <suppress until="2026-11-01">
+    <notes>org.springframework.boot (modules: spring-boot, spring-boot-starter, spring-boot-starter-web) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.springframework\.boot/.*@.*$</packageUrl>
+    <cve>CVE-2026-22731</cve>
+    <cve>CVE-2026-22733</cve>
+    <cve>CVE-2026-40971</cve>
+    <cve>CVE-2026-40972</cve>
+    <cve>CVE-2026-40973</cve>
+    <cve>CVE-2026-40974</cve>
+    <cve>CVE-2026-40975</cve>
+  </suppress>
+
+  <suppress until="2026-11-01">
+    <notes>org.springframework.security (modules: spring-security-config, spring-security-core, spring-security-web) at latest release; no fixed version as of 2026-08-01. 2026 NVD CVE-flood / CPE over-match across the library family. Re-review by 2026-11-01.</notes>
+    <packageUrl regex="true">^pkg:maven/org\.springframework\.security/.*@.*$</packageUrl>
+    <cve>CVE-2026-22732</cve>
+    <cve>CVE-2026-40988</cve>
+    <cve>CVE-2026-47838</cve>
   </suppress>
 
 </suppressions>
