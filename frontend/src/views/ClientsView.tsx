@@ -88,6 +88,9 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [activeTab, setActiveTab]     = useState<ClientTab>('info');
   const [form, setForm]               = useState(EMPTY_CLIENT);
+  const [editGuardians, setEditGuardians] = useState<{ name: string; relationship: string }[]>([]);
+  const [savingClient, setSavingClient]   = useState(false);
+  const [clientSaved, setClientSaved]     = useState(false);
 
   // List controls
   const [search, setSearch]           = useState('');
@@ -176,7 +179,34 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
       diagnosis: c.diagnosis, primaryInsurance: c.primaryInsurance,
       ehrProvider: c.ehrProvider ?? '', ehrCaseId: c.ehrCaseId ?? '',
     });
+    setEditGuardians(c.guardians ?? []);
+    setClientSaved(false);
     setActiveTab('info');
+  };
+
+  const setEditGuardian = (i: number, field: 'name' | 'relationship', value: string) =>
+    setEditGuardians((gs) => gs.map((g, idx) => idx === i ? { ...g, [field]: value } : g));
+
+  const handleSaveClient = async () => {
+    if (!selectedClient || savingClient) return;
+    setSavingClient(true);
+    const guardians = editGuardians
+      .map((g) => ({ name: g.name.trim(), relationship: g.relationship.trim() }))
+      .filter((g) => g.name);
+    try {
+      await api.updateClient(selectedClient.id, { ...form, guardians });
+      const updated: Client = {
+        ...selectedClient, ...form, guardians,
+        legalName: `${form.firstName} ${form.lastName}`.trim(),
+      };
+      setClients((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+      setSelectedClient(updated);
+      setClientSaved(true); setTimeout(() => setClientSaved(false), 2500);
+    } catch (e) {
+      console.error('Failed to save client', e);
+    } finally {
+      setSavingClient(false);
+    }
   };
 
   const handleBack = () => { setSelectedClient(null); setActiveTab('info'); };
@@ -241,12 +271,14 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
               </button>
             )}
             <button
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors"
-              style={{ background: '#3F9B2F' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#2E7D22')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = '#3F9B2F')}
+              onClick={handleSaveClient}
+              disabled={savingClient}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-60"
+              style={{ background: clientSaved ? '#2E7D22' : '#3F9B2F' }}
+              onMouseEnter={(e) => { if (!clientSaved) (e.currentTarget.style.background = '#2E7D22'); }}
+              onMouseLeave={(e) => { if (!clientSaved) (e.currentTarget.style.background = '#3F9B2F'); }}
             >
-              Save Changes
+              {clientSaved ? '✓ Saved' : savingClient ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </div>
@@ -297,6 +329,28 @@ export default function ClientsView({ onStartChat, onOpenChat }: { onStartChat?:
                       />
                     </div>
                     <Field label="Diagnosis" value={form.diagnosis} onChange={(v) => handleFormChange('diagnosis', v)} inputClass={inputClass} labelClass={labelClass} />
+                </div>
+
+                {/* Guardians / caregivers — name + relationship label (e.g. Mother). */}
+                <div className="max-w-3xl mt-6">
+                  <label className={labelClass}>Guardians / Caregivers</label>
+                  <div className="space-y-2">
+                    {editGuardians.map((g, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input className={inputClass} value={g.name} onChange={(e) => setEditGuardian(i, 'name', e.target.value)} placeholder="Name" />
+                        <input className={`${inputClass} max-w-[45%]`} value={g.relationship} onChange={(e) => setEditGuardian(i, 'relationship', e.target.value)} placeholder="Relationship (e.g. Mother)" />
+                        <button type="button" onClick={() => setEditGuardians((gs) => gs.filter((_, idx) => idx !== i))}
+                                aria-label="Remove guardian" className="text-gray-400 hover:text-red-500 shrink-0 w-8 h-8">
+                          <FontAwesomeIcon icon={faTimes} />
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setEditGuardians((gs) => [...gs, { name: '', relationship: '' }])}
+                            className="text-sm font-semibold text-green-700 hover:underline">
+                      + Add guardian
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Saved with the client when you click <strong>Save Changes</strong>.</p>
                 </div>
               </>
             )}
