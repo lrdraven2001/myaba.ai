@@ -352,6 +352,8 @@ export interface Project {
   isShared: boolean;
   /** When true, project contains PHI — only clinical/admin roles may be added as members. */
   containsPhi: boolean;
+  /** Default PHI behavior for new uploads: 'ask' (default) | 'always' | 'never'. */
+  documentPhiDefault?: 'ask' | 'always' | 'never';
   members: Record<string, ProjectMemberRole>; // { userId: 'editor' | 'viewer' }
   memberIds: string[];
   createdAt: string;
@@ -369,6 +371,8 @@ export interface ProjectKnowledgeDoc {
   createdBy: string;
   gcsObject?: string;      // present when an original file is stored in GCS (uploaded docs)
   sourceFilename?: string; // original filename for uploaded docs
+  description?: string;    // editable per-document description
+  containsPhi?: boolean;   // per-document PHI flag (independent of the project-level flag)
 }
 
 // ── AI Generation ─────────────────────────────────────────────────────────────

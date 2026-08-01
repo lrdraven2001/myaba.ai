@@ -25,6 +25,8 @@ public class ProjectRequest {
      * from org-wide sharing of PHI projects.
      */
     private Boolean containsPhi;
+    /** Default PHI behavior for new document uploads: "ask" (default) | "always" | "never". */
+    private String documentPhiDefault;
     /** Initial members beyond the owner: { userId: "editor"|"viewer" } */
     private Map<String, String> members;
 }

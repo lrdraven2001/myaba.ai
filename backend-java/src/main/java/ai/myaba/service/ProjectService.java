@@ -147,6 +147,7 @@ public class ProjectService {
         data.put("ownerId",      user.getUid());
         data.put("clientIds",    clientIds);
         data.put("containsPhi",  Boolean.TRUE.equals(req.getContainsPhi()));
+        data.put("documentPhiDefault", req.getDocumentPhiDefault() != null ? req.getDocumentPhiDefault() : "ask");
         data.put("members",      members);
         data.put("memberIds",    computeMemberIds(user.getUid(), members));
         data.put("createdAt",    now);
@@ -176,6 +177,7 @@ public class ProjectService {
         if (req.getClientIds()    != null) updates.put("clientIds",    req.getClientIds());
         // `isShared` intentionally ignored — retired (see createProject).
         if (req.getContainsPhi()  != null) updates.put("containsPhi",  req.getContainsPhi());
+        if (req.getDocumentPhiDefault() != null) updates.put("documentPhiDefault", req.getDocumentPhiDefault());
         updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) { project.putAll(updates); return; }
@@ -332,6 +334,8 @@ public class ProjectService {
         doc.put("projectId",   projectId);
         doc.put("title",       title);
         doc.put("textContent", textContent != null ? textContent : "");
+        doc.put("description", "");     // per-document description (editable in the UI)
+        doc.put("containsPhi", false);  // per-document PHI flag (independent of the project flag)
         doc.put("createdAt",   now);
 
         if (devMode) {
@@ -369,6 +373,33 @@ public class ProjectService {
             if (gcsObject instanceof String s && !s.isBlank()) gcsStorageService.delete(s);
         }
         ref.delete().get();
+    }
+
+    /**
+     * Update a knowledge document's editable metadata — {@code description} and the per-document
+     * {@code containsPhi} flag. Only the given fields are touched (null = leave unchanged).
+     */
+    public void updateKnowledgeDoc(AppUser user, String projectId, String docId,
+                                   String description, Boolean containsPhi) throws Exception {
+        Map<String, Object> project = fetchProject(user.getOrgId(), projectId);
+        if (!canEditProject(user, project))
+            throw new SecurityException("Cannot edit knowledge in project: " + projectId);
+
+        Map<String, Object> updates = new HashMap<>();
+        if (description != null) updates.put("description", description);
+        if (containsPhi != null) updates.put("containsPhi", containsPhi);
+        if (updates.isEmpty()) return;
+        updates.put("updatedAt", TimestampUtil.now());
+
+        if (devMode) {
+            List<Map<String, Object>> docs = devKnowledgeDocs.get(projectId);
+            if (docs != null) docs.stream().filter(d -> docId.equals(d.get("id"))).forEach(d -> d.putAll(updates));
+            return;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+          .collection(FirestoreCollections.PROJECTS).document(projectId)
+          .collection("knowledgeDocs").document(docId).update(updates).get();
     }
 
     // ── Project file upload (parity with client document upload) ────────────────

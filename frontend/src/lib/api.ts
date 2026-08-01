@@ -445,6 +445,10 @@ export const api = {
       body: JSON.stringify({ title, textContent }),
     }),
 
+  /** Update a knowledge document's editable metadata (description + per-document PHI flag). */
+  updateProjectKnowledge: (projectId: string, docId: string, patch: { description?: string; containsPhi?: boolean }) =>
+    request<void>(`/projects/${projectId}/knowledge/${docId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
   /** Remove a knowledge document from a project. */
   deleteProjectKnowledge: (projectId: string, docId: string) =>
     request<void>(`/projects/${projectId}/knowledge/${docId}`, { method: 'DELETE' }),

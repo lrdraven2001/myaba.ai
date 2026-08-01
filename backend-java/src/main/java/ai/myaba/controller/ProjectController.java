@@ -160,6 +160,22 @@ public class ProjectController {
     }
 
     /**
+     * PATCH /api/projects/{projectId}/knowledge/{docId}  Body: { description?, containsPhi? }
+     * Update a knowledge document's editable metadata (description + per-document PHI flag).
+     */
+    @PatchMapping("/{projectId}/knowledge/{docId}")
+    public ResponseEntity<Void> updateKnowledge(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId,
+            @PathVariable String docId,
+            @RequestBody Map<String, Object> body) throws Exception {
+        String description = body.get("description") instanceof String s ? s : null;
+        Boolean containsPhi = body.get("containsPhi") instanceof Boolean b ? b : null;
+        projectService.updateKnowledgeDoc(user, projectId, docId, description, containsPhi);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * POST /api/projects/{projectId}/knowledge/upload  (multipart: file, title?)
      * Upload a PDF/DOC(X)/Excel/image/text file as project knowledge — parity with
      * client document upload. The original is stored in GCS and the extracted text
