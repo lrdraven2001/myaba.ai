@@ -142,8 +142,7 @@
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <!-- 12.x required: 10.0.3's bundled NVD client crashes on Linux CI with
-                     ClassNotFoundException: sun.nio.ch.WindowsSelectorProvider. -->
+                <!-- Kept current (12.x) for NVD API v2 reliability and CVE-data freshness. -->
                 <version>12.1.3</version>
                 <configuration>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
