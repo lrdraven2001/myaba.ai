@@ -224,8 +224,10 @@ usage:
 # AES-256 key for encrypting EHR credentials at rest in Firestore.
 # Generate with: openssl rand -base64 32
 # Set EHR_CREDENTIAL_KEY in production — never commit a real key.
+# No fallback on purpose: EhrService.keyBytes() fails closed when this is unset,
+# so a missing key can never silently encrypt PHI-gateway credentials weakly.
 ehr:
-  credential-key: ${EHR_CREDENTIAL_KEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+  credential-key: ${EHR_CREDENTIAL_KEY:}
   centralreach:
     base-url: ${EHR_CENTRALREACH_BASE_URL:https://{subdomain}.centralreach.com/api/v2}
   rethink:

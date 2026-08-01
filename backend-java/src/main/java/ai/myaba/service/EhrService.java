@@ -68,7 +68,10 @@ public class EhrService {
      * Generate with: openssl rand -base64 32
      * Set via EHR_CREDENTIAL_KEY env var.
      */
-    @Value("${ehr.credential-key:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}")
+    // No default: EHR credential encryption must fail CLOSED. A missing/placeholder
+    // key is rejected in keyBytes() rather than silently encrypting PHI-gateway
+    // credentials under a publicly-known key. Set EHR_CREDENTIAL_KEY (openssl rand -base64 32).
+    @Value("${ehr.credential-key:}")
     private String credentialKeyBase64;
 
     private final List<EhrConnector> connectors;
@@ -298,7 +301,28 @@ public class EhrService {
     // ── AES-256-GCM encryption ────────────────────────────────────────────────
 
     private byte[] keyBytes() {
-        return Base64.getDecoder().decode(credentialKeyBase64);
+        if (credentialKeyBase64 == null || credentialKeyBase64.isBlank()) {
+            throw new IllegalStateException(
+                "EHR_CREDENTIAL_KEY is not configured — refusing to encrypt/decrypt EHR credentials. "
+                + "Set a 32-byte Base64 key (openssl rand -base64 32).");
+        }
+        byte[] key;
+        try {
+            key = Base64.getDecoder().decode(credentialKeyBase64.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("EHR_CREDENTIAL_KEY is not valid Base64.", e);
+        }
+        if (key.length != 32) {
+            throw new IllegalStateException(
+                "EHR_CREDENTIAL_KEY must decode to 32 bytes (AES-256); got " + key.length + ".");
+        }
+        boolean allZero = true;
+        for (byte b : key) { if (b != 0) { allZero = false; break; } }
+        if (allZero) {
+            throw new IllegalStateException(
+                "EHR_CREDENTIAL_KEY is the all-zero placeholder — refusing to use a publicly-known key.");
+        }
+        return key;
     }
 
     /**

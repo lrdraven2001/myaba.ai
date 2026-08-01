@@ -1,0 +1,84 @@
+name: Backend security scan (OWASP dependency-check)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gates the Java backend's dependencies against known CVEs. The pom already
+# configures the OWASP dependency-check plugin with failBuildOnCVSS=7 and the
+# owasp-suppressions.xml suppression file — this workflow is what actually RUNS
+# it (previously it was configured but never executed, so nothing gated
+# vulnerable deps).
+#
+# Runs independently of the Cloud Build deploy (cloudbuild.yaml) so a slow NVD
+# sync never blocks a deploy — but a High (CVSS >= 7.0) finding fails this check,
+# turning the commit / PR red. To make it a hard merge gate, add this job as a
+# required status check in the repo's branch-protection rules for `main`.
+#
+# NVD API key (recommended): dependency-check throttles hard without one, making
+# the first sync slow and occasionally flaky. Create a free key at
+# https://nvd.nist.gov/developers/request-an-api-key and add it as the repo
+# secret NVD_API_KEY — the run picks it up automatically. The NVD data cache
+# below keeps subsequent runs fast either way.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend-java/**'
+      - '.github/workflows/backend-security.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend-java/**'
+  # Weekly run catches newly-disclosed CVEs in unchanged dependencies.
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Persist the NVD database between runs so we don't re-download it every time.
+      - name: Cache dependency-check data
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: dependency-check-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            dependency-check-data-${{ runner.os }}-
+
+      - name: OWASP dependency-check
+        working-directory: backend-java
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        # failBuildOnCVSS=7 (from pom.xml) makes this fail the job on any High finding.
+        run: >-
+          mvn -B org.owasp:dependency-check-maven:check
+          ${NVD_API_KEY:+-DnvdApiKey=$NVD_API_KEY}
+
+      - name: Upload dependency-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: |
+            backend-java/target/dependency-check-report.html
+            backend-java/target/dependency-check-report.json
+          if-no-files-found: ignore

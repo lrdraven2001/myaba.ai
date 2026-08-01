@@ -98,13 +98,23 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        // Dev mode: use stub user (explicit flag OR no Firebase configured)
-        if (devAuthEnabled || firebaseApp == null) {
-            if (firebaseApp == null && !devAuthEnabled) {
-                log.warn("Firebase not configured — using dev stub user. Set DEV_AUTH=true explicitly for dev mode.");
-            }
+        // Dev mode is an EXPLICIT opt-in only. We must never fall back to the stub
+        // super-admin just because Firebase failed to initialize — that would fail
+        // OPEN and authenticate every request as ORG_SUPER_ADMIN in production.
+        if (devAuthEnabled) {
             setAuthentication(DEV_USER);
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Not in dev mode but Firebase never initialized (missing/bad credentials).
+        // Fail CLOSED: refuse every request rather than granting stub super-admin.
+        if (firebaseApp == null) {
+            log.error("Firebase Auth is not configured and dev mode is disabled — refusing request (fail closed). "
+                    + "Check the service-account credentials; set DEV_AUTH=true only for local development.");
+            response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE); // 503
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"Authentication service unavailable\"}");
             return;
         }
 
