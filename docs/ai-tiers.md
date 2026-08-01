@@ -1,7 +1,7 @@
 # AI Seat Tiers
 
-Status: **P1 implemented** (model-access enforcement). P2 (per-tier Stripe pricing) is spec-only.
-Owner: Chris. Last updated: 2026-08-01.
+Status: **P1 + P2 implemented** (model-access enforcement + per-tier Stripe billing with
+active seat sync). Owner: Chris. Last updated: 2026-08-01.
 
 ## Why
 
@@ -97,18 +97,25 @@ it (default `FULL`).
 - **Lite user hitting doc-gen:** backend 403 → the UI surfaces
   "Document generation needs a full seat — ask an admin to upgrade yours."
 
-## P2 — per-tier pricing (spec only, not built)
+## P2 — per-tier pricing (implemented)
 
-Model-gating gives cost control today even before pricing changes. When ready:
-
-- **Stripe:** keep one subscription per org, add a **Price per tier** (a lite
-  Price + the existing full Price). Subscription has one line item per tier with
-  `quantity = members in that tier`. On tier change / add / remove, adjust the
-  line-item quantities — same mechanic as the current per-seat sync in
-  `BillingService`, extended from one line item to N.
-- **Config:** `stripe.prices.lite` (+ keep `solo`/`team`/`enterprise`).
-- **Reconciliation:** `seatCount` becomes per-tier counts; the webhook syncs each
-  line item.
+- **Stripe:** one subscription per org, **one line item per tier** — Team-Full
+  (`stripe.prices.team`, $35) × full seats and Team-Lite (`stripe.prices.team-lite`,
+  $15) × lite seats.
+- **$50 floor via price-swap (option A):** when a Team org's per-tier total is below
+  $50 (only a 1-seat team, since the admin is always a full seat), the subscription
+  is billed on the **Solo price** ($50) instead. `BillingService.computeDesiredItems`
+  owns this. Floor amounts are constants (`FULL_SEAT_CENTS`/`LITE_SEAT_CENTS`/
+  `MIN_TEAM_CENTS`) that **must be kept in sync with the Stripe Prices**.
+- **Active seat sync:** `OrgService` publishes a `MembershipChangedEvent` on member
+  add / AI-tier change; `BillingService.onMembershipChanged → syncSubscriptionSeats`
+  reconciles the live subscription's line items (add/update/delete) with proration.
+  Best-effort — a Stripe failure never breaks member management. No-op until the org
+  is subscribed (checkout sets the initial items).
+- **Webhook:** seat count = **sum of all line-item quantities**; plan is derived from
+  **all** items (any Team/Team-Lite item → `team`; a floored 1-seat team reads `solo`).
+- **Config:** set `STRIPE_PRICE_TEAM_LITE` (sandbox `price_1Tzd7nD25u0E4OT7YTbrjO1J`).
+  Until it's set, lite seats simply aren't billed (graceful — no line item).
 
 ### Known pricing (sandbox, 2026-08-01)
 

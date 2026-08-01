@@ -11,10 +11,12 @@ import com.stripe.model.Customer;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.InvoiceListParams;
+import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.billingportal.SessionCreateParams;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -65,8 +67,16 @@ public class BillingService {
     private String priceSolo;
     @Value("${stripe.prices.team:}")
     private String priceTeam;
+    @Value("${stripe.prices.team-lite:}")
+    private String priceTeamLite;
     @Value("${stripe.prices.enterprise:}")
     private String priceEnterprise;
+
+    // Per-seat amounts (USD cents) — MUST match the Stripe Prices above. Used only to decide the
+    // Team floor (a team billing below MIN_TEAM_CENTS is charged as Solo — see docs/ai-tiers.md).
+    private static final long FULL_SEAT_CENTS = 3500;   // Team – Full  ($35)
+    private static final long LITE_SEAT_CENTS = 1500;   // Team – Lite  ($15)
+    private static final long MIN_TEAM_CENTS  = 5000;   // Team floor    ($50 = Solo)
 
     @Value("${stripe.checkout-success-url:}")
     private String checkoutSuccessUrl;
@@ -120,8 +130,45 @@ public class BillingService {
         if (priceId == null) return null;
         if (priceId.equals(emptyToNull(priceSolo)))       return "solo";
         if (priceId.equals(emptyToNull(priceTeam)))       return "team";
+        if (priceId.equals(emptyToNull(priceTeamLite)))   return "team"; // lite seats are still Team
         if (priceId.equals(emptyToNull(priceEnterprise))) return "enterprise";
         return null;
+    }
+
+    /**
+     * Desired subscription line items (price → quantity) for an org, applying the Team floor:
+     * a Team org whose per-tier total is below the $50 minimum (only a 1-seat team, since the
+     * admin is always a full seat) is billed on the Solo price instead. See docs/ai-tiers.md.
+     */
+    private java.util.LinkedHashMap<String, Long> computeDesiredItems(String orgId, String plan) {
+        java.util.LinkedHashMap<String, Long> desired = new java.util.LinkedHashMap<>();
+        String p = plan == null ? "" : plan.toLowerCase();
+
+        if ("solo".equals(p)) {
+            addItem(desired, priceSolo, 1);
+            return desired;
+        }
+        if ("enterprise".equals(p)) {
+            addItem(desired, priceEnterprise, Math.max(1, orgService.seatCount(orgId)));
+            return desired;
+        }
+        // Team: per-tier line items, with the $50 floor → Solo price.
+        OrgService.SeatCounts sc = orgService.seatCounts(orgId);
+        long cents = sc.full() * FULL_SEAT_CENTS + sc.lite() * LITE_SEAT_CENTS;
+        if (cents < MIN_TEAM_CENTS) {
+            addItem(desired, priceSolo, 1); // below floor → billed as Solo ($50)
+            return desired;
+        }
+        addItem(desired, priceTeam,     sc.full());
+        addItem(desired, priceTeamLite, sc.lite());
+        // Safety net: if the tier prices aren't configured, fall back to one Team line for all seats.
+        if (desired.isEmpty()) addItem(desired, priceTeam, Math.max(1, sc.total()));
+        return desired;
+    }
+
+    private void addItem(java.util.LinkedHashMap<String, Long> map, String priceId, long qty) {
+        String p = emptyToNull(priceId);
+        if (p != null && qty > 0) map.put(p, qty);
     }
 
     // ── Customer ────────────────────────────────────────────────────────────────
@@ -158,33 +205,34 @@ public class BillingService {
      */
     public String createCheckoutSession(String orgId, String billingEmail, String plan) throws Exception {
         requireEnabled();
-        String priceId = priceIdForPlan(plan);
-        if (priceId == null) {
+        if (priceIdForPlan(plan) == null) {
             throw new IllegalArgumentException("No Stripe price configured for plan '" + plan
                     + "'. This tier may be contact-sales.");
         }
+        // Per-tier line items (Team = full + lite; the $50 floor bills a 1-seat team as Solo).
+        // The subscription line quantities ARE the paid seats — the webhook syncs them back to
+        // the org doc, where the total drives the per-seat usage cap (UsageService).
+        java.util.LinkedHashMap<String, Long> items = computeDesiredItems(orgId, plan);
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("No purchasable Stripe price for plan '" + plan + "'.");
+        }
         String customerId = getOrCreateCustomer(orgId, billingEmail);
 
-        // Per-seat plans (Team) bill quantity = the org's active member count; flat
-        // plans (Solo) bill a single unit. The subscription quantity IS the paid
-        // seat count — the webhook syncs it back to the org doc, where it also
-        // drives the per-seat usage cap (UsageService).
-        long quantity = isPerSeat(plan) ? orgService.seatCount(orgId) : 1L;
-
-        com.stripe.param.checkout.SessionCreateParams params =
+        com.stripe.param.checkout.SessionCreateParams.Builder params =
                 com.stripe.param.checkout.SessionCreateParams.builder()
                         .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.SUBSCRIPTION)
                         .setCustomer(customerId)
                         .setSuccessUrl(orDefault(checkoutSuccessUrl, "https://app.myaba.ai/settings?tab=billing"))
                         .setCancelUrl(orDefault(checkoutCancelUrl, "https://app.myaba.ai/settings?tab=billing"))
                         .setClientReferenceId(orgId)
-                        .addLineItem(com.stripe.param.checkout.SessionCreateParams.LineItem.builder()
-                                .setPrice(priceId).setQuantity(quantity).build())
                         // Stamp orgId on the subscription so subscription.* webhooks resolve the tenant.
                         .setSubscriptionData(com.stripe.param.checkout.SessionCreateParams.SubscriptionData.builder()
-                                .putMetadata("orgId", orgId).build())
-                        .build();
-        Session session = Session.create(params);
+                                .putMetadata("orgId", orgId).build());
+        items.forEach((price, qty) -> params.addLineItem(
+                com.stripe.param.checkout.SessionCreateParams.LineItem.builder()
+                        .setPrice(price).setQuantity(qty).build()));
+
+        Session session = Session.create(params.build());
         return session.getUrl();
     }
 
@@ -198,6 +246,74 @@ public class BillingService {
                 .build();
         com.stripe.model.billingportal.Session session = com.stripe.model.billingportal.Session.create(params);
         return session.getUrl();
+    }
+
+    // ── Active per-tier seat sync (AI tiers) ────────────────────────────────────
+
+    /** On a membership / AI-tier change, reconcile the org's live Stripe subscription seats. */
+    @org.springframework.context.event.EventListener
+    public void onMembershipChanged(ai.myaba.event.MembershipChangedEvent event) {
+        syncSubscriptionSeats(event.orgId());
+    }
+
+    /**
+     * Reconcile an org's live Stripe subscription line items to its current per-tier seat counts
+     * (full/lite) plus the Team floor (below $50 → billed as Solo). No-op when the org isn't
+     * subscribed yet (checkout sets the initial items) or Stripe is off. Best-effort: never throws
+     * — a Stripe hiccup must not break member management. Stripe's resulting subscription.updated
+     * webhook syncs the seat count / plan back onto the org doc.
+     */
+    public void syncSubscriptionSeats(String orgId) {
+        if (!isEnabled()) return;
+        try {
+            Map<String, Object> org = orgService.getOrg(orgId);
+            Object subIdObj = org == null ? null : org.get("stripeSubscriptionId");
+            String subId = subIdObj instanceof String s && !s.isBlank() ? s : null;
+            if (subId == null) return;                                   // not subscribed → nothing to sync
+            String plan = org.get("plan") instanceof String p ? p : "team";
+            if ("enterprise".equalsIgnoreCase(plan)) return;            // contact-sales; not auto-managed
+
+            Subscription sub = Subscription.retrieve(subId);
+            String status = sub.getStatus();
+            if (!("active".equals(status) || "trialing".equals(status) || "past_due".equals(status))) return;
+
+            java.util.LinkedHashMap<String, Long> desired = computeDesiredItems(orgId, plan);
+            if (desired.isEmpty()) return;
+
+            java.util.Set<String> currentPrices = new java.util.HashSet<>();
+            java.util.List<SubscriptionUpdateParams.Item> ops = new ArrayList<>();
+            boolean changed = false;
+
+            for (SubscriptionItem it : sub.getItems().getData()) {
+                String pid = it.getPrice() != null ? it.getPrice().getId() : null;
+                if (pid != null) currentPrices.add(pid);
+                if (pid != null && desired.containsKey(pid)) {
+                    long want = desired.get(pid);
+                    if (it.getQuantity() == null || it.getQuantity() != want) {
+                        ops.add(SubscriptionUpdateParams.Item.builder().setId(it.getId()).setQuantity(want).build());
+                        changed = true;
+                    }
+                } else {
+                    ops.add(SubscriptionUpdateParams.Item.builder().setId(it.getId()).setDeleted(true).build());
+                    changed = true;
+                }
+            }
+            for (var e : desired.entrySet()) {
+                if (!currentPrices.contains(e.getKey())) {
+                    ops.add(SubscriptionUpdateParams.Item.builder().setPrice(e.getKey()).setQuantity(e.getValue()).build());
+                    changed = true;
+                }
+            }
+            if (!changed) return;
+
+            sub.update(SubscriptionUpdateParams.builder()
+                    .addAllItem(ops)
+                    .setProrationBehavior(SubscriptionUpdateParams.ProrationBehavior.CREATE_PRORATIONS)
+                    .build());
+            log.info("Reconciled Stripe seats for org {} → {} line item(s)", orgId, desired.size());
+        } catch (Exception e) {
+            log.warn("syncSubscriptionSeats failed for org {} (non-fatal): {}", orgId, e.getMessage());
+        }
     }
 
     // ── Billing summary (for the Billing & Usage tab) ───────────────────────────
@@ -349,9 +465,9 @@ public class BillingService {
         Long seats = subscriptionSeats(sub);
         if (seats != null) updates.put("seats", seats);
 
-        // Keep the plan string in sync — Stripe is source of truth for paid status.
-        String priceId = firstPriceId(sub);
-        String planFromPrice = planForPriceId(priceId);
+        // Keep the plan string in sync — Stripe is source of truth for paid status. Derived from
+        // ALL line items (a Team sub can have full + lite items; a floored 1-seat team bills Solo).
+        String planFromPrice = planFromSubscription(sub);
         boolean deleted = "canceled".equals(status);
         if (deleted || !isEntitled(status)) {
             // Lapsed / canceled → downgrade to the limited free tier.
@@ -371,30 +487,37 @@ public class BillingService {
         return "active".equals(status) || "trialing".equals(status);
     }
 
-    private String firstPriceId(Subscription sub) {
+    /** Plan derived from ALL line items: any Team/Team-Lite item → team; else solo/enterprise. */
+    private String planFromSubscription(Subscription sub) {
         try {
-            if (sub != null && sub.getItems() != null && sub.getItems().getData() != null
-                    && !sub.getItems().getData().isEmpty()) {
-                var price = sub.getItems().getData().get(0).getPrice();
-                return price != null ? price.getId() : null;
+            if (sub == null || sub.getItems() == null || sub.getItems().getData() == null) return null;
+            boolean team = false, solo = false, enterprise = false;
+            for (SubscriptionItem it : sub.getItems().getData()) {
+                String pid = it.getPrice() != null ? it.getPrice().getId() : null;
+                String plan = planForPriceId(pid);
+                if ("team".equals(plan)) team = true;
+                else if ("solo".equals(plan)) solo = true;
+                else if ("enterprise".equals(plan)) enterprise = true;
             }
+            if (enterprise) return "enterprise";
+            if (team)       return "team";
+            if (solo)       return "solo";
         } catch (Exception e) {
-            log.debug("firstPriceId failed: {}", e.getMessage());
+            log.debug("planFromSubscription failed: {}", e.getMessage());
         }
         return null;
     }
 
-    /** True for plans billed per seat (Stripe quantity = seats); false for flat plans. */
-    private boolean isPerSeat(String plan) {
-        return "team".equalsIgnoreCase(plan);
-    }
-
-    /** Paid seat count from the subscription's first item quantity, or null. */
+    /** Paid seat count = the SUM of all line-item quantities (full + lite), or null. */
     private Long subscriptionSeats(Subscription sub) {
         try {
             if (sub != null && sub.getItems() != null && sub.getItems().getData() != null
                     && !sub.getItems().getData().isEmpty()) {
-                return sub.getItems().getData().get(0).getQuantity();
+                long total = 0;
+                for (SubscriptionItem it : sub.getItems().getData()) {
+                    total += it.getQuantity() != null ? it.getQuantity() : 0L;
+                }
+                return total;
             }
         } catch (Exception e) {
             log.debug("subscriptionSeats failed: {}", e.getMessage());

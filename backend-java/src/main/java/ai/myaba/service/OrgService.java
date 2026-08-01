@@ -69,6 +69,9 @@ public class OrgService {
     @org.springframework.beans.factory.annotation.Autowired
     private ai.myaba.security.PermissionService permissionService;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     private final Map<String, Map<String, Object>>        devOrgs       = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Object>>        devTokens     = new ConcurrentHashMap<>();
     /** orgId → list of member maps (dev mode only) */
@@ -190,6 +193,28 @@ public class OrgService {
         } catch (Exception e) {
             log.warn("seatCount failed for org {} — defaulting to 1 seat: {}", orgId, e.getMessage());
             return 1;
+        }
+    }
+
+    /** Active seat counts split by AI tier (full vs lite). Drives per-tier Stripe billing. */
+    public record SeatCounts(int full, int lite) {
+        public int total() { return full + lite; }
+    }
+
+    /** Count ACTIVE members by AI seat tier (default "full"). Never throws — falls back to 1 full. */
+    public SeatCounts seatCounts(String orgId) {
+        try {
+            int full = 0, lite = 0;
+            for (Map<String, Object> m : getOrgMembers(orgId)) {
+                if (Boolean.FALSE.equals(m.get("active"))) continue;
+                if ("lite".equalsIgnoreCase(String.valueOf(m.getOrDefault("aiTier", "full")))) lite++;
+                else full++;
+            }
+            if (full + lite == 0) full = 1; // an org always has at least its admin
+            return new SeatCounts(full, lite);
+        } catch (Exception e) {
+            log.warn("seatCounts failed for org {} — defaulting to 1 full seat: {}", orgId, e.getMessage());
+            return new SeatCounts(1, 0);
         }
     }
 
@@ -1309,8 +1334,20 @@ public class OrgService {
             db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
               .collection(FirestoreCollections.MEMBERS).document(uid).set(member).get();
             log.info("Wrote member record uid={} org={} role={}", uid, orgId, role);
+            publishMembershipChanged(orgId); // reconcile Stripe seats (no-op if not subscribed)
         } catch (Exception e) {
             log.error("writeMemberRecord failed uid={} org={}: {}", uid, orgId, e.getMessage());
+        }
+    }
+
+    /** Fire a membership-changed event so BillingService can reconcile Stripe seats (best-effort). */
+    private void publishMembershipChanged(String orgId) {
+        try {
+            if (eventPublisher != null && orgId != null && !orgId.isBlank()) {
+                eventPublisher.publishEvent(new ai.myaba.event.MembershipChangedEvent(orgId));
+            }
+        } catch (Exception e) {
+            log.warn("publishMembershipChanged failed for org {}: {}", orgId, e.getMessage());
         }
     }
 
@@ -1392,6 +1429,7 @@ public class OrgService {
                 if (uid.equals(m.getOrDefault("id", m.get("uid")))) { m.put("aiTier", norm); found = true; }
             }
             if (!found) throw new NoSuchElementException("Member not found in this organization");
+            publishMembershipChanged(orgId);
             return Map.of("uid", uid, "aiTier", norm);
         }
 
@@ -1406,6 +1444,7 @@ public class OrgService {
         FirebaseAuth.getInstance().setCustomUserClaims(uid, claims);
         ref.update(Map.of("aiTier", norm, "updatedAt", TimestampUtil.now())).get();
         log.info("Changed member AI tier: org={} uid={} -> {}", orgId, uid, norm);
+        publishMembershipChanged(orgId); // full/lite split changed → reconcile Stripe seats
         return Map.of("uid", uid, "aiTier", norm);
     }
 

@@ -173,7 +173,8 @@ stripe:
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
   prices:
     solo:       ${STRIPE_PRICE_SOLO:}
-    team:       ${STRIPE_PRICE_TEAM:}
+    team:       ${STRIPE_PRICE_TEAM:}         # Team – Full seat ($35/user/mo)
+    team-lite:  ${STRIPE_PRICE_TEAM_LITE:}    # Team – Lite seat ($15/user/mo). Sandbox: price_1Tzd7nD25u0E4OT7YTbrjO1J
     enterprise: ${STRIPE_PRICE_ENTERPRISE:}
   # Where Stripe redirects back to after Checkout / Billing Portal — the app's
   # Billing & Usage tab.
