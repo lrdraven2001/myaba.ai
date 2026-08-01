@@ -69,6 +69,7 @@ export interface Tenant {
   liteSeats?: number;
   currentPeriodEnd?: number | null;  // Stripe epoch seconds
   mrrCents?: number;                 // -1 = custom (enterprise)
+  mrrIsEstimate?: boolean;           // true = seat estimate; false = actual Stripe amount
 }
 
 export interface UsageSummary {
@@ -102,6 +103,7 @@ export interface UsageRow {
   subscriptionStatus?: SubscriptionStatus;
   paying?: boolean;
   mrrCents?: number;
+  mrrIsEstimate?: boolean;
 }
 
 /** Per-org drill-in detail (GET /platform/tenants/{id}). */

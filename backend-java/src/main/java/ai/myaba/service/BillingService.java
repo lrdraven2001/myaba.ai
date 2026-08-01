@@ -16,6 +16,7 @@ import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.InvoiceListParams;
+import com.stripe.param.SubscriptionListParams;
 import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.billingportal.SessionCreateParams;
 import jakarta.annotation.PostConstruct;
@@ -506,6 +507,76 @@ public class BillingService {
             log.debug("planFromSubscription failed: {}", e.getMessage());
         }
         return null;
+    }
+
+    // ── Live subscription snapshot (for the admin console) ──────────────────────
+
+    private static final long SUB_CACHE_TTL_MS = 5 * 60_000;
+    private record CachedSub(Map<String, Object> data, long ts) {}
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedSub> subCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Live subscription snapshot pulled from Stripe for an org: {@code status}
+     * (active/trialing/past_due/canceled), {@code amountCents} (actual recurring
+     * total), {@code seats}, and {@code currentPeriodEnd}. Returns {@code null}
+     * when Stripe is disabled or the org has no Stripe customer/subscription.
+     *
+     * <p>Cached ~5 min so the admin tenant LIST doesn't call Stripe once per org
+     * on every load (subscription status changes rarely, and webhooks keep the
+     * stored copy fresh anyway).
+     */
+    public Map<String, Object> getLiveSubscription(String orgId) {
+        if (!isEnabled() || orgId == null || orgId.isBlank()) return null;
+        long now = System.currentTimeMillis();
+        CachedSub c = subCache.get(orgId);
+        if (c != null && now - c.ts() < SUB_CACHE_TTL_MS) return c.data();
+        Map<String, Object> out = computeLiveSubscription(orgId);
+        subCache.put(orgId, new CachedSub(out, now)); // cache negatives too (null → skip Stripe next time)
+        return out;
+    }
+
+    private Map<String, Object> computeLiveSubscription(String orgId) {
+        try {
+            Map<String, Object> org = orgService.getOrg(orgId);
+            String custId = org.get("stripeCustomerId")     instanceof String s && !s.isBlank() ? s : null;
+            String subId  = org.get("stripeSubscriptionId") instanceof String s && !s.isBlank() ? s : null;
+
+            Subscription sub = null;
+            if (subId != null) {
+                try { sub = Subscription.retrieve(subId); } catch (Exception e) {
+                    log.warn("live sub retrieve failed for {} ({}): {}", orgId, subId, e.getMessage());
+                }
+            }
+            if (sub == null && custId != null) {
+                var list = Subscription.list(SubscriptionListParams.builder()
+                        .setCustomer(custId).setStatus(SubscriptionListParams.Status.ALL).setLimit(5L).build());
+                for (Subscription s : list.getData()) {
+                    if (sub == null) sub = s;                 // fall back to the first found
+                    String st = s.getStatus();
+                    if ("active".equals(st) || "trialing".equals(st) || "past_due".equals(st)) { sub = s; break; }
+                }
+            }
+            if (sub == null) return null;
+
+            long amount = 0;
+            if (sub.getItems() != null && sub.getItems().getData() != null) {
+                for (SubscriptionItem it : sub.getItems().getData()) {
+                    long qty  = it.getQuantity() != null ? it.getQuantity() : 1L;
+                    Long unit = it.getPrice() != null ? it.getPrice().getUnitAmount() : null;
+                    if (unit != null) amount += unit * qty;
+                }
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("status",           sub.getStatus());
+            out.put("amountCents",      amount);
+            out.put("seats",            subscriptionSeats(sub));
+            out.put("currentPeriodEnd", subscriptionPeriodEnd(sub));
+            return out;
+        } catch (Exception e) {
+            log.warn("getLiveSubscription failed for {}: {}", orgId, e.getMessage());
+            return null;
+        }
     }
 
     /** Paid seat count = the SUM of all line-item quantities (full + lite), or null. */

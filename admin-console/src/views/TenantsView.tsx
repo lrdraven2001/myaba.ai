@@ -219,9 +219,12 @@ export default function TenantsView() {
                     </span>
                   </div>
 
-                  {/* MRR — dimmed when not actively paying */}
+                  {/* MRR — dimmed when not actively paying; "est" = seat estimate (not live Stripe) */}
                   <div style={{ fontSize: 13, fontWeight: 600, color: t.paying ? '#111827' : '#9CA3AF' }}>
                     {fmtMoney(t.mrrCents)}
+                    {t.mrrIsEstimate && t.mrrCents !== 0 && t.mrrCents !== -1 && (
+                      <span style={{ fontSize: 10, fontWeight: 500, color: '#9CA3AF', marginLeft: 4 }}>est</span>
+                    )}
                   </div>
 
                   {/* Members */}
@@ -359,7 +362,7 @@ function TenantDetailModal({ orgId, onClose, onStatusChange }: {
                 <Row label="Payment">
                   <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: pay.bg, color: pay.color }}>{pay.label}</span>
                 </Row>
-                <Row label="Est. MRR">{fmtMoney(d.mrrCents)}</Row>
+                <Row label={d.mrrIsEstimate ? 'MRR (est.)' : 'MRR (billed)'}>{fmtMoney(d.mrrCents)}</Row>
                 <Row label="Seats">{d.memberCount} ({d.fullSeats ?? 0} full · {d.liteSeats ?? 0} lite)</Row>
                 <Row label="Renews">{d.currentPeriodEnd ? new Date(d.currentPeriodEnd * 1000).toLocaleDateString() : '—'}</Row>
                 <Row label="BAA">{d.baaAccepted ? 'Accepted' : 'Not accepted'}</Row>

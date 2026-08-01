@@ -266,14 +266,36 @@ public class PlatformService {
         row.put("fullSeats",   fullSeats);
         row.put("liteSeats",   liteSeats);
 
-        // Billing / payment status (written by BillingService from Stripe webhooks).
+        // Billing / payment status. Prefer a LIVE read from Stripe (status +
+        // actual billed amount + period end) over the stored fields, which can be
+        // stale/empty if a webhook was missed. Falls back to the stored copy +
+        // seat-based MRR estimate when Stripe is off or the org has no customer.
         String plan = String.valueOf(data.getOrDefault("plan", "solo"));
-        String subStatus = data.get("subscriptionStatus") instanceof String s ? s : null;
+        String subStatus  = data.get("subscriptionStatus") instanceof String s ? s : null;
+        long   estMrr     = mrrCents(plan, fullSeats, liteSeats);
+        long   mrr        = estMrr;
+        boolean mrrEst    = true;
+        long   seats      = longOr0(data.get("seats"));
+        Object periodEnd  = data.get("currentPeriodEnd");
+
+        boolean hasStripe = (data.get("stripeCustomerId") instanceof String cs && !cs.isBlank())
+                         || (data.get("stripeSubscriptionId") instanceof String ss && !ss.isBlank());
+        if (hasStripe) {
+            Map<String, Object> live = billingService.getLiveSubscription(orgId);
+            if (live != null) {
+                if (live.get("status") != null)      subStatus = String.valueOf(live.get("status"));
+                if (live.get("currentPeriodEnd") != null) periodEnd = live.get("currentPeriodEnd");
+                if (live.get("seats") != null)       seats = longOr0(live.get("seats"));
+                long liveAmt = longOr0(live.get("amountCents"));
+                if (liveAmt > 0) { mrr = liveAmt; mrrEst = false; } // actual billed amount
+            }
+        }
         row.put("subscriptionStatus", subStatus);      // active | trialing | past_due | canceled | null
         row.put("paying",             isPaying(subStatus));
-        row.put("seats",              longOr0(data.get("seats")));
-        row.put("currentPeriodEnd",   data.get("currentPeriodEnd")); // Stripe epoch seconds, or null
-        row.put("mrrCents",           mrrCents(plan, fullSeats, liteSeats));
+        row.put("seats",              seats);
+        row.put("currentPeriodEnd",   periodEnd);       // Stripe epoch seconds, or null
+        row.put("mrrCents",           mrr);
+        row.put("mrrIsEstimate",      mrrEst);          // true = seat estimate, false = actual Stripe amount
 
         // Usage: current month + lifetime totals + most-recent active month.
         // One read of the whole usage subcollection (admin-only screen, infrequent).
