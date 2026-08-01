@@ -825,18 +825,25 @@ function NewClientModal({
     gender: '', diagnosis: '', primaryInsurance: '',
     ehrProvider: '', ehrCaseId: '',
   });
+  const [guardians, setGuardians] = useState<{ name: string; relationship: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
   const set = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
+  const setGuardian = (i: number, field: 'name' | 'relationship', value: string) =>
+    setGuardians((gs) => gs.map((g, idx) => idx === i ? { ...g, [field]: value } : g));
 
   const handleSave = async () => {
     if (!form.firstName.trim()) { setError('First name is required.'); return; }
     if (!form.lastName.trim())  { setError('Last name is required.');  return; }
     setSaving(true); setError('');
+    // Keep only guardians with a name; trim fields.
+    const cleanGuardians = guardians
+      .map((g) => ({ name: g.name.trim(), relationship: g.relationship.trim() }))
+      .filter((g) => g.name);
     try {
-      const res = await api.createClient(form);
+      const res = await api.createClient({ ...form, guardians: cleanGuardians });
       const newClient: Client = {
         id:               res.clientId,
         orgId:            '',
@@ -850,6 +857,7 @@ function NewClientModal({
         primaryInsurance: form.primaryInsurance,
         ehrProvider:      form.ehrProvider,
         ehrCaseId:        form.ehrCaseId,
+        guardians:        cleanGuardians,
         createdAt:        new Date().toISOString(),
       };
       onCreated(newClient);
@@ -930,6 +938,28 @@ function NewClientModal({
             <div>
               <label className={lc}>EHR Case ID</label>
               <input className={ic} value={form.ehrCaseId} onChange={(e) => set('ehrCaseId', e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+
+          {/* Guardians / caregivers — name + a relationship label (e.g. Mother). When the org
+              enables guardian relationship labels, AI output refers to them by this label. */}
+          <div>
+            <label className={lc}>Guardians / Caregivers <span className="text-gray-400 normal-case font-normal">(optional)</span></label>
+            <div className="space-y-2">
+              {guardians.map((g, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input className={ic} value={g.name} onChange={(e) => setGuardian(i, 'name', e.target.value)} placeholder="Name" />
+                  <input className={`${ic} max-w-[45%]`} value={g.relationship} onChange={(e) => setGuardian(i, 'relationship', e.target.value)} placeholder="Relationship (e.g. Mother)" />
+                  <button type="button" onClick={() => setGuardians((gs) => gs.filter((_, idx) => idx !== i))}
+                          aria-label="Remove guardian" className="text-gray-400 hover:text-red-500 shrink-0 w-8 h-8">
+                    <FontAwesomeIcon icon={faTimes} />
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setGuardians((gs) => [...gs, { name: '', relationship: '' }])}
+                      className="text-sm font-semibold text-green-700 hover:underline">
+                + Add guardian
+              </button>
             </div>
           </div>
 

@@ -127,6 +127,8 @@ export interface Client {
   primaryInsurance: string;
   ehrProvider?: string;
   ehrCaseId?: string;
+  /** Guardians/caregivers — { name, relationship }. relationship is a user-defined label. */
+  guardians?: { name: string; relationship: string }[];
   orgId: string;
   treatingBcbaId?: string;
   supervisorIds?: string[];

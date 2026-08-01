@@ -318,6 +318,33 @@ public class OrgService {
     }
 
     /**
+     * Whether the org enforces first+last INITIALS only for client names in chats and chat
+     * labels (a stronger de-identification than preferred names — takes precedence over it).
+     */
+    public boolean isClientInitialsOnly(String orgId) {
+        try {
+            Map<String, Object> org = getOrg(orgId);
+            Object settings = org.get("settings");
+            if (settings instanceof Map<?,?> m && m.get("clientInitialsOnly") instanceof Boolean b) return b;
+        } catch (Exception e) {
+            log.warn("isClientInitialsOnly: failed to read org {}: {}", orgId, e.getMessage());
+        }
+        return false; // default off — opt-in
+    }
+
+    /** Whether the org refers to guardians by their relationship label (e.g. "Mother") in chats + documents. */
+    public boolean isGuardianRelationshipLabels(String orgId) {
+        try {
+            Map<String, Object> org = getOrg(orgId);
+            Object settings = org.get("settings");
+            if (settings instanceof Map<?,?> m && m.get("guardianRelationshipLabels") instanceof Boolean b) return b;
+        } catch (Exception e) {
+            log.warn("isGuardianRelationshipLabels: failed to read org {}: {}", orgId, e.getMessage());
+        }
+        return false; // default off — opt-in
+    }
+
+    /**
      * Build the org's COMMUNICATION STYLE prompt block from its explicit style
      * profile ({@code settings.styleProfile}), or "" when none is set. Style shapes
      * wording and format only — it must never override clinical accuracy or

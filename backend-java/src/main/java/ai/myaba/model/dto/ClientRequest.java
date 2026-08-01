@@ -20,6 +20,12 @@ public class ClientRequest {
     private String ehrProvider;
     private String ehrCaseId;
 
+    // ── Guardians / caregivers ────────────────────────────────────────────
+    // Each entry: { name, relationship } — relationship is a user-defined label
+    // (e.g. "Mother", "Father", "Grandmother"). When the org enables guardian
+    // relationship labels, AI output refers to them by relationship, not name.
+    private List<java.util.Map<String, String>> guardians;
+
     // ── Authorization assignments ─────────────────────────────────────────
     // If treatingBcbaId is omitted on creation, the requesting user is used.
     private String treatingBcbaId;

@@ -3,6 +3,9 @@ package ai.myaba.controller;
 import ai.myaba.model.dto.AppUser;
 import ai.myaba.model.dto.CreateChatRequest;
 import ai.myaba.service.ChatService;
+import ai.myaba.service.ClientService;
+import ai.myaba.service.ContentNormalizationService;
+import ai.myaba.service.OrgService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +29,26 @@ import java.util.Map;
 public class ChatController {
 
     private final ChatService chatService;
+    private final OrgService orgService;
+    private final ClientService clientService;
+    private final ContentNormalizationService contentNormalizationService;
+
+    /**
+     * When the org uses client preferred/display names and the chat is tied to a client, rewrite
+     * the chat title (label) to the preferred name; otherwise leave the client's actual name.
+     * Best-effort — returns the title unchanged on any error. (Chat labels intentionally do NOT
+     * use the initials-only rule — that applies to chat message content only.)
+     */
+    private String deidentifyTitle(AppUser user, String clientId, String title) {
+        if (title == null || title.isBlank() || clientId == null || clientId.isBlank()) return title;
+        try {
+            if (!orgService.isPreferClientDisplayName(user.getOrgId())) return title;
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            return contentNormalizationService.preferDisplayNames(title, List.of(client), true);
+        } catch (Exception e) {
+            return title;
+        }
+    }
 
     // ── List chats ────────────────────────────────────────────────────────
 
@@ -105,7 +128,7 @@ public class ChatController {
             @Valid @RequestBody CreateChatRequest req) throws Exception {
         String chatId = chatService.createChat(
                 user,
-                req.getTitle(),
+                deidentifyTitle(user, req.getClientId(), req.getTitle()),
                 req.getClientId(),
                 req.getProjectId(),
                 req.getProjectLabel(),
@@ -128,7 +151,10 @@ public class ChatController {
             @RequestBody Map<String, String> body) throws Exception {
         boolean changed = false;
         String title = body.get("title");
-        if (title != null && !title.isBlank()) { chatService.updateChatTitle(user, chatId, title); changed = true; }
+        if (title != null && !title.isBlank()) {
+            chatService.updateChatTitle(user, chatId, deidentifyTitle(user, body.get("clientId"), title));
+            changed = true;
+        }
         // clientId present (even empty string) means attach/detach a client.
         if (body.containsKey("clientId")) { chatService.setChatClient(user, chatId, body.get("clientId")); changed = true; }
         if (!changed) return ResponseEntity.badRequest().build();

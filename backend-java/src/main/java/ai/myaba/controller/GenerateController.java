@@ -342,6 +342,10 @@ public class GenerateController {
         if (orgService.isPreferClientDisplayName(user.getOrgId())) {
             rawOutput = contentNormalizationService.preferDisplayNames(rawOutput, List.of(client), true);
         }
+        // Guardian relationship labels apply to documents too (per the org rule).
+        if (orgService.isGuardianRelationshipLabels(user.getOrgId())) {
+            rawOutput = contentNormalizationService.guardianLabels(rawOutput, List.of(client), true);
+        }
 
         // Record usage — Gemini was called, tokens were spent regardless of ACLX outcome
         usageService.recordRequest(user.getOrgId(), "document");
@@ -739,10 +743,17 @@ public class GenerateController {
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
         }
 
-        // Content rule: rewrite client legal names to preferred/display names (deterministic
-        // backstop to the prompt instruction). Applied before ACLX so governance sees final text.
-        if (orgService.isPreferClientDisplayName(user.getOrgId())) {
+        // Content rule: de-identify client names in the reply (deterministic backstop to the prompt
+        // instruction). Applied before ACLX so governance sees the final text. Initials-only is the
+        // stronger option and takes precedence over preferred-names.
+        if (orgService.isClientInitialsOnly(user.getOrgId())) {
+            rawReply = contentNormalizationService.initialsOnly(rawReply, clientsById.values(), true);
+        } else if (orgService.isPreferClientDisplayName(user.getOrgId())) {
             rawReply = contentNormalizationService.preferDisplayNames(rawReply, clientsById.values(), true);
+        }
+        // Guardian relationship labels — an ADDITIONAL pass (guardians are separate people).
+        if (orgService.isGuardianRelationshipLabels(user.getOrgId())) {
+            rawReply = contentNormalizationService.guardianLabels(rawReply, clientsById.values(), true);
         }
 
         // Record usage — Gemini was called, tokens were spent regardless of ACLX outcome
@@ -1330,10 +1341,20 @@ public class GenerateController {
             if (primaryClient != null) {
                 sb.append("\n").append(buildClientContextBlock(primaryClient));
             }
-            // Content rule (soft layer): instruct the model to use preferred/display names.
-            if (orgService.isPreferClientDisplayName(user.getOrgId())) {
+            // Content rule (soft layer): instruct the model how to refer to the client.
+            // Initials-only is stronger and takes precedence over preferred-names.
+            if (orgService.isClientInitialsOnly(user.getOrgId())) {
+                sb.append("\nNAME RULE: Refer to the client ONLY by their first and last initial ")
+                  .append("(e.g. \"J.D.\"). Never write the client's first, last, legal, or preferred ")
+                  .append("name in your output, even if shown above.\n");
+            } else if (orgService.isPreferClientDisplayName(user.getOrgId())) {
                 sb.append("\nNAME RULE: Always refer to the client by their preferred/display name. ")
                   .append("Do NOT use the client's legal name in your output, even if it is shown above.\n");
+            }
+            // Guardian rule (soft layer): refer to guardians by their relationship label.
+            if (orgService.isGuardianRelationshipLabels(user.getOrgId())) {
+                sb.append("\nGUARDIAN RULE: Refer to each guardian/caregiver by their RELATIONSHIP ")
+                  .append("label (e.g. \"Mother\", \"Father\") from the client record — never by name.\n");
             }
         }
 
@@ -1434,6 +1455,22 @@ public class GenerateController {
             if (!ehrProvider.isEmpty()) sb.append(ehrProvider);
             if (!ehrCaseId.isEmpty())   sb.append(" (Case ID: ").append(ehrCaseId).append(")");
             sb.append("\n");
+        }
+
+        // Guardians / caregivers (name + relationship) — so the model can honor a guardian-label rule.
+        Object gObj = client.get("guardians");
+        if (gObj instanceof java.util.Collection<?> gs && !gs.isEmpty()) {
+            StringBuilder gline = new StringBuilder();
+            for (Object g : gs) {
+                if (!(g instanceof Map<?, ?> gm)) continue;
+                @SuppressWarnings("unchecked") Map<String, Object> gmm = (Map<String, Object>) gm;
+                String gname = strField(gmm, "name");
+                String grel  = strField(gmm, "relationship");
+                if (gname.isEmpty() && grel.isEmpty()) continue;
+                gline.append(gline.length() == 0 ? " " : "; ").append(gname);
+                if (!grel.isEmpty()) gline.append(" (").append(grel).append(")");
+            }
+            if (gline.length() > 0) sb.append("Guardians:").append(gline).append("\n");
         }
 
         sb.append("--- END CLIENT RECORD ---");

@@ -244,6 +244,7 @@ public class ClientService {
         if (req.getPrimaryInsurance() != null) updates.put("primaryInsurance", req.getPrimaryInsurance());
         if (req.getEhrProvider() != null)    updates.put("ehrProvider", req.getEhrProvider());
         if (req.getEhrCaseId() != null)      updates.put("ehrCaseId", req.getEhrCaseId());
+        if (req.getGuardians() != null)      updates.put("guardians", req.getGuardians());
         updates.put("updatedAt", TimestampUtil.now());
 
         if (devMode) {
@@ -392,6 +393,7 @@ public class ClientService {
         data.put("primaryInsurance", req.getPrimaryInsurance());
         if (req.getEhrProvider() != null) data.put("ehrProvider", req.getEhrProvider());
         if (req.getEhrCaseId() != null)   data.put("ehrCaseId", req.getEhrCaseId());
+        data.put("guardians", req.getGuardians() != null ? req.getGuardians() : new ArrayList<>());
 
         // Authorization assignments — explicit assignment wins; otherwise the
         // clinical creator self-assigns, and admin creators leave it unassigned.

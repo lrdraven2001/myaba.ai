@@ -17,6 +17,8 @@ type Rule = {
 
 export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isAdmin: boolean }) {
   const [preferNames, setPreferNames] = useState(false);
+  const [initialsOnly, setInitialsOnly] = useState(false);
+  const [guardianLabels, setGuardianLabels] = useState(false);
   const [reportOnly, setReportOnly]   = useState(false);
   const [allow, setAllow]   = useState<Rule[]>([]);
   const [block, setBlock]   = useState<Rule[]>([]);
@@ -35,6 +37,8 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
     if (!orgId) return;
     api.getOrg(orgId).then((o) => {
       setPreferNames(o.settings?.preferClientDisplayName ?? false);
+      setInitialsOnly(o.settings?.clientInitialsOnly ?? false);
+      setGuardianLabels(o.settings?.guardianRelationshipLabels ?? false);
       setReportOnly(o.settings?.aclxReportOnly ?? false);
     }).catch(() => {});
     loadPolicy();
@@ -43,6 +47,16 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
   const togglePreferNames = async (next: boolean) => {
     setPreferNames(next);
     await api.updateOrgSettings(orgId, { preferClientDisplayName: next }).catch(() => {});
+  };
+
+  const toggleInitialsOnly = async (next: boolean) => {
+    setInitialsOnly(next);
+    await api.updateOrgSettings(orgId, { clientInitialsOnly: next }).catch(() => setInitialsOnly(!next));
+  };
+
+  const toggleGuardianLabels = async (next: boolean) => {
+    setGuardianLabels(next);
+    await api.updateOrgSettings(orgId, { guardianRelationshipLabels: next }).catch(() => setGuardianLabels(!next));
   };
 
   const toggleReportOnly = async (next: boolean) => {
@@ -71,7 +85,6 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
       <SectionHeading
         title="Content Governance Rules"
         description="Define what content is always permitted or always restricted for your organization, beyond the default compliance baseline."
-        action={isAdmin ? <PrimaryButton icon={faPlus} onClick={() => setAdding(true)}>Add Rule</PrimaryButton> : undefined}
       />
 
       {/* Enforcement mode */}
@@ -93,12 +106,29 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
 
       {/* Output Formatting */}
       <SettingsCard icon={faRightLeft} title="Output Formatting" subtitle="Control how client names are handled in AI-generated outputs.">
-        <div className="border-t border-gray-100">
+        <div className="border-t border-gray-100 divide-y divide-gray-100">
           <SettingRow
             icon={faUser}
             title="Use client preferred names in output"
             description="When on, generated chats and documents always refer to a client by their preferred/display name and never their legal name — enforced by both a model instruction and a deterministic rewrite pass before the response is shown."
-            control={<Toggle checked={preferNames} onChange={togglePreferNames} disabled={!isAdmin} label="Use client preferred names" />}
+            control={<Toggle checked={preferNames} onChange={togglePreferNames} disabled={!isAdmin || initialsOnly} label="Use client preferred names" />}
+          />
+          <SettingRow
+            icon={faUser}
+            title="Use client initials only in chats"
+            description="When on, chats and chat labels refer to a client by their first and last initial only (e.g. “J.D.”) — never their first, last, legal, or preferred name. A stronger de-identification that takes precedence over preferred names. (Documents keep full names.)"
+            control={
+              <div className="flex items-center gap-2.5">
+                {initialsOnly && <Badge tone="green">Initials only</Badge>}
+                <Toggle checked={initialsOnly} onChange={toggleInitialsOnly} disabled={!isAdmin} label="Use client initials only" />
+              </div>
+            }
+          />
+          <SettingRow
+            icon={faUser}
+            title="Refer to guardians by relationship"
+            description="When on, chats and documents refer to a client’s guardians/caregivers by their relationship label (e.g. “Mother”, “Father”) instead of their name — enforced by a model instruction and a deterministic rewrite. Set each guardian’s name and relationship on the client record."
+            control={<Toggle checked={guardianLabels} onChange={toggleGuardianLabels} disabled={!isAdmin} label="Refer to guardians by relationship" />}
           />
         </div>
       </SettingsCard>
@@ -108,8 +138,13 @@ export default function ContentRulesTab({ orgId, isAdmin }: { orgId: string; isA
 
       {/* Organization Rules */}
       <div>
-        <h3 className="text-base font-bold text-gray-900">Organization Rules</h3>
-        <p className="text-sm text-gray-500 mb-3">Set rules to always allow or restrict specific topics, content types, or behaviors.</p>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Organization Rules</h3>
+            <p className="text-sm text-gray-500">Set rules to always allow or restrict specific topics, content types, or behaviors.</p>
+          </div>
+          {isAdmin && <PrimaryButton icon={faPlus} onClick={() => setAdding(true)}>Add Rule</PrimaryButton>}
+        </div>
 
         <div className="flex items-center gap-3 mb-3">
           <div className="relative flex-1 max-w-md">
