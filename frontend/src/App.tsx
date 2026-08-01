@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch, faBars } from '@fortawesome/free-solid-svg-icons';
+import { faChevronDown, faShieldAlt, faLock, faFileContract, faSearch, faBars, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { usePermissions } from './hooks/usePermissions';
 import IdleTimeout from './components/IdleTimeout';
@@ -8,19 +8,22 @@ import ProfileModal from './components/ProfileModal';
 import NotificationBell from './components/NotificationBell';
 import HelpMenu from './components/HelpMenu';
 import Sidebar from './components/Sidebar';
-import ChatView from './views/ChatView';
-import SearchModal from './views/SearchModal';
-import ResourcesView from './views/ResourcesView';
-import ClientsView from './views/ClientsView';
-import ProjectsView from './views/ProjectsView';
-import SettingsView from './views/SettingsView';
-import ReviewQueueView from './views/ReviewQueueView';
-import TeamView from './views/TeamView';
-import LoginView from './views/LoginView';
-import OnboardingView from './views/OnboardingView';
-import NotProvisionedView from './views/NotProvisionedView';
-import MfaEnrollmentGate from './views/MfaEnrollmentGate';
-import InviteAcceptView from './views/InviteAcceptView';
+import LoginView from './views/LoginView';   // eager: first paint for logged-out users
+
+// Route-level code splitting: every heavy view loads on demand instead of
+// shipping in the initial bundle. Only the active view's chunk is fetched.
+const ChatView          = lazy(() => import('./views/ChatView'));
+const SearchModal       = lazy(() => import('./views/SearchModal'));
+const ResourcesView     = lazy(() => import('./views/ResourcesView'));
+const ClientsView       = lazy(() => import('./views/ClientsView'));
+const ProjectsView      = lazy(() => import('./views/ProjectsView'));
+const SettingsView      = lazy(() => import('./views/SettingsView'));
+const ReviewQueueView   = lazy(() => import('./views/ReviewQueueView'));
+const TeamView          = lazy(() => import('./views/TeamView'));
+const OnboardingView    = lazy(() => import('./views/OnboardingView'));
+const NotProvisionedView = lazy(() => import('./views/NotProvisionedView'));
+const MfaEnrollmentGate = lazy(() => import('./views/MfaEnrollmentGate'));
+const InviteAcceptView  = lazy(() => import('./views/InviteAcceptView'));
 import { api } from './lib/api';
 import { ALL_ROLE_LABELS as ROLE_LABELS } from './types';
 import { hasEnrolledFactor } from './lib/mfa';
@@ -404,10 +407,21 @@ function BaaRequiredWall({ onGoToSettings }: { onGoToSettings: () => void }) {
   );
 }
 
+// Fallback shown while a lazily-loaded view chunk is being fetched.
+function ViewLoadingFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center" style={{ minHeight: '60vh' }}>
+      <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 22, color: '#94a3b8' }} />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <AppShell />
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <AppShell />
+      </Suspense>
     </AuthProvider>
   );
 }

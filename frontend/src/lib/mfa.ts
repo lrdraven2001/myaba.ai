@@ -1,5 +1,4 @@
 import type { User, TotpSecret } from 'firebase/auth';
-import QRCode from 'qrcode';
 
 /**
  * Centralized TOTP (authenticator-app) multi-factor helpers.
@@ -32,6 +31,9 @@ export async function startTotpEnrollment(user: User, accountLabel?: string): Pr
   // verifies. This is more robust than relying solely on secret.generateQrCodeUrl(), whose
   // output has been inconsistent across SDK versions (a malformed URI = an unscannable QR).
   const uri = buildOtpAuthUri(label, ISSUER, secret.secretKey) || secret.generateQrCodeUrl(label, ISSUER);
+  // Load the QR library on demand — it's only needed on the enrollment screen,
+  // so keeping it out of the initial bundle saves ~50KB for every other user.
+  const { default: QRCode } = await import('qrcode');
   const qrDataUrl = await QRCode.toDataURL(uri, { width: 240, margin: 2, errorCorrectionLevel: 'M' });
   return { secret, qrDataUrl, manualKey: secret.secretKey };
 }
