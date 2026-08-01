@@ -40,18 +40,35 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // ── Tenant types ──────────────────────────────────────────────────────────────
 
+/** Payment/subscription status from Stripe (null = no subscription on file). */
+export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'canceled' | null;
+
 export interface Tenant {
   id: string;
   name: string;
-  plan: 'solo' | 'team' | 'enterprise';
+  plan: 'solo' | 'team' | 'enterprise' | 'free';
   status: 'active' | 'trial' | 'suspended';
   createdAt: string;
   memberCount: number;
   adminEmail: string;
   baaAccepted?: boolean;
+  // Current-month usage
   aiCalls?: number;
   documentCount?: number;
   chatCount?: number;
+  // Lifetime usage + most recent active month ("YYYY-MM" or "")
+  lifetimeAiCalls?: number;
+  lifetimeDocuments?: number;
+  lifetimeChats?: number;
+  lastActive?: string;
+  // Billing
+  subscriptionStatus?: SubscriptionStatus;
+  paying?: boolean;
+  seats?: number;
+  fullSeats?: number;
+  liteSeats?: number;
+  currentPeriodEnd?: number | null;  // Stripe epoch seconds
+  mrrCents?: number;                 // -1 = custom (enterprise)
 }
 
 export interface UsageSummary {
@@ -59,6 +76,11 @@ export interface UsageSummary {
   totalAiCalls: number;
   totalDocuments: number;
   totalChats: number;
+  lifetimeAiCalls: number;
+  lifetimeDocuments: number;
+  lifetimeChats: number;
+  totalMrrCents: number;
+  payingOrgCount: number;
   orgCount: number;
   rows: UsageRow[];
 }
@@ -72,6 +94,30 @@ export interface UsageRow {
   documentCount: number;
   chatCount: number;
   memberCount: number;
+  lifetimeAiCalls?: number;
+  lifetimeDocuments?: number;
+  lifetimeChats?: number;
+  lastActive?: string;
+  subscriptionStatus?: SubscriptionStatus;
+  paying?: boolean;
+  mrrCents?: number;
+}
+
+/** Per-org drill-in detail (GET /platform/tenants/{id}). */
+export interface TenantDetail extends Tenant {
+  usageHistory?: { period: string; aiCalls: number; documentCount: number; chatCount: number }[];
+  members?: { uid: string; email: string; displayName: string; role: string; aiTier: string }[];
+  billing?: {
+    stripeConfigured: boolean;
+    hasSubscription: boolean;
+    subscriptionStatus?: SubscriptionStatus;
+    plan?: string;
+    currentPeriodEnd?: number | null;
+    invoices?: {
+      id: string; number?: string; status?: string; amountDue?: number; amountPaid?: number;
+      currency?: string; created?: number; hostedInvoiceUrl?: string; pdf?: string;
+    }[];
+  };
 }
 
 /** Platform config document — all fields optional (empty until first save). */
@@ -122,7 +168,7 @@ export const api = {
 
   getTenants: () => request<Tenant[]>('/platform/tenants'),
 
-  getTenant: (orgId: string) => request<Tenant>(`/platform/tenants/${orgId}`),
+  getTenant: (orgId: string) => request<TenantDetail>(`/platform/tenants/${orgId}`),
 
   setTenantStatus: (orgId: string, status: 'active' | 'suspended') =>
     request<{ orgId: string; status: string }>(`/platform/tenants/${orgId}/status`, {
