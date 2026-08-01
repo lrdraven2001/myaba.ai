@@ -176,6 +176,7 @@ export default function TeamView() {
         member={selectedMember}
         isAdmin={isAdmin}
         allMembers={members}
+        roleOptions={assignableOptions}
         onBack={() => setSelectedMember(null)}
         onUpdate={(updated) => {
           setMembers((prev) => prev.map((m) => m.id === updated.id ? updated : m));
@@ -461,11 +462,12 @@ export default function TeamView() {
 // ── User detail view ──────────────────────────────────────────────────────────
 
 function UserDetailView({
-  member, isAdmin, allMembers, onBack, onUpdate,
+  member, isAdmin, allMembers, roleOptions, onBack, onUpdate,
 }: {
   member: TeamMember;
   isAdmin: boolean;
   allMembers: TeamMember[];
+  roleOptions: { key: string; label: string }[];
   onBack: () => void;
   onUpdate: (m: TeamMember) => void;
 }) {
@@ -537,7 +539,7 @@ function UserDetailView({
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
         {activeTab === 'profile' && (
-          <UserProfileTab member={member} isAdmin={isAdmin} allMembers={allMembers} onUpdate={onUpdate} />
+          <UserProfileTab member={member} isAdmin={isAdmin} allMembers={allMembers} roleOptions={roleOptions} onUpdate={onUpdate} />
         )}
         {activeTab === 'clients' && (
           <UserClientsTab memberId={member.id} memberName={member.name} />
@@ -553,11 +555,12 @@ function UserDetailView({
 // ── Profile tab ───────────────────────────────────────────────────────────────
 
 function UserProfileTab({
-  member, isAdmin, allMembers, onUpdate,
+  member, isAdmin, allMembers, roleOptions, onUpdate,
 }: {
   member: TeamMember;
   isAdmin: boolean;
   allMembers: TeamMember[];
+  roleOptions: { key: string; label: string }[];
   onUpdate: (m: TeamMember) => void;
 }) {
   const orgId = (useAuth().currentUser as any)?.orgId ?? '';
@@ -567,6 +570,7 @@ function UserProfileTab({
   const [supervisorId, setSupervisorId] = useState(member.supervisorId ?? '');
   const [saved, setSaved]             = useState(false);
   const [supSaving, setSupSaving]     = useState(false);
+  const [roleError, setRoleError]     = useState('');
 
   // Active supervisors available for RBT assignment (Supervising BCBA, Clinical
   // Director, or Practice Administrator — see canSupervise).
@@ -585,6 +589,18 @@ function UserProfileTab({
   };
 
   const handleSave = async () => {
+    setRoleError('');
+    // Persist a role change through the sanctioned admin endpoint (re-mints the member's
+    // claims + phiAccess). Invites never re-role — this is the one place roles change.
+    if (role !== member.role) {
+      try {
+        await api.changeMemberRole(orgId, member.id, role);
+      } catch (e) {
+        setRole(member.role); // revert the dropdown to reality
+        setRoleError(e instanceof Error ? e.message : 'Could not change this member’s role.');
+        return; // don't report success or persist the rest
+      }
+    }
     // Persist supervisor assignment if it changed
     if (role === 'RBT' && supervisorId !== (member.supervisorId ?? '')) {
       setSupSaving(true);
@@ -659,16 +675,20 @@ function UserProfileTab({
                   current role isn't assignable (creator = ORG_SUPER_ADMIN, or a
                   legacy role), show it too so it displays and isn't silently
                   overwritten — the select is disabled for ORG_SUPER_ADMIN anyway. */}
-              {((ASSIGNABLE_ROLES as readonly string[]).includes(member.role)
-                ? [...ASSIGNABLE_ROLES]
-                : [member.role, ...ASSIGNABLE_ROLES]
-              ).map((val) => (
-                <option key={val} value={val}>{ROLE_LABELS[val] ?? val}</option>
+              {/* Built-in assignable roles + the org's custom roles. If the member's current
+                  role isn't in the assignable set (creator = ORG_SUPER_ADMIN, or a legacy role),
+                  show it too so it displays and isn't silently overwritten. */}
+              {(roleOptions.some((r) => r.key === member.role)
+                ? roleOptions
+                : [{ key: member.role, label: ROLE_LABELS[member.role] ?? member.role }, ...roleOptions]
+              ).map((r) => (
+                <option key={r.key} value={r.key}>{r.label}</option>
               ))}
             </select>
             {member.role === 'ORG_SUPER_ADMIN' && (
               <p className="text-xs text-gray-400 mt-1">Super Admin role cannot be changed.</p>
             )}
+            {roleError && <p className="text-xs text-red-500 mt-1">{roleError}</p>}
           </div>
 
           <div className="flex items-center justify-between py-2 border-t border-gray-100">

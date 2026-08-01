@@ -43,6 +43,13 @@
       ]
     },
     {
+      "collectionGroup": "inviteTokens",
+      "fieldPath": "email",
+      "indexes": [
+        { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "auditLog",
       "fieldPath": "timestampMs",
       "indexes": [

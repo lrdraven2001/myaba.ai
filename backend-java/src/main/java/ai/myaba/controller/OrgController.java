@@ -303,6 +303,42 @@ public class OrgController {
         }
     }
 
+    /**
+     * PUT /api/orgs/{orgId}/members/{uid}/role  Body: { role: string }
+     * The sanctioned way to change an existing member's role (built-in OR custom) — re-mints the
+     * member's claims (role + phiAccess). Distinct from invites, which only onboard new users.
+     * ORG_ADMIN+ only.
+     */
+    @PutMapping("/api/orgs/{orgId}/members/{uid}/role")
+    public ResponseEntity<?> changeMemberRole(
+            @PathVariable String orgId,
+            @PathVariable String uid,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+
+        if (!isAdminOf(user, orgId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Admin access required"));
+        }
+        String role = body == null ? null : body.get("role");
+        if (role == null || role.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "A 'role' is required"));
+        }
+        try {
+            Map<String, Object> res = orgService.changeMemberRole(orgId, uid, role);
+            return ResponseEntity.ok(res);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Member not found"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("changeMemberRole failed org={} uid={}: {}", orgId, uid, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to change role"));
+        }
+    }
+
     // ── Current user's own profile ───────────────────────────────────────────
 
     /** PUT /api/me/profile — update the signed-in user's display name (and sync email). */

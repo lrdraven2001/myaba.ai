@@ -476,6 +476,17 @@ export const api = {
     if (url) window.open(url, '_blank', 'noopener');
   },
 
+  /**
+   * Change an existing member's role (built-in or custom). Admin-only. Re-mints the member's
+   * claims server-side; the affected user picks up the new role on their next token refresh.
+   * This is the sanctioned role-change path — invites only onboard new users.
+   */
+  changeMemberRole: (orgId: string, uid: string, role: string) =>
+    request<{ uid: string; role: string; phiAccess?: boolean }>(
+      `/orgs/${orgId}/members/${uid}/role`,
+      { method: 'PUT', body: JSON.stringify({ role }) },
+    ),
+
   /** List a project's members (owner + explicit members) with roles. */
   getProjectMembers: (projectId: string) =>
     request<{ id: string; role: string; name?: string; email?: string }[]>(`/projects/${projectId}/members`),

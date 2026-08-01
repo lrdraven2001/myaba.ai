@@ -412,7 +412,9 @@ public class OrgService {
         data.put("setupMode",   itSetup ? "it_setup" : "clinical_director");
         data.put("baaAccepted", false);   // set to true in acceptBaa()
         data.put("createdAt",   now);
-        data.put("settings",    Map.of("sessionTimeoutMinutes", 15, "mfaEnforced", false));
+        // Seed 7-year (2555-day) retention so the Security tab's displayed default matches
+        // actual auto-purge behavior. Existing orgs without the field are unaffected.
+        data.put("settings",    Map.of("sessionTimeoutMinutes", 15, "mfaEnforced", false, "retentionDays", 2555));
 
         if (devMode) {
             devOrgs.put(orgId, data);
@@ -944,6 +946,11 @@ public class OrgService {
         String email = (recipientEmail == null || recipientEmail.isBlank())
                 ? null : recipientEmail.trim().toLowerCase();
 
+        // (A) Newest invite wins: invalidate any prior pending invite(s) to this email in this
+        // org so only the latest is claimable — keeps claim-by-email deterministic (no duplicate,
+        // conflicting roles for one email).
+        if (email != null) invalidatePriorEmailInvites(orgId, email);
+
         Map<String, Object> data = new HashMap<>();
         data.put("token",     token);
         data.put("orgId",     orgId);
@@ -961,6 +968,43 @@ public class OrgService {
               .collection("inviteTokens").document(token).set(data).get();
         }
         return appBaseUrl + "/invite/" + token;
+    }
+
+    /**
+     * (A) Expire/revoke any still-pending invite(s) addressed to {@code email} within
+     * {@code orgId}, so a freshly generated invite is the only claimable one. Already-claimed
+     * or already-expired invites are left untouched. A collection-scoped equality query needs
+     * no explicit index (single-field auto-indexing).
+     */
+    private void invalidatePriorEmailInvites(String orgId, String email) {
+        String pastIso = Instant.now().minusSeconds(1).toString();
+        if (devMode) {
+            for (Map<String, Object> t : devTokens.values()) {
+                if (orgId.equals(t.get("orgId")) && email.equals(t.get("email")) && t.get("usedBy") == null) {
+                    t.put("expiresAt", pastIso);
+                    t.put("revoked", true);
+                    t.put("revokedReason", "superseded_by_newer_invite");
+                }
+            }
+            return;
+        }
+        try {
+            Firestore db = FirestoreClient.getFirestore();
+            String nowIso = TimestampUtil.now();
+            var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                    .collection("inviteTokens").whereEqualTo("email", email).get().get().getDocuments();
+            for (var d : docs) {
+                Map<String, Object> data = d.getData();
+                if (data.get("usedBy") != null) continue;                                   // already claimed
+                if (nowIso.compareTo(String.valueOf(data.get("expiresAt"))) >= 0) continue; // already expired
+                d.getReference().update(Map.of(
+                        "expiresAt", pastIso,
+                        "revoked", true,
+                        "revokedReason", "superseded_by_newer_invite")).get();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to invalidate prior invites for {} in org {}: {}", email, orgId, e.getMessage());
+        }
     }
 
     /**
@@ -1066,6 +1110,10 @@ public class OrgService {
      */
     public Map<String, Object> claimInviteByEmail(String uid, String currentOrgId) throws Exception {
         if (devMode) return null;
+        // (B) Invites are onboarding-only. A user who already belongs to an org keeps their
+        // existing role — an invite never re-roles or re-homes them. No-op silently (the caller
+        // treats a null result as "nothing to claim").
+        if (currentOrgId != null && !currentOrgId.isBlank()) return null;
         UserRecord rec = FirebaseAuth.getInstance().getUser(uid);
         if (rec.getEmail() == null || rec.getEmail().isBlank() || !rec.isEmailVerified()) return null;
         String email = rec.getEmail().trim().toLowerCase();
@@ -1109,11 +1157,15 @@ public class OrgService {
         String orgId = (String) data.get("orgId");
         String role  = (String) data.get("role");
 
-        // A user belongs to exactly one organization. If they already belong to a
-        // DIFFERENT org, claiming this invite would silently rewrite their org/role
-        // claims and eject them from their current org. Reject it — switching orgs is
-        // not a self-service invite-link action. (Same-org re-claim is allowed.)
-        if (currentOrgId != null && !currentOrgId.isBlank() && !currentOrgId.equals(orgId)) {
+        // (B) Invites are onboarding-only — they never change an existing member's role or
+        // move them between orgs. Any already-provisioned user is rejected (their current role
+        // stands); role changes go through the admin member-role endpoint, not invite links.
+        if (currentOrgId != null && !currentOrgId.isBlank()) {
+            if (currentOrgId.equals(orgId)) {
+                throw new IllegalStateException(
+                        "You're already a member of this organization. Invite links don't change your "
+                        + "role — ask an administrator to update it.");
+            }
             throw new IllegalStateException(
                     "You already belong to another organization. An administrator there must "
                     + "remove you before you can join a different organization.");
@@ -1133,6 +1185,63 @@ public class OrgService {
         data.put("usedBy", claimingUid);
         data.put("usedAt", TimestampUtil.now());
         if (devMode) devTokens.put(token, data);
+    }
+
+    /**
+     * (C) The SANCTIONED role-change path (distinct from invites, which only onboard): an admin
+     * changes an existing member's role to any built-in OR org-defined custom role. Re-mints the
+     * member's custom claims so {@code orgId} is preserved and {@code role} + {@code phiAccess}
+     * are recomputed from the resolver, and updates the member record. The affected user picks up
+     * the new role on their next ID-token refresh (≤1h, or immediately on re-login / refreshUser).
+     *
+     * @throws IllegalArgumentException unknown role / blank uid
+     * @throws NoSuchElementException   the member doesn't exist in this org
+     * @throws IllegalStateException    attempting to change the Practice Administrator (super admin)
+     */
+    public Map<String, Object> changeMemberRole(String orgId, String uid, String newRole) throws Exception {
+        if (uid == null || uid.isBlank()) throw new IllegalArgumentException("Member uid is required");
+        if (!permissionService.isKnownRole(newRole, orgId))
+            throw new IllegalArgumentException("Invalid role: " + newRole);
+        String purpose = defaultPurpose(newRole);
+
+        if (devMode) {
+            boolean found = false;
+            for (Map<String, Object> m : devOrgMembers.getOrDefault(orgId, new ArrayList<>())) {
+                if (uid.equals(m.getOrDefault("id", m.get("uid")))) {
+                    if (UserRole.ORG_SUPER_ADMIN.equals(m.get("role")))
+                        throw new IllegalStateException("The Practice Administrator's role can't be changed here.");
+                    m.put("role", newRole);
+                    m.put("purpose", purpose);
+                    found = true;
+                }
+            }
+            if (!found) throw new NoSuchElementException("Member not found in this organization");
+            return roleChangeResult(uid, newRole, orgId);
+        }
+
+        Firestore db = FirestoreClient.getFirestore();
+        var ref = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId)
+                .collection(FirestoreCollections.MEMBERS).document(uid);
+        var snap = ref.get().get();
+        if (!snap.exists()) throw new NoSuchElementException("Member not found in this organization");
+        // The org owner / super admin can't be demoted here — prevents orphaning the only admin
+        // (mirrors the UI lock).
+        if (UserRole.ORG_SUPER_ADMIN.equals(snap.getString("role")))
+            throw new IllegalStateException("The Practice Administrator's role can't be changed here.");
+
+        setUserClaims(uid, orgId, newRole, purpose);   // re-mints role + phiAccess via the resolver
+        ref.update(Map.of("role", newRole, "purpose", purpose, "updatedAt", TimestampUtil.now())).get();
+        log.info("Changed member role: org={} uid={} -> {}", orgId, uid, newRole);
+        return roleChangeResult(uid, newRole, orgId);
+    }
+
+    private Map<String, Object> roleChangeResult(String uid, String role, String orgId) {
+        Map<String, Object> res = new HashMap<>();
+        res.put("uid", uid);
+        res.put("role", role);
+        try { res.put("phiAccess", permissionService.resolveForRole(role, orgId).phiAccess()); }
+        catch (Exception ignored) { /* advisory only */ }
+        return res;
     }
 
     // ── Member record helpers ─────────────────────────────────────────────────
