@@ -412,8 +412,8 @@ function ProjectDetailView({
       .finally(() => setLoadingDocs(false));
 
     setLoadingChats(true);
-    api.getChats()
-      .then((chats) => setProjectChats(chats.filter((c) => c.projectId === project.id)))
+    api.getChatsByProject(project.id)
+      .then(setProjectChats)
       .catch(() => {})
       .finally(() => setLoadingChats(false));
   }, [project.id]);

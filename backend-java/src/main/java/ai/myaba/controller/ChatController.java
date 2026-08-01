@@ -53,13 +53,18 @@ public class ChatController {
     // ── List chats ────────────────────────────────────────────────────────
 
     /**
-     * GET /api/chats
-     * Returns all chats the authenticated user can access, ordered by most-recently-updated.
+     * GET /api/chats  (optionally ?projectId=…)
+     * Returns the chats the authenticated user can access, newest first. With a
+     * projectId, returns only that project's chats (server-side filter — avoids
+     * shipping the whole chat list to the client to render one project's chats).
      */
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> listChats(
-            @AuthenticationPrincipal AppUser user) throws Exception {
-        return ResponseEntity.ok(chatService.getChats(user));
+            @AuthenticationPrincipal AppUser user,
+            @RequestParam(value = "projectId", required = false) String projectId) throws Exception {
+        return ResponseEntity.ok(projectId != null && !projectId.isBlank()
+                ? chatService.getChatsForProject(user, projectId)
+                : chatService.getChats(user));
     }
 
     // ── Reviewer/oversight: all org chats ─────────────────────────────────

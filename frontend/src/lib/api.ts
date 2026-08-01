@@ -76,7 +76,24 @@ export class ApiError extends Error {
   }
 }
 
+// De-duplicate concurrent identical GETs so views mounting together (or a tab
+// re-mount firing the same read) share one round-trip. The entry clears as soon
+// as the request settles — request-coalescing, not a stale cache; mutating verbs
+// (POST/PUT/PATCH/DELETE) are never shared.
+const inFlightGets = new Map<string, Promise<unknown>>();
+
 async function request<T>(path: string, options: RequestInit = {}, base: string = API_BASE): Promise<T> {
+  const method = (options.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') return doRequest<T>(path, options, base);
+  const key = base + path;
+  const existing = inFlightGets.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = doRequest<T>(path, options, base).finally(() => inFlightGets.delete(key));
+  inFlightGets.set(key, p as Promise<unknown>);
+  return p;
+}
+
+async function doRequest<T>(path: string, options: RequestInit = {}, base: string = API_BASE): Promise<T> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${base}${path}`, {
     ...options,
@@ -161,6 +178,10 @@ export const api = {
 
   /** List all chats accessible to the current user, most-recent-first. */
   getChats: () => request<Chat[]>('/chats'),
+
+  /** Chats the user can access within a single project (server-side filtered). */
+  getChatsByProject: (projectId: string) =>
+    request<Chat[]>(`/chats?projectId=${encodeURIComponent(projectId)}`),
 
   /** Reviewer/oversight: ALL org chats (Chat Review tab). Admin-gated server-side. */
   getAllOrgChats: () => request<Chat[]>('/chats/all'),

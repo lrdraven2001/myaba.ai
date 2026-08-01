@@ -223,6 +223,30 @@ public class ChatService {
      * Caller MUST enforce access (e.g. {@code canEditClient}); this method does
      * not member-scope, because a client's archive spans the whole care team.
      */
+    /**
+     * Chats the user can access within a single project, newest first. Server-side
+     * equivalent of fetching all chats and filtering by projectId on the client.
+     * Single-field equality query — no composite index needed; access + sort in memory.
+     */
+    public List<Map<String, Object>> getChatsForProject(AppUser user, String projectId) throws Exception {
+        if (projectId == null || projectId.isBlank()) return List.of();
+        if (devMode) {
+            return devChats.values().stream()
+                    .filter(c -> projectId.equals(c.get("projectId")) && canAccessChat(user, c))
+                    .sorted(Comparator.comparing((Map<String, Object> c) -> (String) c.getOrDefault("updatedAt", "")).reversed())
+                    .collect(Collectors.toList());
+        }
+        if (user.getOrgId() == null || user.getOrgId().isBlank()) return List.of();
+        Firestore db = FirestoreClient.getFirestore();
+        var docs = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").whereEqualTo("projectId", projectId)
+                .get().get().getDocuments();
+        return toList(docs).stream()
+                .filter(c -> canAccessChat(user, c))
+                .sorted(Comparator.comparing((Map<String, Object> c) -> (String) c.getOrDefault("updatedAt", "")).reversed())
+                .collect(Collectors.toList());
+    }
+
     public List<Map<String, Object>> getChatsForClient(String orgId, String clientId) throws Exception {
         if (orgId == null || orgId.isBlank() || clientId == null || clientId.isBlank()) return List.of();
         if (devMode) {
