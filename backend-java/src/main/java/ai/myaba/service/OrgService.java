@@ -77,6 +77,23 @@ public class OrgService {
     /** orgId → list of member maps (dev mode only) */
     private final Map<String, List<Map<String, Object>>> devOrgMembers = new ConcurrentHashMap<>();
 
+    // ── Org-document cache ──────────────────────────────────────────────────────
+    // The org doc is read many times per request (each settings helper calls
+    // getOrg independently — ~8-10 reads on the chat/generate hot path). Cache it
+    // per-org with a short TTL and invalidate on every org-root write below, so a
+    // single request collapses to one Firestore read. Prod only; dev reads the
+    // in-memory devOrgs directly. Per-instance cache (like PermissionService), so
+    // cross-instance staleness is bounded by the TTL; billing fields written from
+    // BillingService propagate within the TTL rather than via explicit invalidate.
+    private static final long ORG_CACHE_TTL_MS = 30_000;
+    private record CachedOrg(Map<String, Object> data, long ts) {}
+    private final Map<String, CachedOrg> orgCache = new ConcurrentHashMap<>();
+
+    /** Drop the cached org document (call after any write to the org root doc). */
+    public void invalidateOrg(String orgId) {
+        if (orgId != null) orgCache.remove(orgId);
+    }
+
     // ── Dev seed ──────────────────────────────────────────────────────────────
 
     @PostConstruct
@@ -131,11 +148,20 @@ public class OrgService {
             if (org == null) throw new NoSuchElementException("Org not found: " + orgId);
             return new HashMap<>(org);
         }
+        long now = System.currentTimeMillis();
+        CachedOrg c = orgCache.get(orgId);
+        if (c != null && now - c.ts() < ORG_CACHE_TTL_MS) {
+            return new HashMap<>(c.data()); // defensive copy — callers may mutate
+        }
         Firestore db = FirestoreClient.getFirestore();
         var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).get().get();
         if (!snap.exists()) throw new NoSuchElementException("Org not found: " + orgId);
         Map<String, Object> data = new HashMap<>(snap.getData());
         data.put("id", snap.getId());
+        // Cache an independent top-level copy (Firestore values may be null, so no
+        // Map.copyOf). Callers treat getOrg results as read-only, matching the
+        // existing dev-mode contract, so shared nested maps are safe.
+        orgCache.put(orgId, new CachedOrg(new HashMap<>(data), now));
         return data;
     }
 
@@ -625,6 +651,7 @@ public class OrgService {
         if (state != null) updates.put("state", state.trim());
         updates.put("updatedAt", TimestampUtil.now());
         db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).update(updates).get();
+        invalidateOrg(orgId);
     }
 
     /**
@@ -664,6 +691,7 @@ public class OrgService {
         settings.forEach((k, v) -> updates.put("settings." + k, v));
         updates.put("updatedAt", TimestampUtil.now());
         db.collection(FirestoreCollections.ORGANIZATIONS).document(orgId).update(updates).get();
+        invalidateOrg(orgId);
     }
 
     // ── Insurance companies ───────────────────────────────────────────────────
@@ -697,6 +725,7 @@ public class OrgService {
               "insuranceCompanies", companies,
               "updatedAt", TimestampUtil.now()
           )).get();
+        invalidateOrg(orgId);
     }
 
     // ── Business Associate Agreement (BAA) ───────────────────────────────────
@@ -768,6 +797,7 @@ public class OrgService {
                   "serviceContractAccepted",   true,
                   "updatedAt",                 now
               )).get();
+            invalidateOrg(orgId);
         }
         log.info("Service Contract v1.0 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return record;
@@ -808,6 +838,7 @@ public class OrgService {
                   "baaAccepted",   true,
                   "updatedAt",     now
               )).get();
+            invalidateOrg(orgId);
         }
         log.info("BAA v1.1 accepted for org {} by {} (uid={})", orgId, signerName, uid);
         return baaRecord;
