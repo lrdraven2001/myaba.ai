@@ -323,6 +323,13 @@ public class ProjectService {
      * Add a knowledge document to a project.
      * Returns the new document's ID.
      */
+    /** Human label for the "Uploaded by" column: prefer the display name, fall back to email. */
+    private static String uploaderName(AppUser user) {
+        String name = user.getDisplayName();
+        if (name != null && !name.isBlank()) return name;
+        return user.getEmail() != null ? user.getEmail() : "";
+    }
+
     public String addKnowledgeDoc(AppUser user, String projectId,
                                    String title, String textContent,
                                    String sourceFilename, boolean containsPhi) throws Exception {
@@ -339,6 +346,7 @@ public class ProjectService {
         doc.put("containsPhi", containsPhi);   // per-document PHI flag (independent of the project flag)
         if (sourceFilename != null && !sourceFilename.isBlank())
             doc.put("sourceFilename", sourceFilename);
+        doc.put("createdBy",   uploaderName(user));
         doc.put("createdAt",   now);
 
         if (devMode) {
@@ -437,6 +445,7 @@ public class ProjectService {
         doc.put("source",           "upload");
         doc.put("sourceFilename",   filename);
         doc.put("extractionStatus", "PROCESSING");
+        doc.put("createdBy",        uploaderName(user));
         doc.put("createdAt",        now);
 
         if (devMode) {

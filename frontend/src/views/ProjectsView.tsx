@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faFolderOpen, faSpinner, faTimes, faTrash,
-  faCommentDots, faFileAlt, faPencilAlt,
+  faCommentDots, faPencilAlt,
   faCheck, faShieldAlt, faUsers, faChevronRight,
   faArrowLeft, faExclamationTriangle, faUpload,
   faFileWord, faFileExcel, faFilePdf, faFileLines,
@@ -1241,14 +1241,16 @@ function CreateProjectModal({
 }
 
 // File-type metadata (icon + label + color) derived from a doc's filename/title.
-function fileMeta(doc: { sourceFilename?: string; title?: string }): { icon: IconDefinition; label: string; color: string } {
-  const name = (doc.sourceFilename || doc.title || '').toLowerCase();
+function fileMeta(doc: { sourceFilename?: string }): { icon: IconDefinition; label: string; color: string } {
+  // Type is derived from the stored filename's extension. Anything without a
+  // recognized extension — including legacy pasted/extracted docs that never
+  // stored a filename — is treated as plain text.
+  const name = (doc.sourceFilename || '').toLowerCase();
   const ext = name.slice(name.lastIndexOf('.') + 1);
   if (ext === 'docx' || ext === 'doc')                  return { icon: faFileWord,  label: 'Word document', color: '#2563eb' };
   if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return { icon: faFileExcel, label: 'Spreadsheet',   color: '#16a34a' };
   if (ext === 'pdf')                                     return { icon: faFilePdf,   label: 'PDF document',  color: '#dc2626' };
-  if (ext === 'txt' || ext === 'md')                    return { icon: faFileLines, label: 'Text file',     color: '#64748b' };
-  return { icon: faFileAlt, label: 'Document', color: '#64748b' };
+  return { icon: faFileLines, label: 'Text file', color: '#64748b' };
 }
 
 // ── Knowledge doc detail modal ────────────────────────────────────────────────
