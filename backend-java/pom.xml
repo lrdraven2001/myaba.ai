@@ -182,6 +182,12 @@
                 <configuration>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
                     <suppressionFile>owasp-suppressions.xml</suppressionFile>
+                    <!-- Disable the Sonatype OSS Index analyzer: it now returns 401
+                         Unauthorized for anonymous requests (requires a Sonatype account
+                         + token), which aborts the whole analysis. NVD is our primary,
+                         authoritative CVE source; OSS Index is a supplementary lookup we
+                         can re-enable later by supplying ossIndexUsername/ossIndexPassword. -->
+                    <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
                     <formats>
                         <format>HTML</format>
                         <format>JSON</format>
