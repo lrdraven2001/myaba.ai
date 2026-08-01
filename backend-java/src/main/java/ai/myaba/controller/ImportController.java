@@ -70,7 +70,7 @@ public class ImportController {
         } catch (IOException e) {
             log.error("OfficePuzzle import IO error for org {}: {}", user.getOrgId(), e.getMessage(), e);
             return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Failed to read the uploaded file: " + e.getMessage()));
+                    .body(Map.of("error", "Failed to read the uploaded file. Please ensure it is a valid, uncorrupted spreadsheet."));
         }
     }
 

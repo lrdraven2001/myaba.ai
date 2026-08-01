@@ -84,8 +84,8 @@ public class DocumentFormatController {
             String text = documentFormatService.extractDocxText(file.getBytes());
             return ResponseEntity.ok(Map.of("text", text));
         } catch (Exception e) {
-            log.error("extractTemplate failed: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of("error", "Could not read the Word document: " + e.getMessage()));
+            log.error("extractTemplate failed: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Could not read the Word document. Please ensure it is a valid, uncorrupted .docx file."));
         }
     }
 
@@ -118,9 +118,9 @@ public class DocumentFormatController {
             if (text == null) text = "";
             return ResponseEntity.ok(Map.of("name", name, "text", text, "chars", text.length()));
         } catch (Exception e) {
-            log.error("extractAttachment failed for {}: {}", name, e.getMessage());
+            log.error("extractAttachment failed for {}: {}", name, e.getMessage(), e);
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Could not read the file: " + e.getMessage()));
+                    .body(Map.of("error", "Could not read the file. Please ensure it is a valid, uncorrupted file of a supported type."));
         }
     }
 
