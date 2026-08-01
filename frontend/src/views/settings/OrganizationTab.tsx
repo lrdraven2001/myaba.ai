@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBuilding, faCopy, faCheck, faShieldHeart, faFileSignature,
-  faDownload, faShieldHalved, faKey, faRightToBracket, faClock, faChevronRight,
+  faDownload, faShieldHalved, faKey, faRightToBracket, faClock, faChevronRight, faLock,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../../lib/api';
 import type { Org, AgreementStatus } from '../../types';
@@ -11,11 +11,12 @@ import {
   PrimaryButton, SecondaryButton,
 } from '../../components/settings/primitives';
 
+// ACLX is always on; the configurable thing is HOW SENSITIVE escalation is.
+// LOW is the safe minimum (minimum HIPAA requirements) and the default when unset.
 const SENSITIVITY_OPTIONS = [
-  { value: '',       label: 'ACLX default' },
-  { value: 'HIGH',   label: 'High' },
+  { value: 'LOW',    label: 'Low — minimum HIPAA requirements (default)' },
   { value: 'MEDIUM', label: 'Medium' },
-  { value: 'LOW',    label: 'Low' },
+  { value: 'HIGH',   label: 'High' },
 ];
 
 const PLAN_LABEL: Record<string, string> = {
@@ -32,8 +33,7 @@ export default function OrganizationTab({
   const [org, setOrg]               = useState<Org | null>(null);
   const [baa, setBaa]               = useState<AgreementStatus | null>(null);
   const [contract, setContract]     = useState<AgreementStatus | null>(null);
-  const [sensitivity, setSensitivity] = useState('');
-  const [aclxEnabled, setAclxEnabled]     = useState(true);
+  const [sensitivity, setSensitivity] = useState('LOW');
   const [reviewRequired, setReviewRequired] = useState(true);
 
   const [editing, setEditing]   = useState(false);
@@ -50,12 +50,12 @@ export default function OrganizationTab({
       setNameDraft(o.name ?? '');
       setCityDraft(o.city ?? '');
       setStateDraft(o.state ?? '');
-      setAclxEnabled(o.settings?.aclxEnabled ?? true);
       setReviewRequired(o.settings?.reviewRequired ?? true);
     }).catch(() => {});
     api.getBaaStatus(orgId).then((s) => setBaa(s as AgreementStatus)).catch(() => {});
     api.getServiceContractStatus(orgId).then((s) => setContract(s as AgreementStatus)).catch(() => {});
-    api.getOrgAclxPolicy(orgId).then((p) => setSensitivity((p?.escalateAtSensitivity as string) ?? '')).catch(() => {});
+    // Unset threshold → show LOW (the minimum-HIPAA default the backend also falls back to).
+    api.getOrgAclxPolicy(orgId).then((p) => setSensitivity((p?.escalateAtSensitivity as string) || 'LOW')).catch(() => {});
   }, [orgId]);
 
   const saveName = async () => {
@@ -70,17 +70,14 @@ export default function OrganizationTab({
     setEditing(false);
   };
 
-  const toggleAclx = async (next: boolean) => {
-    setAclxEnabled(next);
-    await api.updateOrgSettings(orgId, { aclxEnabled: next }).catch(() => {});
-  };
   const toggleReview = async (next: boolean) => {
     setReviewRequired(next);
     await api.updateOrgSettings(orgId, { reviewRequired: next }).catch(() => {});
   };
   const changeSensitivity = async (v: string) => {
     setSensitivity(v);
-    if (v) await api.setOrgPolicySensitivity(orgId, v).catch(() => {});
+    // All options (LOW/MEDIUM/HIGH) are valid, persistable thresholds — always save.
+    await api.setOrgPolicySensitivity(orgId, v).catch(() => {});
   };
 
   const copyId = () => {
@@ -91,6 +88,9 @@ export default function OrganizationTab({
   };
 
   const planLabel = org ? (PLAN_LABEL[String(org.plan)] ?? String(org.plan)) : '—';
+  // Reflect the real MFA policy (matches SecurityIdentityTab's read, incl. legacy field)
+  // instead of a hardcoded "Enforced" that lies when MFA is actually optional.
+  const mfaEnforced = Boolean(org?.settings?.mfaEnforced ?? org?.settings?.mfaRequired);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 max-w-6xl">
@@ -168,7 +168,7 @@ export default function OrganizationTab({
           <div className="px-5 sm:px-6 pb-2">
             <div className="rounded-xl border px-4 py-3 mb-2" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
               <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#166534' }}>
-                <FontAwesomeIcon icon={faShieldHalved} /> AI Output Governance — ACLX {aclxEnabled ? 'Enabled' : 'Disabled'}
+                <FontAwesomeIcon icon={faShieldHalved} /> AI Output Governance — ACLX Always On
               </div>
               <p className="text-xs mt-1 leading-relaxed" style={{ color: '#3f6e4e' }}>
                 All AI responses are evaluated by the ACLX governance layer before delivery — enforcing identity-aware
@@ -180,9 +180,14 @@ export default function OrganizationTab({
           <div className="divide-y divide-gray-100">
             <SettingRow
               icon={faFileSignature}
-              title="Enable ACLX"
-              description="Labels and governs all AI-generated output for HIPAA compliance."
-              control={<Toggle checked={aclxEnabled} onChange={toggleAclx} disabled={!isAdmin} label="Enable ACLX" />}
+              title="AI Output Governance (ACLX)"
+              description="Always on. ACLX labels and governs every AI-generated output for HIPAA compliance and cannot be turned off."
+              control={
+                <span className="flex items-center gap-1.5">
+                  <FontAwesomeIcon icon={faLock} className="text-green-600" style={{ fontSize: 11 }} />
+                  <Badge tone="green">Always on</Badge>
+                </span>
+              }
             />
             <SettingRow
               icon={faFileSignature}
@@ -199,7 +204,7 @@ export default function OrganizationTab({
             <SettingRow
               icon={faClock}
               title="Escalation Sensitivity"
-              description="Minimum sensitivity level at which ACLX flags AI output for review."
+              description="ACLX always governs output — this sets how sensitive escalation-for-review is. Low is the safe minimum (minimum HIPAA requirements)."
               control={<SelectPill ariaLabel="Escalation sensitivity" tone="neutral" value={sensitivity} options={SENSITIVITY_OPTIONS} onChange={changeSensitivity} disabled={!isAdmin} />}
             />
             <SettingRow
@@ -248,8 +253,8 @@ export default function OrganizationTab({
           <div className="divide-y divide-gray-100">
             <SettingRow
               title="Two-Factor Authentication"
-              description="Enforced for all users"
-              control={<Badge tone="green">Enforced</Badge>}
+              description={mfaEnforced ? 'Required for all members' : 'Optional — members can enable it'}
+              control={<Badge tone={mfaEnforced ? 'green' : 'neutral'}>{mfaEnforced ? 'Enforced' : 'Optional'}</Badge>}
               onClick={() => onNavigateTab('security')}
             />
             <SettingRow

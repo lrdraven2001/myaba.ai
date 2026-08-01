@@ -383,13 +383,17 @@ public class AclxService {
             String       sensitivity = orgPolicyService.getEscalateAtSensitivity(orgId);
 
             if (allowed.isEmpty() && blocked.isEmpty() && sensitivity == null) {
-                return null; // No custom policy — let ACLX use its baseline
+                // Nothing configured → let ACLX apply its baseline minimum-HIPAA policy,
+                // which is the LOW escalation floor (equivalent to escalateAtSensitivity=LOW).
+                return null;
             }
 
             return AclxRequest.OrgPolicy.builder()
                     .allowedPatterns(allowed)
                     .blockedPatterns(blocked)
-                    .escalateAtSensitivity(sensitivity)
+                    // LOW = minimum HIPAA requirements is the default floor: a policy that has
+                    // custom rules but no explicit threshold must never send a null/weaker one.
+                    .escalateAtSensitivity(sensitivity != null ? sensitivity : "LOW")
                     .build();
 
         } catch (Exception e) {

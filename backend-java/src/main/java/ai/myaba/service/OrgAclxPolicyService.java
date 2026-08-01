@@ -150,6 +150,12 @@ public class OrgAclxPolicyService {
                 .toList();
     }
 
+    /**
+     * The org's configured escalation threshold, or {@code null} when unset. The effective
+     * default for an unset value is LOW (minimum HIPAA): callers building an org policy
+     * coalesce null → "LOW", and a fully-unconfigured org falls through to the ACLX baseline,
+     * which is that same LOW floor. Accepted values: LOW | MEDIUM | HIGH.
+     */
     public String getEscalateAtSensitivity(String orgId) {
         return (String) getPolicy(orgId).get("escalateAtSensitivity");
     }

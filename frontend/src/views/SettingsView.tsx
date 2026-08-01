@@ -211,8 +211,9 @@ function EhrCard({
     setSearchError('');
     try {
       const res = await api.searchEhrClients(type, query);
-      setResults(res.results);
-      if (res.results.length === 0) setSearchError('No clients found. Try a different name.');
+      const found = res.results ?? []; // never assume the array is present
+      setResults(found);
+      if (found.length === 0) setSearchError('No clients found. Try a different name.');
     } catch (e: any) {
       setSearchError(e?.message ?? 'Search failed');
     } finally {
