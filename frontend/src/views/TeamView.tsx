@@ -45,6 +45,17 @@ function toInitials(name: string | undefined | null) {
   return (name ?? '').split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 2) || '?';
 }
 
+/** Last-resort friendly label for a role key when it's neither a built-in nor a
+ *  known custom role: "custom_administrative_hr_5wy7" → "Administrative Hr". */
+function prettifyRole(role: string) {
+  const s = (role.startsWith('custom_') ? role.slice(7) : role)
+    .replace(/_[a-z0-9]{4,8}$/i, '')   // strip trailing random suffix
+    .replace(/_/g, ' ')
+    .trim();
+  if (!s) return role;
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function TeamView() {
@@ -103,7 +114,7 @@ export default function TeamView() {
     ...customRoles,
   ];
   const roleLabelOf = (role: string) =>
-    ROLE_LABELS[role] ?? customRoles.find((r) => r.key === role)?.label ?? role;
+    ROLE_LABELS[role] ?? customRoles.find((r) => r.key === role)?.label ?? prettifyRole(role);
 
   const handleOpenInvite = () => {
     setInviteRole('RBT');
@@ -273,7 +284,7 @@ export default function TeamView() {
                       className="px-2 py-0.5 rounded-full text-xs font-medium"
                       style={{ background: colors.bg, color: colors.text }}
                     >
-                      {ROLE_LABELS[m.role] ?? m.role}
+                      {roleLabelOf(m.role)}
                     </span>
                     {!m.active && (
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">
@@ -510,7 +521,7 @@ function UserDetailView({
             className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
             style={{ background: colors.bg, color: colors.text }}
           >
-            {ROLE_LABELS[member.role] ?? member.role}
+            {ROLE_LABELS[member.role] ?? roleOptions.find((r) => r.key === member.role)?.label ?? prettifyRole(member.role)}
           </span>
           {!member.active && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400 shrink-0">
@@ -693,7 +704,7 @@ function UserProfileTab({
                   show it too so it displays and isn't silently overwritten. */}
               {(roleOptions.some((r) => r.key === member.role)
                 ? roleOptions
-                : [{ key: member.role, label: ROLE_LABELS[member.role] ?? member.role }, ...roleOptions]
+                : [{ key: member.role, label: ROLE_LABELS[member.role] ?? prettifyRole(member.role) }, ...roleOptions]
               ).map((r) => (
                 <option key={r.key} value={r.key}>{r.label}</option>
               ))}
