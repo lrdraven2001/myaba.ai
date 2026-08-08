@@ -243,21 +243,34 @@ public class AclxService {
             String body = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             AclxResponse response = mapper.readValue(body, AclxResponse.class);
 
-            // §1 Synthesis escalation — override ALLOW/REDACT to ESCALATE when
-            // the synthesis detector flagged cross-client data aggregation risk.
-            // ACLX sets synthesis_detected=true when the Minimum Necessary Rule
-            // (45 CFR §164.514(d)) may be violated by the combined output.
+            // §1 Synthesis escalation — override ALLOW/REDACT to ESCALATE when the
+            // synthesis detector flagged cross-client data aggregation risk (Minimum
+            // Necessary Rule, 45 CFR §164.514(d)).
+            //
+            // Only honor it when the request genuinely spans MULTIPLE clients:
+            // cross-client aggregation is impossible in a single-client context, so
+            // escalating there is a false positive that flags clinicians' normal
+            // single-client notes. Same multi-client test as the request above
+            // (allClientIds.size() > 1). Suppressed cases are still logged (INFO) so
+            // the false-positive rate stays auditable.
             if (response.isSynthesisDetected()
                     && response.getDecision() != null
                     && ("ALLOW".equals(response.getDecision().getDecision())
                         || "REDACT".equals(response.getDecision().getDecision()))) {
-                log.warn("synthesis_detected=true — overriding {} to ESCALATE: contentId={}",
-                        response.getDecision().getDecision(), response.getContentId());
-                String prior = response.getDecision().getReason();
-                response.getDecision().setDecision("ESCALATE");
-                response.getDecision().setReason(
-                        "SYNTHESIS_DETECTED: cross-client data aggregation risk"
-                        + (prior != null && !prior.isBlank() ? "; " + prior : ""));
+                boolean multiClient = allClientIds.size() > 1;
+                if (multiClient) {
+                    log.warn("synthesis_detected=true — overriding {} to ESCALATE: contentId={} clients={}",
+                            response.getDecision().getDecision(), response.getContentId(), allClientIds.size());
+                    String prior = response.getDecision().getReason();
+                    response.getDecision().setDecision("ESCALATE");
+                    response.getDecision().setReason(
+                            "SYNTHESIS_DETECTED: cross-client data aggregation risk"
+                            + (prior != null && !prior.isBlank() ? "; " + prior : ""));
+                } else {
+                    log.info("synthesis_detected=true but single-client context (clients={}) — "
+                            + "NOT escalating {}: contentId={}",
+                            allClientIds.size(), response.getDecision().getDecision(), response.getContentId());
+                }
             }
 
             return response;
