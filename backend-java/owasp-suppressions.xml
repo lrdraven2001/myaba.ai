@@ -67,6 +67,11 @@
     <cve>CVE-2026-56817</cve>
     <cve>CVE-2026-56819</cve>
     <cve>CVE-2026-56820</cve>
+    <cve>CVE-2026-56821</cve>
+    <cve>CVE-2026-56822</cve>
+    <cve>CVE-2026-59898</cve>
+    <cve>CVE-2026-59899</cve>
+    <cve>CVE-2026-59901</cve>
   </suppress>
 
   <suppress until="2026-11-01">
@@ -118,6 +123,7 @@
     <cve>CVE-2026-55276</cve>
     <cve>CVE-2026-59083</cve>
     <cve>CVE-2026-59084</cve>
+    <cve>CVE-2026-66299</cve>
   </suppress>
 
   <suppress until="2026-11-01">
