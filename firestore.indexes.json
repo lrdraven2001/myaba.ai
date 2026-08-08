@@ -46,6 +46,7 @@
       "collectionGroup": "inviteTokens",
       "fieldPath": "email",
       "indexes": [
+        { "queryScope": "COLLECTION", "order": "ASCENDING" },
         { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
       ]
     },
