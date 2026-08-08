@@ -1,192 +1,35 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// myABA.ai Firestore Security Rules
+// myABA.ai Firestore Security Rules — BACKEND-ONLY
 //
-// Design principle: the Spring Boot backend (Firebase Admin SDK) bypasses these
-// rules entirely — it uses elevated service-account credentials.  These rules
-// protect direct client-SDK access, e.g. if the frontend ever reads Firestore
-// directly (currently it does not; all reads go through the REST API).
+// The Spring Boot backend uses the Firebase Admin SDK, which BYPASSES these
+// rules entirely (elevated service-account credentials). No client application
+// touches Firestore directly: the app and the admin console talk exclusively to
+// the REST API, and the Firestore Web SDK is not even bundled. Every read and
+// write therefore flows through the backend, where the real authorization lives
+// — per-record caseload / PHI ACLs, the permission engine, ACLX governance, and
+// the audit trail.
 //
-// All write operations are backend-only.  Client reads are limited to documents
-// within the caller's own organization (enforced via the custom claim `orgId`).
+// Accordingly, ALL direct client access is denied. This closes the gap where an
+// authenticated user could use the Web SDK with their own token to read their
+// org's data directly (chats, clients, PHI…), bypassing the backend's
+// minimum-necessary ACL and the audit logging. Cross-tenant access and all
+// writes were already blocked; this also removes the looser intra-org read path.
+//
+// NOTE: these rules govern the client SDK only. The Admin SDK (backend) and
+// console/IAM access are unaffected — console reads are governed by IAM and the
+// Firestore Data Access audit logs.
+//
+// If a client-side Firestore feature is ever introduced, add narrowly-scoped
+// read rules for those specific paths here — matching the backend's per-record
+// authorization. The prior org-scoped rules are in git history as a reference.
 // ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ──────────────────────────────────────────────────────
-
-    // Is the caller authenticated with a verified Firebase token?
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Does the caller's orgId claim match the org document being accessed?
-    function isOrgMember(orgId) {
-      return isAuthenticated() && request.auth.token.orgId == orgId;
-    }
-
-    // Is the caller an admin (ORG_ADMIN or ORG_SUPER_ADMIN)?
-    function isAdmin() {
-      return isAuthenticated() &&
-             (request.auth.token.role == 'ORG_ADMIN' ||
-              request.auth.token.role == 'ORG_SUPER_ADMIN');
-    }
-
-    // ── organizations/{orgId} ─────────────────────────────────────────────────
-
-    match /organizations/{orgId} {
-
-      // Org document: members can read their own org; only backend writes.
-      allow read:  if isOrgMember(orgId);
-      allow write: if false;  // backend-only via Admin SDK
-
-      // ── members subcollection ─────────────────────────────────────────────
-
-      match /members/{uid} {
-        // Any org member can read the member list (needed for TeamView).
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;  // backend-only
-      }
-
-      // ── chats ─────────────────────────────────────────────────────────────
-
-      match /chats/{chatId} {
-        // Only org members can read chats; memberIds check enforced at backend.
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;
-
-        match /messages/{msgId} {
-          allow read:  if isOrgMember(orgId);
-          allow write: if false;
-        }
-
-        // Chat-scoped working documents (uploaded to work with in this chat).
-        match /attachments/{attachmentId} {
-          allow read:  if isOrgMember(orgId);
-          allow write: if false;  // backend-only via Admin SDK
-        }
-      }
-
-      // ── clients ───────────────────────────────────────────────────────────
-
-      match /clients/{clientId} {
-        // Admins see all clients; clinicians see only their assigned clients.
-        // Fine-grained filtering is done in the backend query; here we just
-        // require org membership.
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;
-      }
-
-      // ── projects ──────────────────────────────────────────────────────────
-      // Per-project RBAC: projects are NOT auto-shared org-wide. A caller may read
-      // a project only if they are an admin (oversight) or an explicit member
-      // (owner or added member — both live in memberIds). Writes are backend-only.
-
-      match /projects/{projectId} {
-        allow read:  if isOrgMember(orgId) &&
-                        (isAdmin() || request.auth.uid in resource.data.memberIds);
-        allow write: if false;
-
-        // Knowledge docs inherit the parent project's membership. The subcollection
-        // doc has no memberIds of its own, so consult the parent project doc.
-        match /knowledgeDocs/{docId} {
-          allow read:  if isOrgMember(orgId) &&
-                          (isAdmin() ||
-                           request.auth.uid in
-                             get(/databases/$(database)/documents/organizations/$(orgId)/projects/$(projectId)).data.memberIds);
-          allow write: if false;
-        }
-      }
-
-      // ── templates ─────────────────────────────────────────────────────────
-
-      match /templates/{templateId} {
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;
-      }
-
-      // ── reviewQueue ───────────────────────────────────────────────────────
-
-      match /reviewQueue/{itemId} {
-        // Only org admins can read the review queue.
-        allow read:  if isOrgMember(orgId) && isAdmin();
-        allow write: if false;
-      }
-
-      // ── auditLog (per-org) ────────────────────────────────────────────────
-      // Never readable by clients — served via the backend Compliance API only.
-
-      match /auditLog/{docId} {
-        allow read:  if false;
-        allow write: if false;
-      }
-
-      // ── inviteTokens ──────────────────────────────────────────────────────
-      // The /invite page resolves a token before the user is fully logged in,
-      // so we allow any authenticated user to read (just the token document).
-
-      match /inviteTokens/{token} {
-        allow read:  if isAuthenticated();
-        allow write: if false;
-      }
-
-      // ── policies (org-level ABA policy docs and resource library) ───────────
-
-      match /policies/{policyId} {
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;
-
-        match /chunks/{chunkId} {
-          allow read:  if isOrgMember(orgId);
-          allow write: if false;
-        }
-      }
-
-      // ── driveConnections ──────────────────────────────────────────────────
-      // Firestore-level rule: org membership required.
-      // Fine-grained permissionType enforcement (org_roles / individual /
-      // client_inherited) is applied in DriveService.canSeeConnection() on the
-      // backend — it cannot be cleanly expressed in Firestore rules without
-      // reading other documents in the same request.
-
-      match /driveConnections/{connectionId} {
-        allow read:  if isOrgMember(orgId);
-        allow write: if false;  // backend-only
-      }
-
-      // ── invites ──────────────────────────────────────────────────────────
-      // Admins can read pending invites (for Team management UI).
-      // Any org member can read an invite addressed to them (for accept flow).
-      // Write is backend-only (invite creation, status updates).
-
-      match /invites/{inviteId} {
-        allow read:  if isOrgMember(orgId) &&
-                        (isAdmin() ||
-                         resource.data.email == request.auth.token.email);
-        allow write: if false;
-      }
-    }
-
-    // ── auditLog (LEGACY flat top-level collection) ────────────────────────────
-    // Pre-migration rows; new events go to organizations/{orgId}/auditLog.
-    // Never readable by clients — platform auditing only via backend.
-
-    match /auditLog/{docId} {
-      allow read:  if false;
-      allow write: if false;
-    }
-
-    // ── platformAuditLog (vendor-level events, no org) ─────────────────────────
-
-    match /platformAuditLog/{docId} {
-      allow read:  if false;
-      allow write: if false;
-    }
-
-    // ── Deny everything else ─────────────────────────────────────────────────
-
+    // Deny all direct client-SDK access. Backend (Admin SDK) bypasses this.
     match /{document=**} {
       allow read, write: if false;
     }
