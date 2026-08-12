@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faLock, faEnvelope, faFlask, faUser, faEnvelopeOpen } from '@fortawesome/free-solid-svg-icons';
+import { faFlask, faEnvelopeOpen } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 
@@ -21,74 +21,33 @@ interface Props {
 }
 
 export default function LoginView({ invitePreview }: Props = {}) {
-  const { login, register, loginWithGoogle, mfaChallengePending, resolveMfaSignIn, cancelMfa } = useAuth();
-  const hasInvite = !!invitePreview;
+  // Password/email sign-in is disabled at the Firebase Auth level — access is
+  // federated only (Google today; more providers can be added to PROVIDERS below).
+  const { loginWithGoogle, mfaChallengePending, resolveMfaSignIn, cancelMfa } = useAuth();
   const [mfaCode, setMfaCode]   = useState('');
   const [mfaError, setMfaError] = useState('');
   const [mfaBusy, setMfaBusy]   = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
-  const [mode, setMode]             = useState<'signin' | 'register'>(hasInvite ? 'register' : 'signin');
-  const [email, setEmail]           = useState('');
-  const [password, setPassword]     = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [confirmPw, setConfirmPw]   = useState('');
-  const [showPw, setShowPw]         = useState(false);
   const [error, setError]           = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
 
-  const switchMode = (next: 'signin' | 'register') => {
-    setMode(next);
+  // Federated sign-in providers. To add another (Microsoft, Apple, …), add a
+  // handler in AuthContext and a row here — the rendering below is data-driven.
+  const PROVIDERS: { id: string; label: string; icon: React.ReactNode; onClick: () => Promise<void> }[] = [
+    { id: 'google', label: 'Continue with Google', icon: <GoogleLogo />, onClick: loginWithGoogle },
+  ];
+
+  const signInWith = async (p: { id: string; onClick: () => Promise<void> }) => {
     setError('');
-    setPassword('');
-    setConfirmPw('');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (mode === 'register') {
-      if (!displayName.trim()) { setError('Full name is required.'); return; }
-      if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-      if (password !== confirmPw) { setError('Passwords do not match.'); return; }
-    }
-
-    setLoading(true);
+    setBusyProvider(p.id);
     try {
-      if (mode === 'register') {
-        await register(email, password, displayName.trim());
-      } else {
-        await login(email, password);
-      }
+      await p.onClick();
     } catch (err: unknown) {
       // Enrolled-MFA user: the second-factor challenge modal takes over — no error.
-      if ((err as { code?: string })?.code === 'mfa-required') { setLoading(false); return; }
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('email-already-in-use')) {
-        setError('An account with this email already exists. Sign in instead.');
-      } else if (msg.includes('invalid-credential') || msg.includes('wrong-password') || msg.includes('user-not-found')) {
-        setError('Invalid email or password. Please try again.');
-      } else if (msg.includes('weak-password')) {
-        setError('Password is too weak. Use at least 8 characters.');
-      } else {
-        setError(mode === 'register' ? 'Registration failed. Please try again.' : 'Sign-in failed. Please try again.');
-      }
+      if ((err as { code?: string })?.code === 'mfa-required') { setBusyProvider(null); return; }
+      setError('Sign-in failed. Please try again.');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogle = async () => {
-    setError('');
-    setGoogleLoading(true);
-    try {
-      await loginWithGoogle();
-    } catch (err: unknown) {
-      if ((err as { code?: string })?.code === 'mfa-required') { setGoogleLoading(false); return; }
-      setError('Google sign-in failed. Please try again.');
-    } finally {
-      setGoogleLoading(false);
+      setBusyProvider(null);
     }
   };
 
@@ -113,7 +72,7 @@ export default function LoginView({ invitePreview }: Props = {}) {
     }
   };
 
-  const isRegister = mode === 'register';
+  const anyBusy = busyProvider !== null;
 
   return (
     <div style={{ height: '100vh', overflowY: 'auto', background: '#F0F7FA' }}>
@@ -206,31 +165,6 @@ export default function LoginView({ invitePreview }: Props = {}) {
           </div>
         </div>
 
-        {/* ── Mode tabs — only shown when arriving via invite (Sign In + Create Account) ── */}
-        {hasInvite && (
-          <div style={{
-            display: 'flex', borderRadius: 10, border: '1.5px solid #DCE7EE',
-            marginBottom: 20, overflow: 'hidden',
-          }}>
-            {(['signin', 'register'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => switchMode(m)}
-                style={{
-                  flex: 1, padding: '9px 0',
-                  background: mode === m ? '#1E3347' : 'transparent',
-                  color: mode === m ? 'white' : '#6B7B88',
-                  border: 'none', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 700,
-                  transition: 'background 0.15s, color 0.15s',
-                }}
-              >
-                {m === 'signin' ? 'Sign In' : 'Create Account'}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* ── Invite banner (when arriving via invite link) ── */}
         {invitePreview ? (
           <div style={{
@@ -243,16 +177,16 @@ export default function LoginView({ invitePreview }: Props = {}) {
               You've been invited to join <strong>{invitePreview.orgName}</strong> as a{' '}
               <strong>{invitePreview.role.replace(/_/g, ' ').toLowerCase()}</strong>.
               <br />
-              <span style={{ color: '#4A7A3A' }}>Sign in or create an account to accept.</span>
+              <span style={{ color: '#4A7A3A' }}>Continue with Google to accept.</span>
             </div>
           </div>
-        ) : !isRegister && (
+        ) : (
           <div style={{
             background: '#F8FBFF', border: '1px solid #CCDFF8', borderRadius: 10,
             padding: '11px 14px', marginBottom: 20, fontSize: 12.5, color: '#3A5270', lineHeight: 1.55,
           }}>
             myABA.ai is in a <strong>closed early-access program</strong> with select partner agencies.
-            Sign in below, or create an account to register your agency.
+            Sign in with Google below.
             <br />
             <span style={{ color: '#6B7B88', marginTop: 4, display: 'block' }}>
               Questions? &nbsp;
@@ -264,147 +198,46 @@ export default function LoginView({ invitePreview }: Props = {}) {
           </div>
         )}
 
-        {/* ── Google button (sign-in only for now — OAuth registration same flow) ── */}
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={googleLoading || loading}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            padding: '11px 0', background: 'white', border: '1.5px solid #DCE7EE', borderRadius: 10,
-            fontSize: 14, fontWeight: 600, color: '#1E3347',
-            cursor: googleLoading || loading ? 'not-allowed' : 'pointer',
-            opacity: googleLoading || loading ? 0.6 : 1, transition: 'border-color 0.15s, box-shadow 0.15s',
-            marginBottom: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-          }}
-          onMouseEnter={(e) => { if (!googleLoading && !loading) { e.currentTarget.style.borderColor = '#1E88FF'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(30,136,255,0.12)'; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#DCE7EE'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)'; }}
-        >
-          <GoogleLogo />
-          {googleLoading ? 'Signing in…' : `Continue with Google`}
-        </button>
-
-        {/* ── Divider ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <div style={{ flex: 1, height: 1, background: '#E4EEF3' }} />
-          <span style={{ fontSize: 12, color: '#A8B4BF', fontWeight: 500 }}>
-            {isRegister ? 'or register with email' : 'or sign in with email'}
-          </span>
-          <div style={{ flex: 1, height: 1, background: '#E4EEF3' }} />
+        {/* ── Federated sign-in ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {PROVIDERS.map((p) => {
+            const busy = busyProvider === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => signInWith(p)}
+                disabled={anyBusy}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  padding: '13px 0', background: 'white', border: '1.5px solid #DCE7EE', borderRadius: 10,
+                  fontSize: 14.5, fontWeight: 600, color: '#1E3347',
+                  cursor: anyBusy ? 'not-allowed' : 'pointer',
+                  opacity: anyBusy && !busy ? 0.6 : 1, transition: 'border-color 0.15s, box-shadow 0.15s',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+                }}
+                onMouseEnter={(e) => { if (!anyBusy) { e.currentTarget.style.borderColor = '#1E88FF'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(30,136,255,0.12)'; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#DCE7EE'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)'; }}
+              >
+                {p.icon}
+                {busy ? 'Signing in…' : p.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* ── Form ── */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-          {/* Full name (registration only) */}
-          {isRegister && (
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
-                Full Name
-              </label>
-              <div style={{ position: 'relative' }}>
-                <FontAwesomeIcon icon={faUser} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#A8B4BF', fontSize: 13, pointerEvents: 'none' }} />
-                <input
-                  type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Jane Smith" disabled={loading}
-                  style={{ width: '100%', padding: '10px 12px 10px 34px', border: '1.5px solid #DCE7EE', borderRadius: 10, fontSize: 14, color: '#1E3347', background: 'white', outline: 'none', boxSizing: 'border-box' }}
-                  onFocus={(e) => (e.target.style.borderColor = '#1E88FF')}
-                  onBlur={(e) => (e.target.style.borderColor = '#DCE7EE')}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Email */}
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
-              Email Address
-            </label>
-            <div style={{ position: 'relative' }}>
-              <FontAwesomeIcon icon={faEnvelope} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#A8B4BF', fontSize: 13, pointerEvents: 'none' }} />
-              <input
-                type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="bcba@clinic.com" disabled={loading || googleLoading}
-                style={{ width: '100%', padding: '10px 12px 10px 34px', border: '1.5px solid #DCE7EE', borderRadius: 10, fontSize: 14, color: '#1E3347', background: 'white', outline: 'none', boxSizing: 'border-box' }}
-                onFocus={(e) => (e.target.style.borderColor = '#1E88FF')}
-                onBlur={(e) => (e.target.style.borderColor = '#DCE7EE')}
-              />
-            </div>
+        {/* Error message */}
+        {error && (
+          <div style={{ marginTop: 16, padding: '9px 12px', borderRadius: 8, background: '#FFF1F1', border: '1px solid #FFC9C9', color: '#C0392B', fontSize: 13 }}>
+            {error}
           </div>
-
-          {/* Password */}
-          <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
-              Password {isRegister && <span style={{ fontWeight: 400, color: '#A8B4BF' }}>(min 8 chars)</span>}
-            </label>
-            <div style={{ position: 'relative' }}>
-              <FontAwesomeIcon icon={faLock} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#A8B4BF', fontSize: 13, pointerEvents: 'none' }} />
-              <input
-                type={showPw ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••" disabled={loading || googleLoading}
-                style={{ width: '100%', padding: '10px 38px 10px 34px', border: '1.5px solid #DCE7EE', borderRadius: 10, fontSize: 14, color: '#1E3347', background: 'white', outline: 'none', boxSizing: 'border-box' }}
-                onFocus={(e) => (e.target.style.borderColor = '#1E88FF')}
-                onBlur={(e) => (e.target.style.borderColor = '#DCE7EE')}
-              />
-              <button type="button" onClick={() => setShowPw((v) => !v)} tabIndex={-1}
-                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#A8B4BF', cursor: 'pointer', padding: '2px 4px' }}>
-                <FontAwesomeIcon icon={showPw ? faEyeSlash : faEye} style={{ fontSize: 13 }} />
-              </button>
-            </div>
-          </div>
-
-          {/* Confirm password (registration only) */}
-          {isRegister && (
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4A5568', marginBottom: 6 }}>
-                Confirm Password
-              </label>
-              <div style={{ position: 'relative' }}>
-                <FontAwesomeIcon icon={faLock} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#A8B4BF', fontSize: 13, pointerEvents: 'none' }} />
-                <input
-                  type={showPw ? 'text' : 'password'} required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
-                  placeholder="••••••••" disabled={loading}
-                  style={{ width: '100%', padding: '10px 38px 10px 34px', border: '1.5px solid #DCE7EE', borderRadius: 10, fontSize: 14, color: '#1E3347', background: 'white', outline: 'none', boxSizing: 'border-box', borderColor: confirmPw && confirmPw !== password ? '#FC8181' : '#DCE7EE' }}
-                  onFocus={(e) => (e.target.style.borderColor = confirmPw !== password ? '#FC8181' : '#1E88FF')}
-                  onBlur={(e) => (e.target.style.borderColor = confirmPw && confirmPw !== password ? '#FC8181' : '#DCE7EE')}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Error message */}
-          {error && (
-            <div style={{ padding: '9px 12px', borderRadius: 8, background: '#FFF1F1', border: '1px solid #FFC9C9', color: '#C0392B', fontSize: 13 }}>
-              {error}
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading || googleLoading}
-            style={{
-              padding: '12px 0',
-              background: loading ? '#A8B4BF' : 'linear-gradient(135deg, #1E88FF, #1565C0)',
-              border: 'none', borderRadius: 10, color: 'white',
-              fontSize: 14, fontWeight: 700,
-              cursor: loading || googleLoading ? 'not-allowed' : 'pointer',
-              marginTop: 2, letterSpacing: '0.01em',
-              boxShadow: loading ? 'none' : '0 2px 8px rgba(30,136,255,0.30)',
-              transition: 'opacity 0.15s',
-            }}
-          >
-            {loading ? (isRegister ? 'Creating account…' : 'Signing in…') : (isRegister ? 'Create Account' : 'Sign In')}
-          </button>
-        </form>
+        )}
 
         {/* ── Footer ── */}
         <p style={{ textAlign: 'center', fontSize: 11, color: '#A8B4BF', marginTop: 24, lineHeight: 1.6 }}>
           HIPAA-compliant platform &nbsp;·&nbsp; All data encrypted in transit
           <br />
-          {isRegister
-            ? 'By creating an account you agree to our Terms of Service'
-            : 'Pathfinder Beta · Access by invitation only'}
+          Pathfinder Beta · Access by invitation only
         </p>
       </div>
     </div>
