@@ -28,8 +28,11 @@ spec:
   template:
     metadata:
       annotations:
-        # Scale to zero when idle; cold start ~2-5s on first request after idle.
-        autoscaling.knative.dev/minScale: "0"
+        # Keep one instance warm: a cold start reloads the OPA policy bundle, which
+        # can exceed the caller's 30s evaluate timeout → fail-closed BLOCK, spuriously
+        # flagging the first clinical chat after idle. minScale=1 keeps the bundle
+        # resident (~$10/mo idle, CPU-throttled). Raise maxScale, not the floor, for load.
+        autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "2"
         run.googleapis.com/container-dependencies: '{"gateway-api":["opa"]}'
     spec:
