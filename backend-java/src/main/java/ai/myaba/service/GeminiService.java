@@ -129,6 +129,25 @@ public class GeminiService implements LlmProvider {
     }
 
     /**
+     * Deterministic, low-thinking config used to RECOVER from a MALFORMED_FUNCTION_CALL.
+     * Gemini 3 Pro with HIGH thinking + temperature 1 intermittently emits an unparseable
+     * function call; retrying with temperature 0 and minimal thinking makes it emit a
+     * clean call reliably. Function selection is a structured task that doesn't need the
+     * full reasoning budget, so quality of the tool decision is unaffected.
+     */
+    private Map<String, Object> toolSafeGenerationConfig(boolean reasoning) {
+        Map<String, Object> cfg = new java.util.HashMap<>();
+        cfg.put("maxOutputTokens", reasoning ? reasoningMaxTokens : maxTokens);
+        cfg.put("temperature", 0);
+        if (geminiModelReasoning.startsWith("gemini-3")) {
+            cfg.put("thinkingConfig", Map.of("thinkingLevel", "LOW"));
+        } else {
+            cfg.put("thinkingConfig", Map.of("thinkingBudget", 0));
+        }
+        return cfg;
+    }
+
+    /**
      * Vertex safety filters disabled: clinical ABA content (self-injurious behavior,
      * aggression, elopement) reliably trips the dangerous-content classifier as false
      * positives. Output governance is ACLX's job — every response still passes through
@@ -228,9 +247,10 @@ public class GeminiService implements LlmProvider {
         for (Map<String, Object> d : functionDeclarations) names.add((String) d.get("name"));
 
         List<Map<String, Object>> contents = new ArrayList<>(toContents(messages));
+        Map<String, Object> activeConfig = config;
         int malformedRetries = 0;
         for (int round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-            Map<?, ?> candidate = callGeminiCandidate(model, config, system, contents, tools);
+            Map<?, ?> candidate = callGeminiCandidate(model, activeConfig, system, contents, tools);
             @SuppressWarnings("unchecked")
             Map<String, Object> content = (Map<String, Object>) candidate.get("content");
             List<Map<?, ?>> calls = findFunctionCalls(content, names);
@@ -238,16 +258,18 @@ public class GeminiService implements LlmProvider {
                 String text = extractText(content);
                 if (text == null || text.isBlank()) {
                     Object finish = candidate.get("finishReason");
-                    // Gemini (especially the thinking/reasoning model) intermittently emits a
+                    // Gemini 3 Pro with HIGH thinking + temperature 1 intermittently emits a
                     // MALFORMED_FUNCTION_CALL: it tried to call a tool but produced an unparseable
-                    // call, so there's neither a usable functionCall nor any text. Retry a couple
-                    // of times (usually transient); if it persists, fall back to a tool-free answer
-                    // so the chat still responds instead of hard-failing.
+                    // call, so there's neither a usable functionCall nor any text. Retry with a
+                    // deterministic, low-thinking config that emits a clean call reliably; only if
+                    // that ALSO fails do we fall back to a tool-free answer (so the chat still
+                    // responds instead of hard-failing — though it can't use the tool that turn).
                     if ("MALFORMED_FUNCTION_CALL".equals(String.valueOf(finish))) {
                         if (malformedRetries < 2) {
                             malformedRetries++;
-                            log.warn("Gemini ({}) malformed function call (attempt {}/2) — retrying",
-                                    model, malformedRetries);
+                            log.warn("Gemini ({}) malformed function call (attempt {}/2) — retrying "
+                                    + "with tool-safe config", model, malformedRetries);
+                            activeConfig = toolSafeGenerationConfig(reasoning);
                             round--; // this attempt produced nothing usable; don't spend a tool round
                             continue;
                         }
