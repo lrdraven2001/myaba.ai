@@ -870,6 +870,15 @@ export const api = {
       `/clients/${clientId}/documents/${docId}`,
     ),
 
+  /** Translate a client document into a target language (es | ar | fr | zh | de).
+   *  Cloud Translation preserves layout for docx/pdf. Returns the translated file
+   *  (base64) + a text preview. Nothing is stored server-side. */
+  translateClientDocument: (clientId: string, docId: string, language: string) =>
+    request<{ language: string; filename: string; mimeType: string; contentBase64: string; previewText: string }>(
+      `/clients/${clientId}/documents/${docId}/translate`,
+      { method: 'POST', body: JSON.stringify({ language }) },
+    ),
+
   uploadDocument: async (clientId: string, formData: FormData) => {
     if (DEV_AUTH) {
       const res = await fetch(`${API_BASE}/clients/${clientId}/documents`, {

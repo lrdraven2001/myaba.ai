@@ -1,5 +1,6 @@
 package ai.myaba.service;
 
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -121,6 +122,28 @@ public class GcsStorageService {
         } catch (Exception e) {
             log.warn("GCS upload failed for {}: {}", objectPath, e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Read an object's raw bytes (server-side). Enforces the same org-prefix
+     * tenant-isolation invariant as signing. Returns {@code null} when GCS is
+     * disabled or the object is missing.
+     *
+     * @throws SecurityException if the object path is not within this org's prefix
+     */
+    public byte[] download(String orgId, String objectPath) {
+        if (!isEnabled() || objectPath == null || objectPath.isBlank()) return null;
+        String prefix = "orgs/" + orgId + "/";
+        if (!objectPath.startsWith(prefix)) {
+            throw new SecurityException("Object path outside caller org: " + objectPath);
+        }
+        try {
+            Blob blob = storage().get(BlobId.of(bucket, objectPath));
+            return (blob != null && blob.exists()) ? blob.getContent() : null;
+        } catch (Exception e) {
+            log.warn("GCS download failed for {}: {}", objectPath, e.getMessage());
+            return null;
         }
     }
 

@@ -41,6 +41,7 @@ public class ClientController {
     private final DocumentFormatService documentFormatService;
     private final DocumentPersistenceService documentPersistenceService;
     private final ai.myaba.service.GcsStorageService gcsStorageService;
+    private final ai.myaba.service.TranslationService translationService;
 
     @org.springframework.beans.factory.annotation.Value("${dev.auth-enabled:false}")
     private boolean devMode;
@@ -515,6 +516,103 @@ public class ClientController {
             log.error("getClientDocumentOriginal failed {}/{}: {}", clientId, docId, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to prepare download"));
         }
+    }
+
+    // ── POST /api/clients/{clientId}/documents/{docId}/translate ──────────────
+    // Translate a client document into a target language via Cloud Translation
+    // Advanced (layout preserved for docx/pdf; text fallback for legacy docs).
+    // Returns the translated file (base64) + a text preview for the modal —
+    // nothing is stored. Read-gated (canAccessClient); audited.
+    @PostMapping("/{clientId}/documents/{docId}/translate")
+    public ResponseEntity<?> translateClientDocument(
+            @PathVariable String clientId,
+            @PathVariable String docId,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal AppUser user) {
+        if (!translationService.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Document translation is not configured on the server."));
+        }
+        String lang = translationService.resolveLanguage(body == null ? null : body.get("language"));
+        if (lang == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Unsupported language. Choose Spanish, Arabic, French, Chinese, or German."));
+        }
+        try {
+            Map<String, Object> client = clientService.getClient(user.getOrgId(), clientId);
+            if (!authorizationService.canAccessClient(user, client)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Not authorized to translate documents for this client"));
+            }
+            Map<String, Object> doc = documentPersistenceService.getDocument(user.getOrgId(), clientId, docId);
+            if (doc == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Document not found"));
+            }
+            String title      = String.valueOf(doc.getOrDefault("title", doc.getOrDefault("sourceFilename", "document")));
+            String sourceName = String.valueOf(doc.getOrDefault("sourceFilename", title));
+
+            byte[] outBytes;
+            String outMime;
+            Object gcsObject = doc.get("gcsObject");
+            String srcMime   = docMime(sourceName);
+            if (gcsObject instanceof String path && !path.isBlank() && srcMime != null) {
+                // Layout-preserving: translate the original docx/pdf in place.
+                byte[] src = gcsStorageService.download(user.getOrgId(), path);
+                if (src == null) {
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body(Map.of("error", "The original file is unavailable for translation."));
+                }
+                var t = translationService.translateDocument(src, srcMime, lang);
+                outBytes = t.bytes();
+                outMime  = t.mimeType();
+            } else {
+                // Fallback: translate the extracted text and render a clean .docx.
+                String text = String.valueOf(doc.getOrDefault("content", ""));
+                if (text.isBlank()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "This document has no translatable text."));
+                }
+                String translated = translationService.translateText(text, lang);
+                outBytes = documentFormatService.toDocx(title + " (" + translationService.label(lang) + ")", translated);
+                outMime  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            }
+
+            String filename = outFilename(sourceName, lang, outMime);
+            String preview  = "";
+            try { preview = documentFormatService.extractText(filename, outBytes, false); }
+            catch (Exception ignore) { /* preview is best-effort */ }
+
+            auditService.log("CLIENT_DOCUMENT_TRANSLATED", user.getOrgId(), user.getUid(),
+                    clientId, docId, null, null, null);
+
+            return ResponseEntity.ok(Map.of(
+                    "language",      translationService.label(lang),
+                    "filename",      filename,
+                    "mimeType",      outMime,
+                    "contentBase64", java.util.Base64.getEncoder().encodeToString(outBytes),
+                    "previewText",   preview));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("translateClientDocument failed {}/{} lang={}: {}", clientId, docId, lang, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));
+        }
+    }
+
+    /** Source MIME for layout-preserving translation, or null when unsupported (→ text fallback). */
+    private static String docMime(String filename) {
+        String n = filename == null ? "" : filename.toLowerCase();
+        if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (n.endsWith(".pdf"))  return "application/pdf";
+        return null;
+    }
+
+    /** "intake.pdf" + es → "intake_es.pdf" (matches the translated output format). */
+    private static String outFilename(String sourceName, String lang, String mime) {
+        String base = sourceName == null ? "document" : sourceName.replaceAll("\\.[^.]+$", "");
+        String ext  = (mime != null && mime.contains("pdf")) ? "pdf" : "docx";
+        return base + "_" + lang + "." + ext;
     }
 
     // ── DELETE /api/clients/{clientId}/documents/{docId} ──────────────────────

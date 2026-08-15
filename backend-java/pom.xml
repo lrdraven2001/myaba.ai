@@ -142,6 +142,13 @@
             <artifactId>google-cloud-storage</artifactId>
         </dependency>
 
+        <!-- Cloud Translation (Advanced, v3) — layout-preserving document translation
+             (docx/pdf → same format). Version managed by the libraries-bom import above. -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-translate</artifactId>
+        </dependency>
+
         <!-- Stripe — subscription billing (Checkout + Billing Portal + webhooks).
              Card data never touches our servers (hosted Checkout keeps us out of
              PCI scope). Disabled at runtime when STRIPE_SECRET_KEY is unset. -->

@@ -70,6 +70,14 @@ spec:
             - name: GEMINI_MAX_TOKENS_REASONING
               value: "65535"
 
+            # ── Document translation (Cloud Translation Advanced v3) ─────────
+            # Layout-preserving docx/pdf translation for client documents.
+            # Uses VERTEX_PROJECT_ID above + the runtime SA (needs
+            # roles/cloudtranslate.user; the translate.googleapis.com API must
+            # be enabled). Regional endpoint derived from this location.
+            - name: TRANSLATE_LOCATION
+              value: "us-central1"
+
             # ── Directory lookup (lookup_place chat tool) ────────────────────
             # PHI-free Places lookup for external entities. Key lives in Secret
             # Manager (places-api-key, restricted to Places API (New)); the
