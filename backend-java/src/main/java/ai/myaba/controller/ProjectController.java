@@ -28,6 +28,9 @@ public class ProjectController {
 
     private final ProjectService projectService;
     private final ai.myaba.service.GcsStorageService gcsStorageService;
+    private final ai.myaba.service.TranslationService translationService;
+    private final ai.myaba.service.DocumentFormatService documentFormatService;
+    private final ai.myaba.service.AuditService auditService;
 
     // ── List ──────────────────────────────────────────────────────────────
 
@@ -255,6 +258,87 @@ public class ProjectController {
                     .body(Map.of("error", "Document download is not available yet. Storage is not fully configured."));
         }
         return ResponseEntity.ok(Map.of("url", url));
+    }
+
+    /**
+     * POST /api/projects/{projectId}/knowledge/{docId}/translate  Body: { language }
+     * Translate a project knowledge document into a target language via Cloud
+     * Translation. Layout-preserving for stored Word/PDF originals; falls back to
+     * translating the extracted text into a clean .docx for text-only documents.
+     * Read-gated (getKnowledgeDoc → canAccessProject). Nothing is stored — the
+     * translated file is returned base64 for one-shot preview + download.
+     */
+    @PostMapping("/{projectId}/knowledge/{docId}/translate")
+    public ResponseEntity<?> translateKnowledge(
+            @AuthenticationPrincipal AppUser user,
+            @PathVariable String projectId,
+            @PathVariable String docId,
+            @RequestBody Map<String, String> body) {
+        if (!translationService.isEnabled()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Document translation is not configured on the server."));
+        }
+        String lang = translationService.resolveLanguage(body == null ? null : body.get("language"));
+        if (lang == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Unsupported language. Choose Spanish, Arabic, French, Chinese, or German."));
+        }
+        try {
+            Map<String, Object> doc = projectService.getKnowledgeDoc(user, projectId, docId);
+            if (doc == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "Document not found"));
+            }
+            String title      = String.valueOf(doc.getOrDefault("title", doc.getOrDefault("sourceFilename", "document")));
+            String sourceName = String.valueOf(doc.getOrDefault("sourceFilename", title));
+
+            byte[] outBytes;
+            String outMime;
+            Object gcsObject = doc.get("gcsObject");
+            String srcMime   = ai.myaba.service.TranslationService.docMime(sourceName);
+            if (gcsObject instanceof String path && !path.isBlank() && srcMime != null) {
+                // Layout-preserving: translate the original docx/pdf in place.
+                byte[] src = gcsStorageService.download(user.getOrgId(), path);
+                if (src == null) {
+                    return ResponseEntity.status(404)
+                            .body(Map.of("error", "The original file is unavailable for translation."));
+                }
+                var t = translationService.translateDocument(src, srcMime, lang);
+                outBytes = t.bytes();
+                outMime  = t.mimeType();
+            } else {
+                // Fallback: translate the extracted text and render a clean .docx.
+                String text = String.valueOf(doc.getOrDefault("textContent", ""));
+                if (text.isBlank()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "This document has no translatable text."));
+                }
+                String translated = translationService.translateText(text, lang);
+                outBytes = documentFormatService.toDocx(title + " (" + translationService.label(lang) + ")", translated);
+                outMime  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            }
+
+            String filename = ai.myaba.service.TranslationService.outFilename(sourceName, lang, outMime);
+            String preview  = "";
+            try { preview = documentFormatService.extractText(filename, outBytes, false); }
+            catch (Exception ignore) { /* preview is best-effort */ }
+
+            auditService.log("PROJECT_KNOWLEDGE_TRANSLATED", user.getOrgId(), user.getUid(),
+                    null, docId, null, null, null);
+
+            return ResponseEntity.ok(Map.of(
+                    "language",      translationService.label(lang),
+                    "filename",      filename,
+                    "mimeType",      outMime,
+                    "contentBase64", java.util.Base64.getEncoder().encodeToString(outBytes),
+                    "previewText",   preview));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Not authorized to translate documents for this project"));
+        } catch (java.util.NoSuchElementException e) {
+            return ResponseEntity.status(404).body(Map.of("error", "Project not found"));
+        } catch (Exception e) {
+            log.error("translateKnowledge failed project={} doc={} lang={}: {}", projectId, docId, lang, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));
+        }
     }
 
     /**

@@ -506,6 +506,15 @@ export const api = {
     if (url) window.open(url, '_blank', 'noopener');
   },
 
+  /** Translate a project knowledge document. Layout-preserving for stored Word/PDF
+   *  originals; text fallback otherwise. Returns the translated file (base64) + a
+   *  preview. Nothing is stored server-side. */
+  translateProjectKnowledge: (projectId: string, docId: string, language: string) =>
+    request<{ language: string; filename: string; mimeType: string; contentBase64: string; previewText: string }>(
+      `/projects/${projectId}/knowledge/${docId}/translate`,
+      { method: 'POST', body: JSON.stringify({ language }) },
+    ),
+
   /**
    * Change an existing member's role (built-in or custom). Admin-only. Re-mints the member's
    * claims server-side; the affected user picks up the new role on their next token refresh.

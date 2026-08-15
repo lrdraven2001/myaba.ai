@@ -5,11 +5,12 @@ import {
   faCommentDots, faPencilAlt,
   faCheck, faShieldAlt, faUsers, faChevronRight,
   faArrowLeft, faExclamationTriangle, faUpload,
-  faFileWord, faFileExcel, faFilePdf, faFileLines,
+  faFileWord, faFileExcel, faFilePdf, faFileLines, faLanguage,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faGoogleDrive } from '@fortawesome/free-brands-svg-icons';
 import { api } from '../lib/api';
+import TranslateDocumentModal from '../components/TranslateDocumentModal';
 import { importDriveFile, isPickerConfigured } from '../lib/googlePicker';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
@@ -370,6 +371,7 @@ function ProjectDetailView({
   const [knowledgeDocs, setKnowledgeDocs] = useState<ProjectKnowledgeDoc[]>([]);
   const [loadingDocs, setLoadingDocs]     = useState(true);
   const [viewDoc, setViewDoc]             = useState<ProjectKnowledgeDoc | null>(null);
+  const [translateDoc, setTranslateDoc]   = useState<ProjectKnowledgeDoc | null>(null);
   const [showAddDoc, setShowAddDoc]       = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [projectChats, setProjectChats]   = useState<Chat[]>([]);
@@ -738,6 +740,9 @@ function ProjectDetailView({
                             : <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">No</span>}
                         </td>
                         <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => setTranslateDoc(doc)} className="text-gray-300 hover:text-blue-500 w-8 h-8" title="Translate document">
+                            <FontAwesomeIcon icon={faLanguage} style={{ fontSize: 14 }} />
+                          </button>
                           <button onClick={() => handleDeleteDoc(doc.id)} disabled={deletingDocId === doc.id} className="text-gray-300 hover:text-red-500 w-8 h-8" title="Delete document">
                             {deletingDocId === doc.id ? <FontAwesomeIcon icon={faSpinner} className="animate-spin" style={{ fontSize: 12 }} /> : <FontAwesomeIcon icon={faTrash} style={{ fontSize: 12 }} />}
                           </button>
@@ -803,6 +808,13 @@ function ProjectDetailView({
         />
       )}
       {viewDoc && <DocDetailModal doc={viewDoc} onClose={() => setViewDoc(null)} onPatch={patchDoc} />}
+      {translateDoc && (
+        <TranslateDocumentModal
+          docName={translateDoc.title || translateDoc.sourceFilename || 'document'}
+          onTranslate={(language) => api.translateProjectKnowledge(project.id, translateDoc.id, language)}
+          onClose={() => setTranslateDoc(null)}
+        />
+      )}
       {confirmDelete && (
         <ConfirmDeleteModal
           title={project.title}

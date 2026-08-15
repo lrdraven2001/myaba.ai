@@ -70,6 +70,21 @@ public class TranslationService {
         return LANGUAGES.getOrDefault(code, code);
     }
 
+    /** Source MIME for layout-preserving translation, or null when unsupported (→ text fallback). */
+    public static String docMime(String filename) {
+        String n = filename == null ? "" : filename.toLowerCase();
+        if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (n.endsWith(".pdf"))  return "application/pdf";
+        return null;
+    }
+
+    /** "intake.pdf" + es → "intake_es.pdf" (matches the translated output format). */
+    public static String outFilename(String sourceName, String lang, String mime) {
+        String base = sourceName == null ? "document" : sourceName.replaceAll("\\.[^.]+$", "");
+        String ext  = (mime != null && mime.contains("pdf")) ? "pdf" : "docx";
+        return base + "_" + lang + "." + ext;
+    }
+
     /** Translated document bytes + the output MIME type (same format as the input). */
     public record TranslatedDoc(byte[] bytes, String mimeType) {}
 

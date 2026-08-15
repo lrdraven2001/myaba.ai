@@ -10,6 +10,7 @@ import ai.myaba.service.AuthorizationService;
 import ai.myaba.service.ChatService;
 import ai.myaba.service.ClientService;
 import ai.myaba.service.DocumentFormatService;
+import ai.myaba.service.TranslationService;
 import ai.myaba.service.DocumentPersistenceService;
 import ai.myaba.service.OrgService;
 import com.google.cloud.firestore.Firestore;
@@ -554,7 +555,7 @@ public class ClientController {
             byte[] outBytes;
             String outMime;
             Object gcsObject = doc.get("gcsObject");
-            String srcMime   = docMime(sourceName);
+            String srcMime   = TranslationService.docMime(sourceName);
             if (gcsObject instanceof String path && !path.isBlank() && srcMime != null) {
                 // Layout-preserving: translate the original docx/pdf in place.
                 byte[] src = gcsStorageService.download(user.getOrgId(), path);
@@ -576,7 +577,7 @@ public class ClientController {
                 outMime  = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             }
 
-            String filename = outFilename(sourceName, lang, outMime);
+            String filename = TranslationService.outFilename(sourceName, lang, outMime);
             String preview  = "";
             try { preview = documentFormatService.extractText(filename, outBytes, false); }
             catch (Exception ignore) { /* preview is best-effort */ }
@@ -598,21 +599,6 @@ public class ClientController {
             log.error("translateClientDocument failed {}/{} lang={}: {}", clientId, docId, lang, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));
         }
-    }
-
-    /** Source MIME for layout-preserving translation, or null when unsupported (→ text fallback). */
-    private static String docMime(String filename) {
-        String n = filename == null ? "" : filename.toLowerCase();
-        if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        if (n.endsWith(".pdf"))  return "application/pdf";
-        return null;
-    }
-
-    /** "intake.pdf" + es → "intake_es.pdf" (matches the translated output format). */
-    private static String outFilename(String sourceName, String lang, String mime) {
-        String base = sourceName == null ? "document" : sourceName.replaceAll("\\.[^.]+$", "");
-        String ext  = (mime != null && mime.contains("pdf")) ? "pdf" : "docx";
-        return base + "_" + lang + "." + ext;
     }
 
     // ── DELETE /api/clients/{clientId}/documents/{docId} ──────────────────────
