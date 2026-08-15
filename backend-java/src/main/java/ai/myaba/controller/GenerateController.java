@@ -239,8 +239,9 @@ public class GenerateController {
         res.put("document", title);
         if (lang != null) res.put("language", translationService.label(lang));
         // Steer the model away from pasting a translated copy into the reply.
-        res.put("note", "A download card for the translated file has been shown to the user. "
-                + "Briefly confirm it's ready; do NOT translate the document text yourself.");
+        res.put("note", "A download button for this document is now shown to the user below your reply. "
+                + "Tell them their translation is ready and to click the card below to download it in its "
+                + "original format. Do NOT translate the document text yourself in your reply.");
         return res;
     }
 
@@ -1047,10 +1048,15 @@ public class GenerateController {
                 .chatId(req.getChatId())
                 .redactedTokenCount(chatRedactCount)
                 .groundednessScore(extractGroundednessScore(aclxResult))
-                // Only surface download cards on a delivered reply — a blocked/redacted
-                // turn must not hand the user a translation of content ACLX withheld.
-                .translations(("BLOCK".equals(decision) || "ESCALATE".equals(decision))
-                        ? null : (translationOffers.isEmpty() ? null : translationOffers))
+                // Always surface the download card when the tool produced an offer,
+                // independent of the reply's ACLX decision. The offer carries no
+                // document content — only identifiers — and the actual translation
+                // runs through the translate endpoint, which enforces access on its
+                // own (same posture as the Copy/Word export buttons, which show on
+                // every reply regardless of decision). Gating it on the reply's
+                // decision only produced a broken UX: the model says "use the card
+                // above" while the card was silently removed.
+                .translations(translationOffers.isEmpty() ? null : translationOffers)
                 .build());
     }
 

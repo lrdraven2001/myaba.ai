@@ -228,6 +228,7 @@ public class GeminiService implements LlmProvider {
         for (Map<String, Object> d : functionDeclarations) names.add((String) d.get("name"));
 
         List<Map<String, Object>> contents = new ArrayList<>(toContents(messages));
+        int malformedRetries = 0;
         for (int round = 0; round <= MAX_TOOL_ROUNDS; round++) {
             Map<?, ?> candidate = callGeminiCandidate(model, config, system, contents, tools);
             @SuppressWarnings("unchecked")
@@ -236,8 +237,25 @@ public class GeminiService implements LlmProvider {
             if (calls.isEmpty()) {
                 String text = extractText(content);
                 if (text == null || text.isBlank()) {
-                    throw new RuntimeException("Gemini returned no text (finishReason="
-                            + candidate.get("finishReason") + ")");
+                    Object finish = candidate.get("finishReason");
+                    // Gemini (especially the thinking/reasoning model) intermittently emits a
+                    // MALFORMED_FUNCTION_CALL: it tried to call a tool but produced an unparseable
+                    // call, so there's neither a usable functionCall nor any text. Retry a couple
+                    // of times (usually transient); if it persists, fall back to a tool-free answer
+                    // so the chat still responds instead of hard-failing.
+                    if ("MALFORMED_FUNCTION_CALL".equals(String.valueOf(finish))) {
+                        if (malformedRetries < 2) {
+                            malformedRetries++;
+                            log.warn("Gemini ({}) malformed function call (attempt {}/2) — retrying",
+                                    model, malformedRetries);
+                            round--; // this attempt produced nothing usable; don't spend a tool round
+                            continue;
+                        }
+                        log.warn("Gemini ({}) malformed function call persisted — answering without tools",
+                                model);
+                        return callGeminiMessages(model, config, system, messages);
+                    }
+                    throw new RuntimeException("Gemini returned no text (finishReason=" + finish + ")");
                 }
                 return text;
             }
