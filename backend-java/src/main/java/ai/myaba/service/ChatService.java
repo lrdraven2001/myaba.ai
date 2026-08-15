@@ -555,6 +555,58 @@ public class ChatService {
         return ref.getId();
     }
 
+    /**
+     * Persist a chat attachment whose ORIGINAL file is stored in GCS (so it can later
+     * be translated with its layout/branding preserved). The id is supplied by the
+     * caller — it built the GCS object path from it before the file was uploaded.
+     * Owner/member only.
+     */
+    public String addChatAttachmentWithOriginal(AppUser user, String chatId, String id, String name,
+                                                String content, String sourceFilename,
+                                                String gcsObject, String contentType) throws Exception {
+        Map<String, Object> chat = fetchChat(user.getOrgId(), chatId);
+        if (!canManageChat(user, chat)) throw new SecurityException("Cannot modify chat: " + chatId);
+
+        String now = TimestampUtil.now();
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("name",           name != null && !name.isBlank() ? name : "attachment");
+        doc.put("content",        content != null ? content : "");
+        doc.put("sourceFilename", sourceFilename != null && !sourceFilename.isBlank() ? sourceFilename : name);
+        doc.put("characters",     content != null ? content.length() : 0);
+        doc.put("createdAt",      now);
+        doc.put("createdBy",      user.getUid());
+        if (gcsObject != null && !gcsObject.isBlank())     doc.put("gcsObject", gcsObject);
+        if (contentType != null && !contentType.isBlank()) doc.put("contentType", contentType);
+
+        if (devMode) {
+            doc.put("id", id);
+            devChatAttachments.computeIfAbsent(chatId, k -> new ArrayList<>()).add(doc);
+            return id;
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").document(chatId)
+                .collection("attachments").document(id).set(doc).get();
+        return id;
+    }
+
+    /** Fetch a single chat attachment (read-gated via {@link #getChat}). Null if absent. */
+    public Map<String, Object> getChatAttachment(AppUser user, String chatId, String attId) throws Exception {
+        getChat(user, chatId); // authorization check
+        if (devMode) {
+            return devChatAttachments.getOrDefault(chatId, List.of()).stream()
+                    .filter(a -> attId.equals(a.get("id"))).findFirst().orElse(null);
+        }
+        Firestore db = FirestoreClient.getFirestore();
+        var snap = db.collection(FirestoreCollections.ORGANIZATIONS).document(user.getOrgId())
+                .collection("chats").document(chatId)
+                .collection("attachments").document(attId).get().get();
+        if (!snap.exists()) return null;
+        Map<String, Object> data = new HashMap<>(snap.getData());
+        data.put("id", snap.getId());
+        return data;
+    }
+
     /** List a chat's attachments (id, name, content, …), oldest-first. Any member may read. */
     public List<Map<String, Object>> getChatAttachments(AppUser user, String chatId) throws Exception {
         getChat(user, chatId); // authorization check

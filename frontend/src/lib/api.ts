@@ -206,6 +206,33 @@ export const api = {
       body: JSON.stringify({ name, content, sourceFilename }),
     }),
 
+  /** Upload a file to this chat, STORING THE ORIGINAL in GCS (extracted text still
+   *  feeds chat context) so it can later be translated with layout/branding preserved. */
+  uploadChatAttachmentFile: async (chatId: string, file: File):
+      Promise<{ id: string; name: string; content?: string; hasOriginal?: boolean }> => {
+    const headers = await getAuthHeaders();
+    const h: Record<string, string> = {};
+    if (headers['X-Firebase-Token']) h['X-Firebase-Token'] = headers['X-Firebase-Token'];
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/chats/${chatId}/attachments/upload`, {
+      method: 'POST', headers: h, body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `Failed to upload document (HTTP ${res.status})`);
+    }
+    return res.json();
+  },
+
+  /** Translate a chat attachment. Layout-preserving when an original was stored;
+   *  text fallback otherwise. Returns the translated file (base64) + a preview. */
+  translateChatAttachment: (chatId: string, attachmentId: string, language: string) =>
+    request<{ language: string; filename: string; mimeType: string; contentBase64: string; previewText: string }>(
+      `/chats/${chatId}/attachments/${attachmentId}/translate`,
+      { method: 'POST', body: JSON.stringify({ language }) },
+    ),
+
   /** Remove one working document from a chat. */
   deleteChatAttachment: (chatId: string, attachmentId: string) =>
     request<void>(`/chats/${chatId}/attachments/${attachmentId}`, { method: 'DELETE' }),

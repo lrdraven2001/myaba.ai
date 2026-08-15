@@ -328,10 +328,11 @@ export interface AclxMessageLabel {
  * via the existing translate endpoint (nothing stored server-side).
  */
 export interface TranslationOffer {
-  scope: 'client' | 'project';
+  scope: 'client' | 'project' | 'chat';
   clientId?: string;
   projectId?: string;
-  docId: string;
+  chatId?: string;
+  docId: string;           // for scope 'chat' this is the attachment id
   docTitle: string;
   language?: string;       // request code (es/ar/fr/zh-CN/de) if the user named one
   languageLabel?: string;

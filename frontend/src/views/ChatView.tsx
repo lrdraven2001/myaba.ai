@@ -407,7 +407,7 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
     // Uploaded files become PERSISTENT chat documents (stay attached to this chat
     // across messages/refreshes). Templates and library file references stay
     // one-shot (attached to the next message only).
-    const uploads = files.filter((f) => f.source === 'upload' && f.content && f.content.trim());
+    const uploads = files.filter((f) => f.source === 'upload' && ((f.content && f.content.trim()) || f.file));
     const oneShot = files.filter((f) => f.source !== 'upload');
     setAttachedFiles(oneShot);
 
@@ -417,16 +417,22 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         // Advise on a duplicate: same filename OR identical extracted content.
         const dupe = existing.find((d) =>
           d.name.trim().toLowerCase() === f.name.trim().toLowerCase() ||
-          d.content === f.content);
+          (!!f.content && d.content === f.content));
         if (dupe && !window.confirm(
           `"${f.name}" is already attached to this chat. Upload it again anyway?`)) {
           continue;
         }
         try {
-          const res = await api.addChatAttachment(activeChatId, f.name, f.content as string, f.name);
+          // Prefer the multipart upload when we still hold the original File — it stores
+          // the original in GCS so the doc can be translated with its layout/branding
+          // preserved. Fall back to the text-only path (templates, no File in hand).
+          const res = f.file
+            ? await api.uploadChatAttachmentFile(activeChatId, f.file)
+            : await api.addChatAttachment(activeChatId, f.name, f.content as string, f.name);
+          const content = ('content' in res && res.content) ? res.content : (f.content ?? '');
           setChatDocsByChat((prev) => ({
             ...prev,
-            [activeChatId]: [...(prev[activeChatId] ?? []), { id: res.id, name: f.name, content: f.content as string }],
+            [activeChatId]: [...(prev[activeChatId] ?? []), { id: res.id, name: f.name, content }],
           }));
         } catch (e) {
           setAttachError(`Couldn't attach ${f.name}: ${e instanceof Error ? e.message : 'save failed'}`);
@@ -1345,7 +1351,9 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           onTranslate={(language) =>
             activeTranslate.scope === 'client'
               ? api.translateClientDocument(activeTranslate.clientId ?? '', activeTranslate.docId, language)
-              : api.translateProjectKnowledge(activeTranslate.projectId ?? '', activeTranslate.docId, language)}
+              : activeTranslate.scope === 'project'
+                ? api.translateProjectKnowledge(activeTranslate.projectId ?? '', activeTranslate.docId, language)
+                : api.translateChatAttachment(activeTranslate.chatId ?? '', activeTranslate.docId, language)}
           onClose={() => setActiveTranslate(null)}
         />
       )}

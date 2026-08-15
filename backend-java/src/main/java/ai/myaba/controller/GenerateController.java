@@ -158,7 +158,8 @@ public class GenerateController {
     private static final Map<String, Object> TRANSLATE_DOCUMENT_DECLARATION = Map.of(
             "name", "translate_document",
             "description", "Produce a downloadable translation of a document ATTACHED to this chat "
-                    + "(a client document or a project knowledge file) into another language, "
+                    + "(a client document, a project knowledge file, or a file uploaded to this chat) "
+                    + "into another language, "
                     + "PRESERVING the original format (Word stays Word, PDF stays PDF). Use this "
                     + "whenever the user asks to translate an attached document. Do NOT translate the "
                     + "document text yourself in your reply — call this tool; the user is shown a "
@@ -185,7 +186,7 @@ public class GenerateController {
      * attached project's knowledge documents.
      */
     private Map<String, Object> executeTranslateDocument(
-            AppUser user, Map<String, Object> args, String clientId, String projectId,
+            AppUser user, Map<String, Object> args, String clientId, String projectId, String chatId,
             List<Map<String, Object>> offersOut) {
         if (!translationService.isEnabled()) {
             return Map.of("error", "Document translation is not configured on the server.");
@@ -211,6 +212,20 @@ public class GenerateController {
                     if (titleMatches(query, d)) { match = d; scope = "project"; ownerId = projectId; break; }
                 }
             }
+            // Chat working documents. Prefer a match with a stored original (gcsObject) so
+            // the translation preserves layout/branding — if the only match is text-only,
+            // still offer it (the download falls back to a clean .docx of the translated text).
+            if (match == null && chatId != null && !chatId.isBlank()) {
+                Map<String, Object> textOnly = null;
+                for (Map<String, Object> a : chatService.getChatAttachments(user, chatId)) {
+                    if (!titleMatches(query, a)) continue;
+                    Object gcs = a.get("gcsObject");
+                    if (gcs instanceof String s && !s.isBlank()) { match = a; break; }
+                    if (textOnly == null) textOnly = a;
+                }
+                if (match != null) { scope = "chat"; ownerId = chatId; }
+                else if (textOnly != null) { match = textOnly; scope = "chat"; ownerId = chatId; }
+            }
         } catch (Exception e) {
             log.warn("translate_document resolution failed: {}", e.getMessage());
         }
@@ -220,10 +235,16 @@ public class GenerateController {
         }
 
         String docId = String.valueOf(match.get("id"));
-        String title = String.valueOf(match.getOrDefault("title", match.getOrDefault("sourceFilename", query)));
+        String title = String.valueOf(match.getOrDefault("title",
+                match.getOrDefault("name", match.getOrDefault("sourceFilename", query))));
         Map<String, Object> offer = new HashMap<>();
         offer.put("scope", scope);
-        offer.put("client".equals(scope) ? "clientId" : "projectId", ownerId);
+        switch (scope) {
+            case "client"  -> offer.put("clientId", ownerId);
+            case "project" -> offer.put("projectId", ownerId);
+            case "chat"    -> offer.put("chatId", ownerId);
+            default -> { /* unreachable */ }
+        }
         offer.put("docId", docId);
         offer.put("docTitle", title);
         if (lang != null) {
@@ -245,13 +266,14 @@ public class GenerateController {
         return res;
     }
 
-    /** Case-insensitive title/filename match between the model's reference and a stored doc. */
+    /** Case-insensitive title/name/filename match between the model's reference and a stored doc. */
     private static boolean titleMatches(String query, Map<String, Object> d) {
         String q = query.toLowerCase();
-        String title = String.valueOf(d.getOrDefault("title", "")).toLowerCase();
-        String fn = String.valueOf(d.getOrDefault("sourceFilename", "")).toLowerCase();
-        return (!title.isBlank() && (title.contains(q) || q.contains(title)))
-                || (!fn.isBlank() && (fn.contains(q) || q.contains(fn)));
+        for (String key : new String[]{"title", "name", "sourceFilename"}) {
+            String v = String.valueOf(d.getOrDefault(key, "")).toLowerCase();
+            if (!v.isBlank() && (v.contains(q) || q.contains(v))) return true;
+        }
+        return false;
     }
 
     /**
@@ -263,7 +285,7 @@ public class GenerateController {
      */
     private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
                            boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut) {
-        return runChat(user, systemPrompt, messages, reasoning, toolSourcesOut, null, null, null);
+        return runChat(user, systemPrompt, messages, reasoning, toolSourcesOut, null, null, null, null);
     }
 
     /**
@@ -276,10 +298,12 @@ public class GenerateController {
      */
     private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
                            boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut,
-                           String clientId, String projectId,
+                           String clientId, String projectId, String chatId,
                            List<Map<String, Object>> translationOffersOut) {
         boolean canTranslate = translationOffersOut != null && translationService.isEnabled()
-                && ((clientId != null && !clientId.isBlank()) || (projectId != null && !projectId.isBlank()));
+                && ((clientId != null && !clientId.isBlank())
+                    || (projectId != null && !projectId.isBlank())
+                    || (chatId != null && !chatId.isBlank()));
         List<Map<String, Object>> tools = new ArrayList<>();
         if (placeLookupService.isEnabled()) tools.add(LOOKUP_PLACE_DECLARATION);
         if (webResearchService.isEnabled()) tools.add(RESEARCH_WEB_DECLARATION);
@@ -290,7 +314,7 @@ public class GenerateController {
         return aiService.chatWithTools(systemPrompt, messages, reasoning, tools,
                 (name, args) -> {
                     if ("translate_document".equals(name)) {
-                        return executeTranslateDocument(user, args, clientId, projectId, translationOffersOut);
+                        return executeTranslateDocument(user, args, clientId, projectId, chatId, translationOffersOut);
                     }
                     Map<String, Object> result = switch (name) {
                         case "lookup_place" -> executeLookupPlace(user, args);
@@ -869,7 +893,7 @@ public class GenerateController {
         String rawReply;
         try {
             rawReply = runChat(user, systemPrompt, messages, reasoning, toolSources,
-                    req.getClientId(), attachedProjectId, translationOffers);
+                    req.getClientId(), attachedProjectId, req.getChatId(), translationOffers);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));

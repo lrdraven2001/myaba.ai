@@ -99,6 +99,10 @@ public class GcsStorageService {
         return "orgs/" + orgId + "/projects/" + projectId + "/knowledge/" + docId + "/" + sanitize(filename);
     }
 
+    public String chatObjectPath(String orgId, String chatId, String attId, String filename) {
+        return "orgs/" + orgId + "/chats/" + chatId + "/attachments/" + attId + "/" + sanitize(filename);
+    }
+
     // ── Operations ──────────────────────────────────────────────────────────────
 
     /**
