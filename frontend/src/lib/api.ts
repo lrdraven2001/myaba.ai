@@ -23,6 +23,7 @@ import type {
   RoleConfig,
   SearchResponse,
   SubjectAuthorization,
+  TranslationOffer,
   Template,
   UsageSummary,
   UsageHistoryEntry,
@@ -346,7 +347,7 @@ export const api = {
     contextDocs?: { name: string; content: string }[],
     signal?: AbortSignal,
   ) =>
-    request<{ reply: string; decision: string; chatId?: string }>('/chat', {
+    request<{ reply: string; decision: string; chatId?: string; translations?: TranslationOffer[] }>('/chat', {
       method: 'POST',
       body: JSON.stringify({
         message,

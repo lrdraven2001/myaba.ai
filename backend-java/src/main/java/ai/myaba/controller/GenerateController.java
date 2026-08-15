@@ -15,6 +15,7 @@ import ai.myaba.service.PlaceLookupService;
 import ai.myaba.service.PolicyRagService;
 import ai.myaba.service.PolicyService;
 import ai.myaba.service.ProjectService;
+import ai.myaba.service.TranslationService;
 import ai.myaba.service.ReviewQueueService;
 import ai.myaba.service.SubjectAuthorizationService;
 import ai.myaba.service.UsageService;
@@ -61,6 +62,7 @@ public class GenerateController {
     private final ProjectService projectService;
     private final UsageService usageService;
     private final DocumentPersistenceService documentPersistenceService;
+    private final TranslationService translationService;
     private final PlaceLookupService placeLookupService;
     private final WebResearchService webResearchService;
 
@@ -146,6 +148,111 @@ public class GenerateController {
         return result;
     }
 
+    // ── translate_document chat tool ──────────────────────────────────────────
+    // Offers a downloadable, LAYOUT-PRESERVING translation of a document attached
+    // to the chat. The tool does NOT translate text into the reply (that loses
+    // formatting) — it resolves which attached document the user means and emits a
+    // structured "offer" that the client renders as a download card wired to the
+    // existing translate endpoint. No translated bytes are stored server-side.
+
+    private static final Map<String, Object> TRANSLATE_DOCUMENT_DECLARATION = Map.of(
+            "name", "translate_document",
+            "description", "Produce a downloadable translation of a document ATTACHED to this chat "
+                    + "(a client document or a project knowledge file) into another language, "
+                    + "PRESERVING the original format (Word stays Word, PDF stays PDF). Use this "
+                    + "whenever the user asks to translate an attached document. Do NOT translate the "
+                    + "document text yourself in your reply — call this tool; the user is shown a "
+                    + "download card that generates the translated file. Supported languages: Spanish, "
+                    + "Arabic, French, Chinese, German.",
+            "parameters", Map.of(
+                    "type", "OBJECT",
+                    "properties", Map.of(
+                            "document", Map.of(
+                                    "type", "STRING",
+                                    "description", "Title or filename of the attached document to translate, "
+                                            + "as the user referred to it."),
+                            "language", Map.of(
+                                    "type", "STRING",
+                                    "description", "Target language code: es, ar, fr, zh-CN, or de. "
+                                            + "Omit if the user did not specify a language.")),
+                    "required", List.of("document")));
+
+    /**
+     * Resolve the attached document the user named and record a translation OFFER
+     * (never the document content, never translated bytes). The offer carries only
+     * identifiers; the client turns it into a download card that calls the existing
+     * translate endpoint. Tries the attached client's documents first, then the
+     * attached project's knowledge documents.
+     */
+    private Map<String, Object> executeTranslateDocument(
+            AppUser user, Map<String, Object> args, String clientId, String projectId,
+            List<Map<String, Object>> offersOut) {
+        if (!translationService.isEnabled()) {
+            return Map.of("error", "Document translation is not configured on the server.");
+        }
+        String query = String.valueOf(args.getOrDefault("document", "")).trim();
+        if (query.isBlank()) {
+            return Map.of("error", "Tell me which attached document to translate.");
+        }
+        String lang = translationService.resolveLanguage(
+                args.get("language") == null ? null : String.valueOf(args.get("language")));
+
+        Map<String, Object> match = null;
+        String scope = null, ownerId = null;
+        try {
+            if (clientId != null && !clientId.isBlank()) {
+                for (Map<String, Object> d : documentPersistenceService.loadClientContextDocs(
+                        user.getOrgId(), clientId, 50, 2000)) {
+                    if (titleMatches(query, d)) { match = d; scope = "client"; ownerId = clientId; break; }
+                }
+            }
+            if (match == null && projectId != null && !projectId.isBlank()) {
+                for (Map<String, Object> d : projectService.getKnowledgeDocs(user, projectId)) {
+                    if (titleMatches(query, d)) { match = d; scope = "project"; ownerId = projectId; break; }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("translate_document resolution failed: {}", e.getMessage());
+        }
+        if (match == null) {
+            return Map.of("error", "I couldn't find an attached document matching \"" + query + "\". "
+                    + "Ask the user to confirm the document name, or that it's attached to this chat.");
+        }
+
+        String docId = String.valueOf(match.get("id"));
+        String title = String.valueOf(match.getOrDefault("title", match.getOrDefault("sourceFilename", query)));
+        Map<String, Object> offer = new HashMap<>();
+        offer.put("scope", scope);
+        offer.put("client".equals(scope) ? "clientId" : "projectId", ownerId);
+        offer.put("docId", docId);
+        offer.put("docTitle", title);
+        if (lang != null) {
+            offer.put("language", lang);
+            offer.put("languageLabel", translationService.label(lang));
+        }
+        offersOut.add(offer);
+        auditService.log("CHAT_TRANSLATE_OFFERED", user.getOrgId(), user.getUid(),
+                "client".equals(scope) ? ownerId : null, docId, null, "OK", lang);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("status", "ready");
+        res.put("document", title);
+        if (lang != null) res.put("language", translationService.label(lang));
+        // Steer the model away from pasting a translated copy into the reply.
+        res.put("note", "A download card for the translated file has been shown to the user. "
+                + "Briefly confirm it's ready; do NOT translate the document text yourself.");
+        return res;
+    }
+
+    /** Case-insensitive title/filename match between the model's reference and a stored doc. */
+    private static boolean titleMatches(String query, Map<String, Object> d) {
+        String q = query.toLowerCase();
+        String title = String.valueOf(d.getOrDefault("title", "")).toLowerCase();
+        String fn = String.valueOf(d.getOrDefault("sourceFilename", "")).toLowerCase();
+        return (!title.isBlank() && (title.contains(q) || q.contains(title)))
+                || (!fn.isBlank() && (fn.contains(q) || q.contains(fn)));
+    }
+
     /**
      * Route chat through the model, offering whichever lookup tools are configured.
      * Successful tool results are appended to {@code toolSourcesOut} as ACLX
@@ -155,14 +262,35 @@ public class GenerateController {
      */
     private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
                            boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut) {
+        return runChat(user, systemPrompt, messages, reasoning, toolSourcesOut, null, null, null);
+    }
+
+    /**
+     * Route chat through the model with the configured tools. When a client or
+     * project is attached ({@code clientId}/{@code projectId} non-null) and
+     * translation is configured, the {@code translate_document} tool is offered and
+     * its resolved offers are collected into {@code translationOffersOut} for the
+     * client to render as download cards. The translate tool result is NOT added as
+     * an ACLX grounding source — it carries no document content, only identifiers.
+     */
+    private String runChat(AppUser user, String systemPrompt, List<Map<String, String>> messages,
+                           boolean reasoning, List<ai.myaba.model.dto.AclxRequest.Source> toolSourcesOut,
+                           String clientId, String projectId,
+                           List<Map<String, Object>> translationOffersOut) {
+        boolean canTranslate = translationOffersOut != null && translationService.isEnabled()
+                && ((clientId != null && !clientId.isBlank()) || (projectId != null && !projectId.isBlank()));
         List<Map<String, Object>> tools = new ArrayList<>();
         if (placeLookupService.isEnabled()) tools.add(LOOKUP_PLACE_DECLARATION);
         if (webResearchService.isEnabled()) tools.add(RESEARCH_WEB_DECLARATION);
+        if (canTranslate) tools.add(TRANSLATE_DOCUMENT_DECLARATION);
         if (tools.isEmpty()) {
             return aiService.chat(systemPrompt, messages, reasoning);
         }
         return aiService.chatWithTools(systemPrompt, messages, reasoning, tools,
                 (name, args) -> {
+                    if ("translate_document".equals(name)) {
+                        return executeTranslateDocument(user, args, clientId, projectId, translationOffersOut);
+                    }
                     Map<String, Object> result = switch (name) {
                         case "lookup_place" -> executeLookupPlace(user, args);
                         case "research_web" -> executeResearchWeb(user, args);
@@ -734,10 +862,13 @@ public class GenerateController {
         // AI seat tier: a lite seat is Flash-only, so it's never routed to the reasoning
         // model — the chat is simply answered on the fast tier (downgraded, not blocked).
         boolean reasoning = (clientAttached || projectAttached) && user.aiTier().allowsReasoningModel();
+        String attachedProjectId = projectAttached ? String.valueOf(chat.get("projectId")) : null;
         List<ai.myaba.model.dto.AclxRequest.Source> toolSources = new ArrayList<>();
+        List<Map<String, Object>> translationOffers = new ArrayList<>();
         String rawReply;
         try {
-            rawReply = runChat(user, systemPrompt, messages, reasoning, toolSources);
+            rawReply = runChat(user, systemPrompt, messages, reasoning, toolSources,
+                    req.getClientId(), attachedProjectId, translationOffers);
         } catch (Exception e) {
             log.error("AI chat failed: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", "Chat failed"));
@@ -916,6 +1047,10 @@ public class GenerateController {
                 .chatId(req.getChatId())
                 .redactedTokenCount(chatRedactCount)
                 .groundednessScore(extractGroundednessScore(aclxResult))
+                // Only surface download cards on a delivered reply — a blocked/redacted
+                // turn must not hand the user a translation of content ACLX withheld.
+                .translations(("BLOCK".equals(decision) || "ESCALATE".equals(decision))
+                        ? null : (translationOffers.isEmpty() ? null : translationOffers))
                 .build());
     }
 

@@ -322,6 +322,21 @@ export interface AclxMessageLabel {
   sensitivity?: 'HIGH' | 'MEDIUM' | 'LOW' | string;
 }
 
+/**
+ * A downloadable translation the assistant offered for a document attached to the
+ * chat. Rendered as an inline download card; the actual translation runs on click
+ * via the existing translate endpoint (nothing stored server-side).
+ */
+export interface TranslationOffer {
+  scope: 'client' | 'project';
+  clientId?: string;
+  projectId?: string;
+  docId: string;
+  docTitle: string;
+  language?: string;       // request code (es/ar/fr/zh-CN/de) if the user named one
+  languageLabel?: string;
+}
+
 export interface ChatMessage {
   id: string;
   chatId?: string;
@@ -334,6 +349,8 @@ export interface ChatMessage {
   aclxLabel?: AclxMessageLabel;
   /** ACLX content_id for this response — links to the review queue / audit log entry. */
   aclxContentId?: string;
+  /** Downloadable translation offers from the translate_document tool (assistant only, ephemeral). */
+  translations?: TranslationOffer[];
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────

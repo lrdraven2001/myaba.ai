@@ -26,12 +26,15 @@ const TRANSLATE_LANGUAGES: Array<{ code: string; label: string }> = [
  * owns the language picker, the busy/error state, the preview, and the base64 →
  * Blob download. Nothing is stored server-side — this is preview + download.
  */
-export default function TranslateDocumentModal({ docName, onTranslate, onClose }: {
+export default function TranslateDocumentModal({ docName, onTranslate, onClose, initialLanguage }: {
   docName: string;
   onTranslate: (language: string) => Promise<TranslateResult>;
   onClose: () => void;
+  /** Preselect a language (e.g. one the user named in chat). Falls back to Spanish. */
+  initialLanguage?: string;
 }) {
-  const [language, setLanguage] = useState('es');
+  const [language, setLanguage] = useState(
+    initialLanguage && TRANSLATE_LANGUAGES.some((l) => l.code === initialLanguage) ? initialLanguage : 'es');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<TranslateResult | null>(null);

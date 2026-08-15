@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle, faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faTimes, faShieldAlt, faUsers, faFileAlt, faPlus, faArrowCircleUp, faBookmark, faCheckCircle, faExclamationTriangle, faSpinner, faBan, faPen, faLock, faFileWord, faFileExcel, faChevronDown, faCheck, faThumbsUp, faThumbsDown, faCopy, faStopCircle, faArrowLeft, faLanguage } from '@fortawesome/free-solid-svg-icons';
 import { api, ApiError } from '../lib/api';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuth } from '../contexts/AuthContext';
+import TranslateDocumentModal from '../components/TranslateDocumentModal';
 import type { AttachedFile } from '../lib/fakeData';
-import type { Chat, ChatMessage } from '../types';
+import type { Chat, ChatMessage, TranslationOffer } from '../types';
 import { canUseGeneralChat, hasPhiAccess } from '../types';
 import ChatSidebar from '../components/chat/ChatSidebar';
 import type { SidebarClient } from '../components/chat/ChatSidebar';
@@ -210,6 +211,8 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
   const [loadingMessages, setLoadingMessages]   = useState(false);
   const [showNewChat, setShowNewChat]           = useState(false);
   const [showFileAttach, setShowFileAttach]     = useState(false);
+  // The translation offer whose download card the user clicked (opens the modal).
+  const [activeTranslate, setActiveTranslate]   = useState<TranslationOffer | null>(null);
   const [attachedFiles, setAttachedFiles]       = useState<AttachedFile[]>([]);
   // Persistent chat documents (uploads that stay attached to THIS chat across
   // messages/refreshes), keyed by chatId. Not stored in any library.
@@ -662,6 +665,8 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
         content:      res.reply ?? '',
         timestamp:    new Date().toISOString(),
         aclxDecision: res.decision as ChatMessage['aclxDecision'],
+        // Ephemeral download cards for any documents the assistant offered to translate.
+        translations: res.translations,
       };
       setMessagesByChat((prev) => ({
         ...prev,
@@ -1038,6 +1043,27 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
                           <AclxBadge decision={msg.aclxDecision} />
                         )}
                       </div>
+                      {/* Inline translation download cards — one per document the
+                          assistant offered to translate. Clicking opens the shared
+                          translate dialog wired to the layout-preserving endpoint. */}
+                      {msg.role === 'assistant' && msg.translations?.map((offer) => (
+                        <button
+                          key={`${offer.docId}-${offer.language ?? ''}`}
+                          onClick={() => setActiveTranslate(offer)}
+                          className="mt-1.5 flex items-center gap-2.5 px-3 py-2 rounded-xl border border-blue-100 bg-blue-50/60 hover:bg-blue-50 text-left transition-colors max-w-[75%]"
+                          title="Translate this document and download it in its original format"
+                        >
+                          <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#EEF4FF' }}>
+                            <FontAwesomeIcon icon={faLanguage} style={{ color: '#1E88FF', fontSize: 13 }} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-800 truncate">{offer.docTitle}</span>
+                            <span className="block text-xs text-blue-600">
+                              Translate{offer.languageLabel ? ` to ${offer.languageLabel}` : ''} &amp; download
+                            </span>
+                          </span>
+                        </button>
+                      ))}
                       {/* Document actions — shown on every AI response (not only
                           compliance-ALLOW ones), so Copy / Word / feedback are
                           always available and survive a refresh. */}
@@ -1310,6 +1336,17 @@ export default function ChatView({ initialChatId, initialClientId, baaAccepted =
           rawContent={templateSourceContent}
           clientId={activeChat?.clientId ?? null}
           onClose={() => setTemplateSourceContent(null)}
+        />
+      )}
+      {activeTranslate && (
+        <TranslateDocumentModal
+          docName={activeTranslate.docTitle}
+          initialLanguage={activeTranslate.language}
+          onTranslate={(language) =>
+            activeTranslate.scope === 'client'
+              ? api.translateClientDocument(activeTranslate.clientId ?? '', activeTranslate.docId, language)
+              : api.translateProjectKnowledge(activeTranslate.projectId ?? '', activeTranslate.docId, language)}
+          onClose={() => setActiveTranslate(null)}
         />
       )}
     </div>
