@@ -244,7 +244,7 @@ public class ChatController {
 
             String attId = java.util.UUID.randomUUID().toString();
             String objectPath = gcsStorageService.chatObjectPath(user.getOrgId(), chatId, attId, filename);
-            String gcsObject = gcsStorageService.upload(objectPath, file.getContentType(), bytes) ? objectPath : null;
+            String gcsObject = gcsStorageService.upload(user.getOrgId(), objectPath, file.getContentType(), bytes) ? objectPath : null;
 
             String id = chatService.addChatAttachmentWithOriginal(
                     user, chatId, attId, filename, content, filename, gcsObject, file.getContentType());

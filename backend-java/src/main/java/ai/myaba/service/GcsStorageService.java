@@ -107,11 +107,20 @@ public class GcsStorageService {
 
     /**
      * Upload original bytes. No-op returning false when GCS is disabled.
-     * Never throws — a storage hiccup must not fail the surrounding upload flow
-     * (the extracted text in Firestore is the critical artefact).
+     * Never throws on a storage hiccup — the extracted text in Firestore is the
+     * critical artefact — but DOES throw on a tenant-isolation violation: the
+     * object path must live under the caller's own {@code orgs/{orgId}/} prefix
+     * (the same invariant asserted on download/sign), so a path built for the
+     * wrong org can never write into another tenant's tree.
+     *
+     * @throws SecurityException if {@code objectPath} is outside the caller's org
      */
-    public boolean upload(String objectPath, String contentType, byte[] bytes) {
+    public boolean upload(String orgId, String objectPath, String contentType, byte[] bytes) {
         if (!isEnabled()) return false;
+        String prefix = "orgs/" + orgId + "/";
+        if (objectPath == null || !objectPath.startsWith(prefix)) {
+            throw new SecurityException("Object path outside caller org: " + objectPath);
+        }
         try {
             BlobInfo.Builder b = BlobInfo.newBuilder(BlobId.of(bucket, objectPath));
             if (contentType != null && !contentType.isBlank()) b.setContentType(contentType);

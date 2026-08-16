@@ -250,7 +250,7 @@ public class DocumentPersistenceService {
         if (contentType != null && !contentType.isBlank()) update.put("contentType", contentType);
         if (gcsStorageService.isEnabled()) {
             String objectPath = gcsStorageService.clientObjectPath(orgId, clientId, docId, filename);
-            if (gcsStorageService.upload(objectPath, contentType, bytes)) {
+            if (gcsStorageService.upload(orgId, objectPath, contentType, bytes)) {
                 update.put("gcsBucket", gcsStorageService.getBucket());
                 update.put("gcsObject", objectPath);
             }
