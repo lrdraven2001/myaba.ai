@@ -278,6 +278,9 @@ public class ProjectController {
             return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", "Document translation is not configured on the server."));
         }
+        if (projectId == null || projectId.isBlank() || docId == null || docId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing project or document id."));
+        }
         String lang = translationService.resolveLanguage(body == null ? null : body.get("language"));
         if (lang == null) {
             return ResponseEntity.badRequest().body(Map.of(

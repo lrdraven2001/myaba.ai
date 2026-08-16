@@ -350,6 +350,17 @@ public class ChatController {
             @AuthenticationPrincipal AppUser user,
             @PathVariable String chatId,
             @PathVariable String attachmentId) throws Exception {
+        // Remove the stored original (if any) so a removed chat document leaves no PHI
+        // behind in GCS. Best-effort + before the record delete, so a storage hiccup
+        // can't orphan the object silently.
+        try {
+            Map<String, Object> att = chatService.getChatAttachment(user, chatId, attachmentId);
+            if (att != null && att.get("gcsObject") instanceof String path && !path.isBlank()) {
+                gcsStorageService.delete(path);
+            }
+        } catch (Exception e) {
+            log.warn("Could not delete original for chat attachment {}/{}: {}", chatId, attachmentId, e.getMessage());
+        }
         chatService.deleteChatAttachment(user, chatId, attachmentId);
         return ResponseEntity.noContent().build();
     }
