@@ -353,7 +353,7 @@ public class TemplateService {
                         }
                     }
                 } catch (NumberFormatException ignored) {
-                    log.warn("Could not parse client DOB for de-identification: {}", dob);
+                    log.warn("Could not parse a client DOB for de-identification (value omitted from logs).");
                 }
             }
         }

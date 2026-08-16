@@ -141,8 +141,8 @@ public class EhrController {
             return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
                     .body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            log.error("EHR client search failed: org={} type={} q={}: {}",
-                    user.getOrgId(), type, query, e.getMessage());
+            log.error("EHR client search failed: org={} type={}: {}",
+                    user.getOrgId(), type, e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                     .body(Map.of("error", "EHR search failed: " + e.getMessage()));
         }

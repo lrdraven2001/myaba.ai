@@ -426,8 +426,8 @@ public class GenerateController {
                 InputGuard.Violation v = dlpViolation.get();
                 auditService.log("DOCUMENT_DLP_BLOCKED", user.getOrgId(), user.getUid(), req.getClientId(),
                         null, null, "BLOCK", null);
-                log.warn("DLP blocked document generation: user={} org={} code={} detected={}",
-                        user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
+                log.warn("DLP blocked document generation: user={} org={} code={}",
+                        user.getUid(), user.getOrgId(), v.code());
                 return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(Map.of(
                         "error",   "Input blocked by compliance guard",
                         "message", v.userMessage(),
@@ -815,8 +815,8 @@ public class GenerateController {
                 InputGuard.Violation v = guardViolation.get();
                 auditService.log("CHAT_INPUT_GUARD_BLOCKED", user.getOrgId(), user.getUid(),
                         req.getClientId(), null, null, "BLOCK", null);
-                log.warn("InputGuard blocked chat: user={} org={} code={} detected={}",
-                        user.getUid(), user.getOrgId(), v.code(), v.detectedValue());
+                log.warn("InputGuard blocked chat: user={} org={} code={}",
+                        user.getUid(), user.getOrgId(), v.code());
                 Map<String, Object> guardBody = new java.util.LinkedHashMap<>();
                 guardBody.put("error",    "Message blocked by input compliance guard");
                 guardBody.put("message",  v.userMessage());
