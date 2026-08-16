@@ -36,9 +36,9 @@ const PRIVACY: Section[] = [
     ],
     bullets: [
       'Customer-controlled PHI (client records and clinical content your organization enters) — we act as a Business Associate under a Business Associate Agreement (BAA) with your organization. The BAA governs PHI and controls where it conflicts with this policy.',
-      'Workforce account information (staff identity, role, login records) — we handle this to operate the service.',
-      'Website and security telemetry (logs, IP address, device and usage data) — we handle this to secure and improve the service.',
-      'Billing and business-contact data — we handle this to administer subscriptions and communications.',
+      'User account information your organization provides (staff identity, role, contact, and login records) — for this personal data we act as a processor/service provider on your organization’s behalf, and the Data Processing Addendum applies.',
+      'Service-operational data (application and security logs, IP address, and device/usage telemetry) — we act as an independent controller and use this data to operate, secure, and improve the Service. This data is designed to be free of PHI and is not processed on your instructions.',
+      'Billing and business-contact data — we act as an independent controller to administer subscriptions and communications.',
     ],
   },
   {
@@ -306,7 +306,7 @@ const DPA: Section[] = [
       'Subject matter and purpose: providing the Service and generating the documentation Customer requests.',
       'Duration: the term of the agreement.',
       'Categories of data subjects: Customer’s authorized users and business contacts.',
-      'Categories of Customer Personal Data: identity and contact details, account and role information, and usage/telemetry data. Clinical/PHI data is handled under the BAA, not this DPA.',
+      'Categories of Customer Personal Data: identity and contact details, and account and role information for your authorized users. Clinical/PHI data is handled under the BAA, not this DPA. Service-operational data — application and security logs, IP address, and device/usage telemetry — is processed by myABA as an independent controller to operate, secure, and improve the Service; it is not Customer Personal Data under this DPA and is governed by the Privacy Policy.',
     ],
   },
   {
