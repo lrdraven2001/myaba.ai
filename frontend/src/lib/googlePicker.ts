@@ -77,16 +77,25 @@ function showPicker(token: string, mode: 'file' | 'folder'): Promise<PickedDrive
       () =>
         new Promise<PickedDriveItem | null>((resolve) => {
           const g = (window as any).google;
-          const view = new g.picker.DocsView(
-            mode === 'folder' ? g.picker.ViewId.FOLDERS : g.picker.ViewId.DOCS,
-          )
-            .setIncludeFolders(true)
-            .setSelectFolderEnabled(mode === 'folder');
+          const viewId = mode === 'folder' ? g.picker.ViewId.FOLDERS : g.picker.ViewId.DOCS;
+          const buildView = (ownedByMe: boolean) => {
+            const v = new g.picker.DocsView(viewId)
+              .setIncludeFolders(true)
+              .setSelectFolderEnabled(mode === 'folder');
+            // Two tabs: the user's own Drive, and items others shared with them.
+            // "Shared with me" is just DocsView with ownership filtered off — still
+            // within the drive.file scope (the user grants access to whatever they pick).
+            if (!ownedByMe) v.setOwnedByMe(false);
+            return v;
+          };
+          const myDriveView = buildView(true);
+          const sharedWithMeView = buildView(false);
 
           const picker = new g.picker.PickerBuilder()
             .setOAuthToken(token)
             .setDeveloperKey(API_KEY)
-            .addView(view)
+            .addView(myDriveView)
+            .addView(sharedWithMeView)
             .setTitle(`Select a ${mode} from Google Drive`)
             .setCallback((data: any) => {
               if (data.action === g.picker.Action.PICKED) {
