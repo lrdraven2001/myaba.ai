@@ -378,8 +378,9 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
                 By using myABA.ai, you agree to use the platform solely for lawful ABA clinical
                 documentation purposes. You are responsible for maintaining the confidentiality of
                 your account credentials. Unauthorized sharing of access is prohibited. myABA.ai
-                reserves the right to suspend accounts that violate these terms. Full Terms of
-                Service are available at myaba.ai/terms.
+                reserves the right to suspend accounts that violate these terms. See the full{' '}
+                <a href="https://myaba.ai/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#1E88FF' }}>Terms of Service</a>{' '}
+                and <a href="https://myaba.ai/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#1E88FF' }}>Privacy Policy</a>.
               </div>
               <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={tosChecked} onChange={(e) => setTosChecked(e.target.checked)}

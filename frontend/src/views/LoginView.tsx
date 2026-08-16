@@ -238,6 +238,12 @@ export default function LoginView({ invitePreview }: Props = {}) {
           HIPAA-compliant platform &nbsp;·&nbsp; All data encrypted in transit
           <br />
           Pathfinder Beta · Access by invitation only
+          <br />
+          <a href="https://myaba.ai/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#8A98A4' }}>Privacy</a>
+          &nbsp;·&nbsp;
+          <a href="https://myaba.ai/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#8A98A4' }}>Terms</a>
+          &nbsp;·&nbsp;
+          <a href="https://myaba.ai/dpa" target="_blank" rel="noopener noreferrer" style={{ color: '#8A98A4' }}>DPA</a>
         </p>
       </div>
     </div>
