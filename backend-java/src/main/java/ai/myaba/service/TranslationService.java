@@ -120,19 +120,22 @@ public class TranslationService {
         return LocationName.of(projectId, location).toString();
     }
 
-    // Cached, thread-safe client. Regional locations need a regional endpoint;
-    // "global" uses the default. Built lazily so app startup never depends on it.
+    // Cached, thread-safe client. Built lazily so app startup never depends on it.
+    //
+    // We deliberately use the DEFAULT (global) endpoint — translate.googleapis.com —
+    // and carry the region in the request parent (projects/{p}/locations/us-central1).
+    // The per-region gRPC host ({region}-translate.googleapis.com) does NOT implement
+    // TranslateDocument and returns 404/UNIMPLEMENTED for it; the default endpoint
+    // serves both translateText and translateDocument for a regional parent
+    // (verified against projects/myapaai/locations/us-central1). Only a genuinely
+    // "global" parent could use a region-specific endpoint, and we don't need one.
     private TranslationServiceClient client() throws Exception {
         TranslationServiceClient c = client;
         if (c == null) {
             synchronized (this) {
                 c = client;
                 if (c == null) {
-                    TranslationServiceSettings.Builder b = TranslationServiceSettings.newBuilder();
-                    if (!"global".equalsIgnoreCase(location)) {
-                        b.setEndpoint(location + "-translate.googleapis.com:443");
-                    }
-                    c = TranslationServiceClient.create(b.build());
+                    c = TranslationServiceClient.create(TranslationServiceSettings.newBuilder().build());
                     client = c;
                 }
             }
