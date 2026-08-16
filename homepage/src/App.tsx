@@ -26,6 +26,18 @@ function IconSearch() {
 function IconLock() {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 }
+function IconLanguage() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>;
+}
+function IconUpload() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+}
+function IconFolder() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
+}
+function IconLayers() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+}
 function IconCheck() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
 }
@@ -369,6 +381,26 @@ const FEATURES: Feature[] = [
     icon: <IconChat />, color: '#1E88FF',
     title: 'AI Clinical Chat',
     desc: 'Generate session notes, treatment summaries, and clinical documentation in seconds. Context-aware AI understands ABA terminology and keeps client details on file so you never re-enter what it already knows.',
+  },
+  {
+    icon: <IconLanguage />, color: '#0E9384',
+    title: 'Document Translation',
+    desc: 'Translate treatment plans, intake forms, and client documents into Spanish, Arabic, French, Chinese, or German — with the original formatting and branding preserved (Word stays Word, PDF stays PDF). Translate from a button on any document or right inside chat, including long clinical PDFs.',
+  },
+  {
+    icon: <IconUpload />, color: '#C2410C',
+    title: 'Document Intake & OCR',
+    desc: 'Upload Word, PDF, Excel, image, or text files. Text is extracted automatically — scanned PDFs are OCR-read — and becomes context the AI can use, while the original file is stored encrypted and isolated to your organization.',
+  },
+  {
+    icon: <IconFolder />, color: '#1A73E8',
+    title: 'Google Drive Integration',
+    desc: 'Browse and import documents straight from Google Drive with least-privilege access — including files shared with you — or link a client’s Drive documents. No broad Drive access required; you choose exactly what to share.',
+  },
+  {
+    icon: <IconLayers />, color: '#7C3AED',
+    title: 'Projects & Knowledge Base',
+    desc: 'Group related work into projects with a shared knowledge base, synthesize across multiple documents, and run project-scoped chat. Add grounded, cited web research for payer, Medicaid, and school-district rules — all kept PHI-free and off the client record.',
   },
   {
     icon: <IconShield />, color: '#3F9B2F',
@@ -716,6 +748,9 @@ const FEATURE_ROWS: { key: string; solo: string | false; team: string | false; e
   { key: 'requests',  solo: '200 AI requests / month', team: '2,000 AI requests / month',  enterprise: 'Unlimited AI requests'                        },
   { key: 'chat',      solo: 'AI clinical chat',        team: 'AI clinical chat',            enterprise: 'AI clinical chat'                             },
   { key: 'storage',   solo: 'HIPAA-compliant storage', team: 'HIPAA-compliant storage',     enterprise: 'HIPAA-compliant storage'                      },
+  { key: 'translate', solo: 'Document translation (5 languages)', team: 'Document translation (5 languages)', enterprise: 'Document translation (5 languages)' },
+  { key: 'intake',    solo: 'Document upload & OCR',    team: 'Document upload & OCR',        enterprise: 'Document upload & OCR'                        },
+  { key: 'drive',     solo: 'Google Drive import',      team: 'Google Drive import',          enterprise: 'Google Drive import'                          },
   { key: 'collab',    solo: false,                     team: 'Team collaboration',          enterprise: 'Team collaboration'                           },
   { key: 'review',    solo: false,                     team: 'Review queue & governance',   enterprise: 'Review queue & governance'                    },
   { key: 'templates', solo: false,                     team: 'Custom templates',            enterprise: 'Custom templates'                             },
@@ -874,6 +909,10 @@ const FAQS = [
   {
     q: 'What happens when the 14-day Solo trial ends?',
     a: 'We\'ll reach out before your trial expires to discuss next steps. During the pathfinder period, nothing cuts off automatically — we work with each organization individually to figure out the right fit.',
+  },
+  {
+    q: 'Can I translate documents for Spanish-speaking families?',
+    a: 'Yes. myABA.ai translates treatment plans, intake forms, and client documents into Spanish, Arabic, French, Chinese, and German while preserving the original formatting and branding — a translated Word file stays a Word file and a PDF stays a PDF, so it is ready to hand to a family. You can translate from a button on any client document or ask for it directly in chat, and long clinical PDFs are supported. Translation runs on Google Cloud under the same HIPAA Business Associate Agreement as the rest of the platform, and nothing is used to train AI models.',
   },
   {
     q: 'What EHR systems does myABA.ai connect to?',
