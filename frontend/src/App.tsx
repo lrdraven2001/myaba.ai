@@ -23,6 +23,7 @@ const TeamView          = lazy(() => import('./views/TeamView'));
 const OnboardingView    = lazy(() => import('./views/OnboardingView'));
 const NotProvisionedView = lazy(() => import('./views/NotProvisionedView'));
 const MfaEnrollmentGate = lazy(() => import('./views/MfaEnrollmentGate'));
+const TermsGate = lazy(() => import('./views/TermsGate'));
 const InviteAcceptView  = lazy(() => import('./views/InviteAcceptView'));
 import { api } from './lib/api';
 import { ALL_ROLE_LABELS as ROLE_LABELS } from './types';
@@ -124,6 +125,8 @@ function AppShell() {
   // MFA enforcement: does the org require MFA, and has this user enrolled a factor?
   const [mfaEnforced, setMfaEnforced] = useState(false);
   const [hasMfaFactor, setHasMfaFactor] = useState<boolean | null>(null);
+  // Click-through terms acceptance: null = not yet confirmed, true = accepted.
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
 
   // Pre-fetch org name so InviteAcceptView can show it before the user logs in.
   // Never remove the token on failure — the invite may still be valid even if preview fails.
@@ -253,6 +256,17 @@ function AppShell() {
   // MFA enforcement gate: org requires MFA and this user hasn't enrolled a factor.
   if (!DEV_AUTH && mfaEnforced && hasMfaFactor === false) {
     return <MfaEnrollmentGate />;
+  }
+
+  // Click-through terms gate: block until the user has affirmatively accepted the
+  // current published Terms/Privacy/DPA. TermsGate self-checks and calls onAccepted
+  // (immediately if already accepted).
+  if (!DEV_AUTH && termsAccepted !== true) {
+    return (
+      <Suspense fallback={<div className="h-screen flex items-center justify-center"><div className="text-gray-400 text-lg">Loading…</div></div>}>
+        <TermsGate onAccepted={() => setTermsAccepted(true)} />
+      </Suspense>
+    );
   }
 
   return (

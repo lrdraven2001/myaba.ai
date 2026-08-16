@@ -178,6 +178,13 @@ export default function InviteAcceptView({ token, invitePreview }: Props) {
     setLoading(true);
     try {
       await api.claimInvite(token);
+      // Record the terms acceptance the user just made here (the checkbox above),
+      // so the app's acceptance gate doesn't prompt them again. Best-effort — if it
+      // fails, the gate will collect it on first load.
+      try {
+        const s = await api.getTermsStatus();
+        if (!s.accepted) await api.acceptTerms(s.currentVersion);
+      } catch { /* gate will handle it */ }
       // Force-refresh the Firebase ID token so the new orgId/role claims are
       // included before the reload — otherwise the cached token has no orgId
       // and OnboardingView shows instead of the main app.

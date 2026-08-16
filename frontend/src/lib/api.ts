@@ -199,6 +199,16 @@ export const api = {
   getChatAttachments: (chatId: string) =>
     request<{ id: string; name: string; content?: string }[]>(`/chats/${chatId}/attachments`),
 
+  // ── Legal terms acceptance (click-through gate) ───────────────────────────
+  /** Whether the signed-in user has accepted the current published terms version. */
+  getTermsStatus: () =>
+    request<{ currentVersion: string; accepted: boolean; acceptedVersion?: string; acceptedAt?: string }>('/me/terms'),
+  /** Record affirmative acceptance of the given terms version. */
+  acceptTerms: (version: string) =>
+    request<{ accepted: boolean; version: string }>('/me/terms/accept', {
+      method: 'POST', body: JSON.stringify({ version }),
+    }),
+
   /** Persist an uploaded document to this chat (content = already-extracted text). */
   addChatAttachment: (chatId: string, name: string, content: string, sourceFilename?: string) =>
     request<{ id: string; name: string }>(`/chats/${chatId}/attachments`, {
