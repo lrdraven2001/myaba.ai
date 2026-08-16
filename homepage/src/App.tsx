@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, Link } from 'react-router-dom';
 import DocumentsPage from './DocumentsPage';
+import LegalPage from './LegalPage';
 
 const APP_URL = import.meta.env.VITE_APP_URL ?? 'http://localhost:5173';
 
@@ -1084,8 +1085,8 @@ export function Footer() {
             {col('Company', [
               { label: 'About', href: '#' },
               { label: 'Contact', href: 'mailto:hello@myaba.ai' },
-              { label: 'Privacy Policy', href: '/documents?tab=legal' },
-              { label: 'Terms of Service', href: '/documents?tab=legal' },
+              { label: 'Privacy Policy', href: '/privacy' },
+              { label: 'Terms of Service', href: '/terms' },
               { label: 'Security', href: '/documents?tab=compliance' },
             ])}
           </div>
@@ -1131,6 +1132,8 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/documents" element={<DocumentsPage />} />
+      <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+      <Route path="/terms" element={<LegalPage kind="terms" />} />
     </Routes>
   );
 }

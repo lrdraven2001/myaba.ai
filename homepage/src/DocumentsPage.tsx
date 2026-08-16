@@ -13,7 +13,7 @@ interface DocCard {
   description: string;
   badge?: string;
   badgeColor?: string;
-  cta: 'view' | 'request' | 'coming-soon' | 'email';
+  cta: 'view' | 'request' | 'coming-soon' | 'email' | 'link';
   ctaLabel?: string;
   ctaHref?: string;
   content?: React.ReactNode;
@@ -515,6 +515,9 @@ function DocCard({ doc, open, onToggle }: { doc: DocCard; open: boolean; onToggl
     if (doc.cta === 'email') {
       return <a href={doc.ctaHref} style={{ ...ctaStyles, background: '#F0F9EE', color: '#2E7D22', textDecoration: 'none' }}>{doc.ctaLabel || 'Contact us'}</a>;
     }
+    if (doc.cta === 'link') {
+      return <a href={doc.ctaHref} style={{ ...ctaStyles, background: '#F0F6FF', color: '#1E88FF', textDecoration: 'none' }}>{doc.ctaLabel || 'Read'}</a>;
+    }
     // view
     return (
       <button onClick={onToggle} style={{ ...ctaStyles, background: open ? '#1E3347' : '#F0F6FF', color: open ? 'white' : '#1E88FF' }}>
@@ -701,13 +704,17 @@ export default function DocumentsPage() {
       id: 'privacy',
       title: 'Privacy Policy',
       description: 'How myABA.ai collects, uses, and protects personal information for users of the platform and visitors to myaba.ai.',
-      cta: 'coming-soon',
+      cta: 'link',
+      ctaHref: '/privacy',
+      ctaLabel: 'Read',
     },
     {
       id: 'tos',
       title: 'Terms of Service',
       description: 'The agreement governing use of the myABA.ai platform, including acceptable use, service availability, and liability provisions.',
-      cta: 'coming-soon',
+      cta: 'link',
+      ctaHref: '/terms',
+      ctaLabel: 'Read',
     },
     {
       id: 'dpa',
