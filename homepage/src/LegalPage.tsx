@@ -108,7 +108,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Data Retention',
     paragraphs: [
-      'Content you add is retained while your account is active. Your organization may configure a retention window (subject to a 30-day minimum), after which records eligible for deletion are purged. If no window is configured, content is retained until you or your organization delete it or the account is closed. On termination, we make your data available for export for 30 days before deletion. After deletion, residual copies of the deleted content across our backups, point-in-time recovery, and storage versioning are deleted or overwritten no later than ninety (90) days, and are not restored except for disaster recovery, continuity, or security purposes. This is separate from records we intentionally retain (such as audit logs). Legal holds override deletion.',
+      'Content you add is retained while your account is active. Your organization may configure a retention window (subject to a 30-day minimum), after which records eligible for deletion are purged. If no window is configured, content is retained until you or your organization delete it or the account is closed. On termination, we make your data available for export for 30 days before deletion. After deletion, residual copies of the deleted content in our backups are deleted or overwritten no later than one hundred five (105) days, and are not restored except for disaster recovery, continuity, or security purposes. This is separate from records we intentionally retain (such as audit logs). Legal holds override deletion.',
       'We retain audit and compliance logs for seven (7) years under our records-retention policy and applicable contractual obligations. This period does not determine how long clinical records must be retained; clinical-record retention is governed by applicable state law, Customer instructions, and the applicable order and BAA.',
     ],
   },
@@ -367,7 +367,7 @@ const DPA: Section[] = [
   {
     heading: 'Return and Deletion',
     paragraphs: [
-      'On termination, myABA will return or delete Customer Personal Data in accordance with the Terms and the BAA, subject to the retention periods described in the Privacy Policy (including the 30-day post-termination export window) and to any legal-hold or legal-retention obligations. After deletion, residual copies across our backups, point-in-time recovery, and storage versioning are deleted or overwritten no later than ninety (90) days and are not restored except for disaster recovery, continuity, or security purposes.',
+      'On termination, myABA will return or delete Customer Personal Data in accordance with the Terms and the BAA, subject to the retention periods described in the Privacy Policy (including the 30-day post-termination export window) and to any legal-hold or legal-retention obligations. After deletion, residual copies in our backups are deleted or overwritten no later than one hundred five (105) days and are not restored except for disaster recovery, continuity, or security purposes.',
     ],
   },
   {
