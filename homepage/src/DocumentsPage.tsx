@@ -718,9 +718,11 @@ export default function DocumentsPage() {
     },
     {
       id: 'dpa',
-      title: 'Data Processing Agreement',
-      description: 'GDPR-aligned data processing agreement for organizations operating in or serving individuals in the European Union.',
-      cta: 'coming-soon',
+      title: 'Data Processing Addendum',
+      description: 'Controller/processor terms for non-PHI personal data, including CCPA/CPRA service-provider certification. PHI is governed by the BAA.',
+      cta: 'link',
+      ctaHref: '/dpa',
+      ctaLabel: 'Read',
     },
   ];
 

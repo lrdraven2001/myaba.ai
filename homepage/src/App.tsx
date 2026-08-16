@@ -1134,6 +1134,7 @@ export default function App() {
       <Route path="/documents" element={<DocumentsPage />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
+      <Route path="/dpa" element={<LegalPage kind="dpa" />} />
     </Routes>
   );
 }

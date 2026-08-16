@@ -283,10 +283,87 @@ const TERMS: Section[] = [
   },
 ];
 
-export default function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
-  const isPrivacy = kind === 'privacy';
-  const title = isPrivacy ? 'Privacy Policy' : 'Terms of Service';
-  const sections = isPrivacy ? PRIVACY : TERMS;
+const DPA: Section[] = [
+  {
+    heading: 'Scope and Roles',
+    paragraphs: [
+      'This Data Processing Addendum (“DPA”) forms part of the agreement between ACLX LLC, doing business as “myABA.ai” (“myABA”), and the customer organization (“Customer”) and governs myABA’s processing of Customer Personal Data that is not Protected Health Information (PHI).',
+      'PHI is governed exclusively by the Business Associate Agreement (BAA) between the parties and is outside the scope of this DPA. For Customer Personal Data, Customer is the controller/business and myABA is the processor/service provider.',
+    ],
+  },
+  {
+    heading: 'Definitions',
+    bullets: [
+      '“Customer Personal Data” means personal information myABA processes on Customer’s behalf under the agreement, excluding PHI.',
+      '“PHI” has the meaning given under HIPAA and is governed by the BAA.',
+      '“Applicable Privacy Laws” means U.S. state privacy laws applicable to the parties, such as the California Consumer Privacy Act as amended (CCPA/CPRA) and the Virginia Consumer Data Protection Act (VCDPA).',
+      'The terms controller, business, processor, service provider, data subject, and consumer have the meanings given under Applicable Privacy Laws.',
+    ],
+  },
+  {
+    heading: 'Details of Processing',
+    bullets: [
+      'Subject matter and purpose: providing the Service and generating the documentation Customer requests.',
+      'Duration: the term of the agreement.',
+      'Categories of data subjects: Customer’s authorized users and business contacts.',
+      'Categories of Customer Personal Data: identity and contact details, account and role information, and usage/telemetry data. Clinical/PHI data is handled under the BAA, not this DPA.',
+    ],
+  },
+  {
+    heading: 'myABA’s Obligations',
+    bullets: [
+      'Process Customer Personal Data only to provide the Service and on Customer’s documented instructions (the agreement), and as required by law.',
+      'Ensure personnel authorized to process the data are bound by confidentiality.',
+      'Maintain appropriate technical and organizational security measures (see the Privacy Policy, Security).',
+      'Reasonably assist Customer in responding to verified data-subject/consumer requests.',
+      'Notify Customer without undue delay after becoming aware of a breach of security leading to unauthorized access to Customer Personal Data.',
+      'Make available information reasonably necessary to demonstrate compliance and, on reasonable notice and subject to confidentiality, allow reasonable audits.',
+    ],
+  },
+  {
+    heading: 'Service-Provider / Processor Certification (CCPA/CPRA and similar laws)',
+    paragraphs: [
+      'myABA acts as a service provider/processor with respect to Customer Personal Data. myABA will not sell or share Customer Personal Data, will not retain, use, or disclose it for any purpose other than performing the Service (or as otherwise permitted by Applicable Privacy Laws), and will not combine it with data from other sources except as permitted by those laws. myABA certifies that it understands and will comply with these restrictions.',
+    ],
+  },
+  {
+    heading: 'Subprocessors',
+    paragraphs: [
+      'Customer authorizes myABA to engage the subprocessors identified in the Privacy Policy. myABA imposes data-protection obligations on its subprocessors consistent with this DPA and remains responsible for their performance. myABA maintains a current subprocessor list (available at compliance@myaba.ai) and will provide notice of material changes.',
+    ],
+  },
+  {
+    heading: 'International Transfers',
+    paragraphs: [
+      'The Service is provided from the United States to U.S.-based organizations, and Customer Personal Data is processed and stored in the United States. This DPA does not provide a mechanism for transfers of personal data from the European Economic Area or the United Kingdom, which are outside the Service’s scope.',
+    ],
+  },
+  {
+    heading: 'Return and Deletion',
+    paragraphs: [
+      'On termination, myABA will return or delete Customer Personal Data in accordance with the Terms and the BAA, subject to the retention periods described in the Privacy Policy and to any legal-hold or legal-retention obligations.',
+    ],
+  },
+  {
+    heading: 'Order of Precedence',
+    paragraphs: [
+      'The BAA controls all matters involving PHI. A signed order form or master services agreement controls pricing and other negotiated commercial terms. This DPA controls the processing of non-PHI Customer Personal Data. The Terms of Service govern all other matters.',
+    ],
+  },
+  {
+    heading: 'Contact',
+    paragraphs: [
+      'To execute this DPA or request the current subprocessor list, contact compliance@myaba.ai.',
+    ],
+  },
+];
+
+export default function LegalPage({ kind }: { kind: 'privacy' | 'terms' | 'dpa' }) {
+  const title = kind === 'privacy' ? 'Privacy Policy'
+              : kind === 'terms' ? 'Terms of Service'
+              : 'Data Processing Addendum';
+  const sections = kind === 'privacy' ? PRIVACY : kind === 'terms' ? TERMS : DPA;
+  const contactEmail = kind === 'privacy' ? 'privacy@myaba.ai' : kind === 'terms' ? 'legal@myaba.ai' : 'compliance@myaba.ai';
 
   useEffect(() => {
     document.title = `${title} · myABA.ai`;
@@ -300,8 +377,9 @@ export default function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
         <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Link to="/" style={{ fontWeight: 700, fontSize: 18, color: '#1E3347', textDecoration: 'none' }}>myABA.ai</Link>
           <nav style={{ display: 'flex', gap: 18, fontSize: 14 }}>
-            <Link to="/privacy" style={{ color: isPrivacy ? '#1E88FF' : '#64748B', textDecoration: 'none' }}>Privacy</Link>
-            <Link to="/terms" style={{ color: !isPrivacy ? '#1E88FF' : '#64748B', textDecoration: 'none' }}>Terms</Link>
+            <Link to="/privacy" style={{ color: kind === 'privacy' ? '#1E88FF' : '#64748B', textDecoration: 'none' }}>Privacy</Link>
+            <Link to="/terms" style={{ color: kind === 'terms' ? '#1E88FF' : '#64748B', textDecoration: 'none' }}>Terms</Link>
+            <Link to="/dpa" style={{ color: kind === 'dpa' ? '#1E88FF' : '#64748B', textDecoration: 'none' }}>DPA</Link>
             <Link to="/documents" style={{ color: '#64748B', textDecoration: 'none' }}>Documents</Link>
           </nav>
         </div>
@@ -330,10 +408,10 @@ export default function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
         ))}
 
         <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 40, borderTop: '1px solid #E2E8F0', paddingTop: 20 }}>
-          © {EFFECTIVE_DATE.split(' ').pop()} myABA.ai. See also our{' '}
-          <Link to={isPrivacy ? '/terms' : '/privacy'} style={{ color: '#1E88FF' }}>
-            {isPrivacy ? 'Terms of Service' : 'Privacy Policy'}
-          </Link>.
+          © {EFFECTIVE_DATE.split(' ').pop()} ACLX LLC dba myABA.ai. Questions: {contactEmail}. See also our{' '}
+          <Link to="/privacy" style={{ color: '#1E88FF' }}>Privacy Policy</Link>,{' '}
+          <Link to="/terms" style={{ color: '#1E88FF' }}>Terms</Link>, and{' '}
+          <Link to="/dpa" style={{ color: '#1E88FF' }}>DPA</Link>.
         </p>
       </main>
     </div>
