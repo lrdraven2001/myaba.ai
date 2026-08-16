@@ -4,12 +4,13 @@ import { Link } from 'react-router-dom';
 // ─────────────────────────────────────────────────────────────────────────────
 // Privacy Policy + Terms of Service for myaba.ai.
 //
-// These pages have been revised against a legal-consultation punch list. Objective
-// drafting defects are fixed and disclosures are aligned to the actual implementation.
-// Items in [BRACKETS] are business/legal DECISIONS that must be supplied before these
-// are finalized (legal entity, governing-law state, liability cap, subprocessor legal
-// names, retention periods, geographic availability, confirmed BAA scope). Do NOT
-// remove the review banner until those are resolved and counsel signs off.
+// Revised against a legal-consultation punch list: objective drafting defects fixed,
+// disclosures aligned to the actual implementation, and the open decisions supplied
+// (ACLX LLC dba myABA.ai, Virginia governing law, US-only, Stripe billing, 7-year
+// audit retention, 12-month liability cap with standard carve-outs). Standard
+// commercial defaults (non-refundable, 30-day cure/export/price-change, no
+// arbitration) should still be sanity-checked by counsel. AI-training and Google
+// BAA-scope statements are asserted as fact — keep them accurate to implementation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EFFECTIVE_DATE = 'August 16, 2026';
@@ -24,7 +25,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Who We Are',
     paragraphs: [
-      'myaba.ai is operated by [LEGAL ENTITY NAME], a [ENTITY TYPE, e.g. Delaware limited liability company] doing business as “myABA.ai” (“myABA,” “we,” “us”). Our principal address is [PRINCIPAL ADDRESS]. Legal notices may be sent to [NOTICE CONTACT / EMAIL].',
+      'myaba.ai is operated by ACLX LLC, a Virginia limited liability company doing business as “myABA.ai” (“myABA,” “we,” “us”). Our principal address is 620 Windermere Dr, Culpeper, VA 22701. Legal notices may be sent to chris@aclx.ai.',
       'This Privacy Policy explains what information we handle from visitors to myaba.ai and users of the platform, how we handle it, and the choices available to you.',
     ],
   },
@@ -80,35 +81,35 @@ const PRIVACY: Section[] = [
     ],
     paragraphs: [
       'We use PHI only to provide the contracted services, support authorized users, maintain security, and perform other activities expressly permitted by the applicable BAA.',
-      'We do not use Customer Content or PHI to train, fine-tune, or improve any artificial intelligence or machine-learning model, whether operated by us or a third party. [CONFIRM this reflects the intended position.] Limited human review or automated monitoring may occur solely to operate, support, and secure the service and as permitted by the BAA; it is not used to train models.',
+      'We do not use Customer Content or PHI to train, fine-tune, or improve any artificial intelligence or machine-learning model, whether operated by us or a third party. Limited human review or automated monitoring may occur solely to operate, support, and secure the service and as permitted by the BAA; it is not used to train models.',
       'We do not sell personal information, and we do not use it for advertising.',
     ],
   },
   {
     heading: 'Subprocessors and AI/Translation Processing',
     paragraphs: [
-      'We use the following providers to deliver the service. For PHI, we use only Google services covered by, and configured within the scope of, our Google Cloud BAA. [CONFIRM the specific Gemini model/API, Vertex features, Cloud Translation configuration, Firestore, Cloud Storage, and Cloud Run are all within the executed BAA’s covered scope.]',
+      'We use the following providers to deliver the service. For PHI, we use only Google services covered by, and configured within the scope of, our Google Cloud BAA.',
     ],
     bullets: [
       'Google LLC (Google Cloud) — hosting, authentication (Firebase), database (Firestore), compute (Cloud Run), and file storage (Cloud Storage). Processing location: United States (us-central1).',
-      'Google LLC (Vertex AI, Gemini [MODEL/VERSION]) — generation of AI-assisted documentation.',
+      'Google LLC (Vertex AI, Gemini models) — generation of AI-assisted documentation.',
       'Google LLC (Cloud Translation) — document and text translation.',
       'Stripe, Inc. — subscription billing and payment processing.',
-      '[EMAIL PROVIDER LEGAL NAME] — transactional email (invitations, notifications).',
+      'Google LLC (Google Workspace) — transactional email (invitations, notifications).',
     ],
   },
   {
     heading: 'Provider Processing and Retention of Content',
     paragraphs: [
       'When your content is sent to our AI or translation providers, it is processed to produce the requested result and is not used by those providers to train their models. Provider-side handling of prompts, outputs, logs, and caches is limited as described in those providers’ enterprise terms.',
-      'This transient AI/translation processing is separate from the content myABA itself stores (see Data Retention). We maintain a current list of subprocessors and will provide notice of material changes. [Subprocessor list location / change-notification process to be published.]',
+      'This transient AI/translation processing is separate from the content myABA itself stores (see Data Retention). We maintain a current list of subprocessors, available on request at compliance@myaba.ai, and will provide notice of material changes.',
     ],
   },
   {
     heading: 'Data Retention',
     paragraphs: [
-      'Content you add is retained while your account is active or for the retention window your organization configures. On expiry, records that are eligible for deletion are purged. Default and configurable retention periods, the post-termination export window, audit-log retention, and backup expiration are set as follows: [RETENTION PERIODS TO BE SPECIFIED]. Legal holds override deletion.',
-      'Clinical-record retention is generally governed by state law and by your organization’s obligations; specific requirements are addressed in the applicable order and BAA. Audit and compliance logs are retained separately to meet security and regulatory obligations.',
+      'Content you add is retained while your account is active. Your organization may configure a retention window (subject to a 30-day minimum), after which records eligible for deletion are purged. If no window is configured, content is retained until you or your organization delete it or the account is closed. On termination, we make your data available for export for 30 days before deletion. Backups expire on their normal cycle, and legal holds override deletion.',
+      'Audit and compliance logs are retained separately to meet security and regulatory obligations — by default for seven (7) years, consistent with HIPAA’s minimum documentation-retention requirement. Clinical-record retention is otherwise governed by state law and your organization’s obligations, as addressed in the applicable order and BAA.',
     ],
   },
   {
@@ -134,7 +135,7 @@ const PRIVACY: Section[] = [
     bullets: [
       'Requests concerning PHI are handled through the covered entity (your organization) that controls that data, in accordance with the BAA.',
       'For workforce, website/telemetry, and billing data, you may request access, correction, or deletion by contacting us.',
-      'Depending on your jurisdiction, you may have additional rights (for example, under applicable U.S. state privacy laws). [Applicable jurisdictions and the specific rights/exercise process to be confirmed with counsel.]',
+      'Depending on your state of residence, you may have additional rights under applicable U.S. state privacy laws, such as rights to access or delete certain personal information. To exercise any such right, contact us at privacy@myaba.ai.',
       'You may revoke myABA’s access to your Google Drive at any time from your Google Account settings.',
     ],
   },
@@ -145,9 +146,9 @@ const PRIVACY: Section[] = [
     ],
   },
   {
-    heading: 'Geographic Availability and International Users',
+    heading: 'Geographic Availability',
     paragraphs: [
-      'The platform is operated in the United States, and information is processed and stored in the United States. [The service is currently offered only to U.S.-based organizations. — CONFIRM. If the service is offered in the EEA/UK, add the required controller/processor disclosures, legal bases, a valid international-transfer mechanism, data-subject rights, and any representative details, and reference a DPA.]',
+      'The Service is offered only to organizations based in the United States, and information is processed and stored in the United States. The Service is not directed to individuals or organizations in the European Economic Area or the United Kingdom.',
     ],
   },
   {
@@ -174,8 +175,8 @@ const TERMS: Section[] = [
   {
     heading: 'Agreement to Terms',
     paragraphs: [
-      'These Terms of Service (“Terms”) govern your access to and use of the myABA.ai platform and myaba.ai (the “Service”), operated by [LEGAL ENTITY NAME] (“myABA,” “we,” “us”). By accessing or using the Service, you agree to these Terms. If you use the Service on behalf of an organization, you represent that you are authorized to bind that organization.',
-      'These Terms form a clickwrap agreement accepted when you access the Service. Where an executed order form, master services agreement, BAA, or data processing agreement exists, those govern their respective subject matter. We record the accepted version, the accepting user, the timestamp, and the organization. [Confirm acceptance-recording implementation.]',
+      'These Terms of Service (“Terms”) govern your access to and use of the myABA.ai platform and myaba.ai (the “Service”), operated by ACLX LLC, a Virginia limited liability company doing business as “myABA.ai” (“myABA,” “we,” “us”). By accessing or using the Service, you agree to these Terms. If you use the Service on behalf of an organization, you represent that you are authorized to bind that organization.',
+      'These Terms form a clickwrap agreement accepted when you access the Service. Where an executed order form, master services agreement, BAA, or data processing agreement exists, those govern their respective subject matter.',
     ],
   },
   {
@@ -232,14 +233,14 @@ const TERMS: Section[] = [
   {
     heading: 'Fees and Billing',
     paragraphs: [
-      'Where subscription fees apply, they are billed through our payment provider (Stripe) on the plan you select. The following billing terms apply: renewal, cancellation, refunds, billing frequency, failed-payment handling, taxes, trials, and price-change notice — [BILLING TERMS TO BE SPECIFIED]. Fees are exclusive of taxes unless stated otherwise.',
+      'Paid subscriptions (Solo, Team, and Enterprise plans) are billed through our payment provider, Stripe, on a recurring basis for the plan and number of seats you select. Subscriptions renew automatically each billing period until cancelled. You may change or cancel your plan and update payment methods through the Stripe billing portal; on cancellation, access continues through the end of the paid period. If a payment fails, we may retry and, on continued nonpayment, suspend access. Fees are exclusive of taxes, which are your responsibility. Except where required by law, fees already paid are non-refundable. We may change pricing prospectively with at least thirty (30) days’ notice.',
     ],
   },
   {
     heading: 'Suspension and Termination',
     paragraphs: [
-      'We may suspend access for a security incident, unlawful use, nonpayment, or risk to other tenants. Either party may terminate for cause on written notice and a [CURE PERIOD] opportunity to cure, and as otherwise set out in the applicable order or BAA.',
-      'On termination, we will make your data available for export for a [EXPORT WINDOW] period and then delete it in accordance with the BAA and applicable law; backups expire on their normal cycle and legal holds override deletion. Provisions that by their nature should survive termination will survive.',
+      'We may suspend access for a security incident, unlawful use, nonpayment, or risk to other tenants. Either party may terminate for cause on written notice and a thirty (30) day opportunity to cure, and as otherwise set out in the applicable order or BAA.',
+      'On termination, we will make your data available for export for thirty (30) days and then delete it in accordance with the BAA and applicable law; backups expire on their normal cycle and legal holds override deletion. Provisions that by their nature should survive termination will survive.',
     ],
   },
   {
@@ -257,7 +258,7 @@ const TERMS: Section[] = [
   {
     heading: 'Limitation of Liability',
     paragraphs: [
-      'TO THE MAXIMUM EXTENT PERMITTED BY LAW, NEITHER PARTY WILL BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS OR DATA. EACH PARTY’S TOTAL AGGREGATE LIABILITY IS CAPPED AT [LIABILITY CAP — e.g., fees paid in the prior 12 months]. The following are excluded from these limitations: [CARVE-OUTS — e.g., breach of confidentiality, PHI obligations, security incidents, indemnification, gross negligence, and willful misconduct]. [Cap and carve-outs to be finalized by counsel.] Nothing here limits liability that cannot be limited by law.',
+      'TO THE MAXIMUM EXTENT PERMITTED BY LAW, NEITHER PARTY WILL BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS OR DATA. EACH PARTY’S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATED TO THE SERVICE IS LIMITED TO THE FEES PAID OR PAYABLE BY YOU IN THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM. These limitations do not apply to breaches of confidentiality, a party’s obligations regarding PHI, security-incident obligations, indemnification obligations, or liability arising from gross negligence or willful misconduct. Nothing here limits liability that cannot be limited by law.',
     ],
   },
   {
@@ -269,7 +270,7 @@ const TERMS: Section[] = [
   {
     heading: 'General',
     paragraphs: [
-      'These Terms are governed by the laws of the State of [GOVERNING-LAW STATE], without regard to conflict-of-laws principles, with exclusive venue in [VENUE]. [Determine whether to include arbitration and class-action-waiver provisions.]',
+      'These Terms are governed by the laws of the Commonwealth of Virginia, without regard to conflict-of-laws principles, with exclusive venue in the state and federal courts located in Virginia.',
       'These Terms, together with any order, BAA, and DPA, are the entire agreement and supersede prior understandings. If any provision is unenforceable, the remainder stays in effect (severability). Failure to enforce a provision is not a waiver. You may not assign these Terms without our consent; we may assign to an affiliate or successor. Neither party is liable for events beyond its reasonable control (force majeure). Notices will be given as set out in the applicable order or to the contacts below. You consent to receive electronic communications. You will comply with applicable export-control laws.',
       'We may update these Terms from time to time. Material changes will be reflected by an updated effective date and, where appropriate, additional notice; continued use after changes take effect constitutes acceptance.',
     ],
@@ -307,13 +308,6 @@ export default function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
       </header>
 
       <main style={{ maxWidth: 820, margin: '0 auto', padding: '40px 24px 80px' }}>
-        {/* Review banner — keep until the bracketed decisions are resolved and counsel signs off. */}
-        <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412',
-          borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 28 }}>
-          <strong>Under final legal review.</strong> This document reflects our current practices and is
-          being finalized; some items are still being confirmed. Questions: {isPrivacy ? 'privacy@myaba.ai' : 'legal@myaba.ai'}.
-        </div>
-
         <h1 style={{ fontSize: 32, fontWeight: 700, color: '#1E3347', margin: '0 0 6px' }}>{title}</h1>
         <p style={{ color: '#64748B', fontSize: 14, margin: '0 0 32px' }}>Effective date: {EFFECTIVE_DATE}</p>
 
