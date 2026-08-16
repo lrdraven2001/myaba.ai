@@ -100,6 +100,14 @@ spec:
             - name: FIREBASE_PROJECT_ID
               value: "myapaai"
 
+            # ── Document storage: original uploaded files (extracted text stays
+            #    in Firestore). Enables layout-preserving translation (translate
+            #    the ORIGINAL docx/pdf) + download-original. BAA-covered bucket in
+            #    this project; encryption-at-rest on by default; the runtime SA has
+            #    roles/storage.objectAdmin on it. Unset → storage disabled (text-only).
+            - name: GCS_DOCUMENTS_BUCKET
+              value: "myaba-documents-myapaai"
+
             # ── ACLX governance gateway (private — via VPC connector) ────────
             - name: ACLX_ENABLED
               value: "true"
