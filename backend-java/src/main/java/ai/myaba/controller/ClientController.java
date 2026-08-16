@@ -595,6 +595,8 @@ public class ClientController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Client not found"));
         } catch (SecurityException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("translateClientDocument failed {}/{} lang={}: {}", clientId, docId, lang, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));

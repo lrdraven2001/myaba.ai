@@ -161,7 +161,10 @@ public class GenerateController {
                     + "(a client document, a project knowledge file, or a file uploaded to this chat) "
                     + "into another language, "
                     + "PRESERVING the original format (Word stays Word, PDF stays PDF). Use this "
-                    + "whenever the user asks to translate an attached document. Do NOT translate the "
+                    + "whenever the user asks to translate an attached document. Translate ONLY the "
+                    + "specific document the user names or refers to — call this tool exactly once, for "
+                    + "that one document. Do NOT translate other attached documents the user did not ask "
+                    + "about (e.g. a client's other records loaded for context). Do NOT translate the "
                     + "document text yourself in your reply — call this tool; the user is shown a "
                     + "download card that generates the translated file. Supported languages: Spanish, "
                     + "Arabic, French, Chinese, German.",

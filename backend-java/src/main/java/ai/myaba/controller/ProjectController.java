@@ -338,6 +338,8 @@ public class ProjectController {
                     .body(Map.of("error", "Not authorized to translate documents for this project"));
         } catch (java.util.NoSuchElementException e) {
             return ResponseEntity.status(404).body(Map.of("error", "Project not found"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("translateKnowledge failed project={} doc={} lang={}: {}", projectId, docId, lang, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));

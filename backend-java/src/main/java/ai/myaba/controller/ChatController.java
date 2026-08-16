@@ -327,6 +327,8 @@ public class ChatController {
         } catch (SecurityException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Not authorized to translate documents for this chat"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("translateAttachment failed chat={} att={} lang={}: {}", chatId, attId, lang, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Translation failed. Please try again."));
